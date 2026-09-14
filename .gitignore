@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+
+# Beads: sync via Dolt, not git — only config.yaml + metadata.json stay tracked
+.beads/embeddeddolt/
+.beads/issues.jsonl
+.beads/interactions.jsonl
+.beads/hooks/
+.beads/*.lock
+.beads-credential-key
