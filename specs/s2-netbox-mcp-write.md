@@ -381,8 +381,9 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   boolean, default false), `dryRun` (optional boolean, default false). It returns `isError` with a
   one-sentence reason and issues **no write** when: the format is wrong; `end` ≤ `start`; `end` is
   not later than the host's current time; the window is longer than 31 days; `portalKeys` contains
-  a key not returned by `GetPortals`; or adding the planned holidays would exceed 30 (count taken
-  from `GetHolidays`). [verify: handler tests for each rejection assert zero write commands]
+  a key not returned by `GetPortals`; adding the planned holidays would exceed 30 (count taken
+  from `GetHolidays`); or the plan needs a segment kind for which no holiday group is configured
+  (R23). [verify: handler tests for each rejection assert zero write commands]
 - R23. Planning is a pure function of (`start`, `end`, reserved groups `[g1,g2,g3]`, prefix) with
   these rules, where an `end` time of `00:00` is first normalised to `23:59` of the previous date:
   same date → one segment `first` = [`start` time, `end` time] on that date; otherwise `first` =
@@ -392,6 +393,10 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   date of the segment at `00:00`, `ENDDATE` = the day **after** the last date of the segment at
   `00:00` (exclusive); time spec `NAME` = `<prefix> <kind>`, `STARTTIME`/`ENDTIME` as above, all
   seven weekday flags `0`, `HOLIDAYGROUPS` = `g1` for `first`, `g2` for `middle`, `g3` for `last`.
+  When `NETBOX_UNLOCK_HOLIDAY_GROUPS` configures fewer than three groups, a plan that needs a
+  segment kind with no configured group is rejected (`isError`, no write) rather than sharing a
+  group between segments — one group permits same-day windows only, two permit windows without a
+  `middle` segment — because two segments sharing a group would each unlock on the other's dates.
   Required outputs (groups `8,7,6`, prefix `P`):
   - `2026-10-03 09:00` → `2026-10-03 17:00`: one segment first, holiday `2026-10-03 00:00`→`2026-10-04 00:00`, spec `09:00`–`17:00`, group 8.
   - `2026-10-03 18:00` → `2026-10-04 00:00`: identical to a same-day window ending `23:59` (one segment, spec `18:00`–`23:59`).
@@ -575,7 +580,7 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   `isError` only when `failed` is non-empty, and the all-portals path paginates `GetPortals`.
 - C11 (R21): PASS iff no tool schema contains a field name absent from the Command reference for
   its command.
-- C12 (R22): PASS iff each of the six rejection cases returns `isError` with zero write commands.
+- C12 (R22): PASS iff each of the seven rejection cases returns `isError` with zero write commands.
 - C13 (R23): PASS iff the four required plans are produced exactly.
 - C14 (R24): PASS iff a time spec lacking a used group blocks the call without writes, the flag
   unblocks it, `dryRun` never writes, and overlapping holidays are reported.
