@@ -56,14 +56,50 @@ npm start
 
 | Variable                      | Required | Default | Description                                                                                       |
 | ------------------------------ | -------- | ------- | --------------------------------------------------------------------------------------------------- |
-| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `/goforms/nbapi` itself. |
+| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `NETBOX_API_PATH` itself. |
 | `NETBOX_USERNAME`               | Yes      | —       | NBAPI session-login username.                                                                       |
 | `NETBOX_PASSWORD`               | Yes      | —       | NBAPI session-login password. Never logged, never written to any tracked file.                      |
 | `NETBOX_ALLOW_INSECURE_TLS`     | No       | `false` | Set to `true`/`1`/`yes` to accept a self-signed/on-prem TLS certificate. **Explicit opt-in only** — any other value (including unset) keeps normal certificate verification. |
+| `NETBOX_API_PATH`               | No       | `/nbws/goforms/nbapi` | The NBAPI path appended to `NETBOX_BASE_URL`. The default is the verified path on NetBox 6.x controllers. Only set this to override the default — e.g. to the legacy, pre-6.x path `/goforms/nbapi`, which returns **HTTP 410 Gone** on 6.x controllers (see Controller prerequisites below). A value without a leading `/` has one added automatically. |
 
 If any of the three required variables is missing, the server prints a single
 actionable line to stderr and exits with a non-zero status — it never prints
 a stack trace on startup misconfiguration.
+
+## Controller prerequisites
+
+Before this server can talk to your controller, on the NetBox web UI go to
+**Configuration → Site Settings → Network Controller → Data Integration** and
+confirm all three of these are checked:
+
+- **Enable V2**
+- **Use Authentication**
+- **Use login username/password for authentication (requires setup privilege)**
+
+The NBAPI user account also needs a role with **NBAPI read access** (see the
+NBAPI doc's "Creating User Roles for API" section) — a login that succeeds
+but can't read the resources this server queries will surface as `FAIL` or
+`APIERROR` responses per tool call.
+
+### Troubleshooting
+
+- **"Login succeeds but every other command returns `APIERROR 5`."** This is
+  the live-observed symptom of the *Use login username/password for
+  authentication (requires setup privilege)* checkbox being unticked, which
+  puts the controller in MAC-authentication mode instead of session-login
+  mode (MAC auth is out of scope for this server — see the spec). `Login`
+  still returns `SUCCESS` with a session ID, but every subsequent command —
+  including `Logout` — fails with `APIERROR 5`. Fix: tick that checkbox on
+  the *Data Integration* tab. This server's client detects this exact
+  pattern (a successful re-login followed by another `APIERROR 5`) and
+  surfaces a tool error naming the checkbox directly.
+- **"HTTP 410 Gone."** The configured `NETBOX_API_PATH` is not served by this
+  controller. NetBox 6.x serves the NBAPI at `/nbws/goforms/nbapi` (the
+  default this server uses); the 2020 doc's `/goforms/nbapi` path is
+  deregistered on 6.x and returns 410 for every request. If you're on a
+  pre-6.x controller, set `NETBOX_API_PATH=/goforms/nbapi` explicitly; if
+  you're on 6.x and still see this, double-check `NETBOX_API_PATH` isn't set
+  to something else by mistake.
 
 ## Registering with Claude Code
 

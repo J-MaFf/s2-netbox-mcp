@@ -22,8 +22,14 @@ export function describeApiError(code: number): string {
 export class NbapiApiError extends Error {
   readonly code: number;
 
-  constructor(code: number) {
-    super(`NetBox NBAPI error ${describeApiError(code)}`);
+  /**
+   * @param hint Optional additional context appended to the message (e.g.
+   *   the R22 "Use login username/password" guidance for a code-5 failure
+   *   that follows a successful re-login). Never include credentials here.
+   */
+  constructor(code: number, hint?: string) {
+    const base = `NetBox NBAPI error ${describeApiError(code)}`;
+    super(hint ? `${base} ${hint}` : base);
     this.name = 'NbapiApiError';
     this.code = code;
   }

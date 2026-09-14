@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfigFromEnv, NetboxConfigError } from '../src/config.js';
+import { loadConfigFromEnv, NetboxConfigError, DEFAULT_NETBOX_API_PATH } from '../src/config.js';
 
 const FULL_ENV = {
   NETBOX_BASE_URL: 'https://netbox.example.internal',
@@ -15,6 +15,7 @@ describe('loadConfigFromEnv (R3)', () => {
       username: 'svc-account',
       password: 'super-secret-password',
       allowInsecureTls: false,
+      apiPath: '/nbws/goforms/nbapi',
     });
   });
 
@@ -67,5 +68,24 @@ describe('loadConfigFromEnv (R3)', () => {
     expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ALLOW_INSECURE_TLS: '1' }).allowInsecureTls).toBe(true);
     expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ALLOW_INSECURE_TLS: 'false' }).allowInsecureTls).toBe(false);
     expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ALLOW_INSECURE_TLS: 'nope' }).allowInsecureTls).toBe(false);
+  });
+});
+
+describe('loadConfigFromEnv apiPath resolution (R20 / C14)', () => {
+  it('defaults NETBOX_API_PATH to /nbws/goforms/nbapi when unset', () => {
+    expect(loadConfigFromEnv(FULL_ENV).apiPath).toBe('/nbws/goforms/nbapi');
+    expect(loadConfigFromEnv(FULL_ENV).apiPath).toBe(DEFAULT_NETBOX_API_PATH);
+  });
+
+  it('defaults NETBOX_API_PATH to /nbws/goforms/nbapi when set to an empty string', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_API_PATH: '' }).apiPath).toBe('/nbws/goforms/nbapi');
+  });
+
+  it('honours a non-empty NETBOX_API_PATH override verbatim', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_API_PATH: '/goforms/nbapi' }).apiPath).toBe('/goforms/nbapi');
+  });
+
+  it('adds a missing leading slash to a NETBOX_API_PATH override', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_API_PATH: 'goforms/nbapi' }).apiPath).toBe('/goforms/nbapi');
   });
 });
