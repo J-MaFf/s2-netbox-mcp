@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "s2_netbox_mcp",
+  "project_id": "0b28c9e6-9f52-4a95-98ae-572dcc955ef2"
+}
