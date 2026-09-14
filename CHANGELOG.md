@@ -40,9 +40,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   wire shapes the write commands document — e.g. `PORTALKEYS: { PORTALKEY: [...] }` and repeated
   top-level `PORTALKEY` siblings on `ModifyPortalGroup` ([#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8)).
 - `NETBOX_UNLOCK_HOLIDAY_GROUPS`, `NETBOX_UNLOCK_NAME_PREFIX`, and `NETBOX_LIVE_TEST_PORTALKEY`
-  environment variables, validated by `loadConfigFromEnv` and reserved for the managed
-  unlock-window feature landing in a follow-up release
-  ([#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8)).
+  environment variables, validated by `loadConfigFromEnv`, for the managed unlock-window feature
+  and its live write check below ([#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8)).
+- `set_portals_state` composite write tool: locks, unlocks (Extended Unlock), or momentarily
+  unlocks the given portals — or every portal from a fully paginated `GetPortals` — issuing one
+  command per portal sequentially, never aborting on a single failure, and partitioning the result
+  into `succeeded`, `alreadyInState` ("Portal state not changed"), and `failed`; the result is an
+  error only when `failed` is non-empty ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- Managed unlock windows: `schedule_unlock_window` (write) turns "unlock these doors from *start*
+  to *end*" into a Holiday + no-weekday Time Spec + Portal Group that the controller enforces
+  itself — the same objects an operator builds by hand — split into up to three segments
+  (`first`/`middle`/`last`, one reserved holiday group each) by a pure planner. It validates the
+  window (real date-times, `end` after `start` and in the future, at most 31 days, known portal
+  keys, the 30-holiday cap), reports the time specs the window's holidays would suppress and the
+  non-managed holidays it overlaps, refuses without `acknowledgeSideEffects=true` when anything
+  would be suppressed, supports `dryRun`, applies in a fixed eight-step order, reads everything
+  back against the plan (`verified: true`), and is idempotent. `cancel_unlock_window` (write)
+  points the managed portal group at `Never`, deletes the managed holidays, and best-effort
+  empties the managed time spec group and deletes the managed time specs (refusals are reported
+  under `leftBehind`). `get_unlock_window` (read, always registered) reports the managed objects,
+  the derived window, and `activeNow`. All three identify managed objects by exact name under
+  `NETBOX_UNLOCK_NAME_PREFIX` and never modify or delete anything else; time spec group
+  membership is read from paginated `GetTimeSpecGroups` because `GetTimeSpecGroup` fails on the
+  verified 6.2.0 controller ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- `scripts/live-check-write.ts` / `npm run test:live:write`: an opt-in live write smoke test that
+  skips cleanly unless the credentials, `NETBOX_ENABLE_WRITES=true`, and
+  `NETBOX_LIVE_TEST_PORTALKEY` are set; round-trips add/get/modify/get/delete for a time spec, time
+  spec group, holiday, reader group, and portal group under the `MCP livecheck` prefix; and, only
+  with `--go` (after the user has been notified of the exact times), schedules, observes, and
+  cancels a real 2-minute unlock of the designated portal, always cancelling before exiting on a
+  failure ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
 
 ### Changed
 - `scripts/live-check.ts` now exercises all 34 read tools (16 pre-existing + the 18 added above);
@@ -52,6 +79,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   describing the two gates and the destructive tier; the tools table is split into read tools and
   write tools; the AD-sync caution moves next to the person/credential tools
   ([#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8)).
+- The `find_portals` NEXTKEY paging loop moved to `src/paging.ts` and is shared by every
+  composite tool (`GetPortals`, `GetTimeSpecs`, `GetTimeSpecGroups`, `GetPortalGroups`,
+  `GetHolidays`); it can optionally treat the 6.2.0 controller's bare `FAIL`/`NOT FOUND` on an
+  unconfigured collection as an empty list ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- `NetboxClient` now merges any RESPONSE-level fields (the doc's `AddTimeSpecGroup` example puts
+  `TIMESPECGROUPKEY` directly under `RESPONSE`) into the returned data, with `DETAILS` taking
+  precedence ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- README gains a "Scheduled unlock windows" section, lists all five composite tools in place of
+  "the one composite tool", adds the composites to the read/write tool tables, and documents
+  `npm run test:live:write`; `.env.example` and `STATUS.md` reflect the completed feature
+  ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
 
 ## [0.2.0] — 2026-09-14
 ### Added

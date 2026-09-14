@@ -11,6 +11,7 @@ import { registerReaderGroupTools } from '../src/tools/readerGroup.js';
 import { registerThreatLevelTools } from '../src/tools/threatLevel.js';
 import { registerPartitionTools } from '../src/tools/partition.js';
 import { registerMiscTools } from '../src/tools/misc.js';
+import { registerUnlockWindowTools } from '../src/tools/unlockWindow.js';
 import { runNbapiTool, type ToolGateFlags } from '../src/toolHelpers.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
 import { FakeServer, fakeClient } from './testUtils.js';
@@ -41,6 +42,7 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
   registerThreatLevelTools(server as unknown as McpServer, client, gate);
   registerPartitionTools(server as unknown as McpServer, client, gate);
   registerMiscTools(server as unknown as McpServer, client);
+  registerUnlockWindowTools(server as unknown as McpServer, client, gate, { holidayGroups: [8, 7, 6], namePrefix: 'MCP Unlock Window' });
 }
 
 const READ_TOOLS = [
@@ -78,6 +80,8 @@ const READ_TOOLS = [
   'get_elevators',
   'get_floors',
   'ping_app',
+  // R1: the read-only composite unlock-window status tool is always registered.
+  'get_unlock_window',
 ];
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = [
@@ -115,7 +119,17 @@ const NON_DESTRUCTIVE_WRITE_TOOLS = [
   'add_partition',
   'switch_partition',
   'modify_udf_list_items',
+  // R1/R10/R22/R26: the composite write tools, registered with NETBOX_ENABLE_WRITES only.
+  'set_portals_state',
+  'schedule_unlock_window',
+  'cancel_unlock_window',
 ];
+
+// The composite write tools need a stateful controller to succeed, so their
+// SUCCESS text is asserted in test/portalState.test.ts,
+// test/unlockWindowSchedule.test.ts and test/unlockWindowCancelGet.test.ts
+// against FakeNetbox; here they are only checked for the WRITE: prefix.
+const COMPOSITE_WRITE_TOOLS = ['set_portals_state', 'schedule_unlock_window', 'cancel_unlock_window'];
 
 // The 11 destructive tools (R2), named exactly as the spec lists them.
 const DESTRUCTIVE_TOOLS = [
@@ -133,11 +147,20 @@ const DESTRUCTIVE_TOOLS = [
 ];
 
 describe('R1/C1: registration matrix', () => {
-  it('registers exactly the 34 read tools (16 v0.2.0 + 18 R8) when NETBOX_ENABLE_WRITES is off', () => {
+  it('registers exactly the 35 read tools (16 v0.2.0 + 18 R8 + get_unlock_window) when NETBOX_ENABLE_WRITES is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
-    expect(server.registrations).toHaveLength(34);
+    expect(server.registrations).toHaveLength(35);
+  });
+
+  it('with writes off, no tool that can issue a write command is registered', () => {
+    const server = new FakeServer();
+    registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
+    const names = server.registrations.map((r) => r.name);
+    for (const name of [...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS]) {
+      expect(names).not.toContain(name);
+    }
   });
 
   it('destructiveEnabled alone (writesEnabled false) registers no write tool at all', () => {
@@ -146,23 +169,23 @@ describe('R1/C1: registration matrix', () => {
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
   });
 
-  it('registers the 34 read tools + 34 non-destructive write tools when writes are on and destructive is off', () => {
+  it('registers the 35 read tools + 37 non-destructive write tools (34 pass-through + 3 composite) when writes are on and destructive is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: false });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS].sort());
-    expect(names).toHaveLength(68);
+    expect(names).toHaveLength(72);
     for (const destructive of DESTRUCTIVE_TOOLS) {
       expect(names).not.toContain(destructive);
     }
   });
 
-  it('registers all 79 tools (34 read + 34 write + 11 destructive) when both flags are on', () => {
+  it('registers all 83 tools (35 read + 37 write + 11 destructive) when both flags are on', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
-    expect(names).toHaveLength(79);
+    expect(names).toHaveLength(83);
   });
 });
 
@@ -218,15 +241,20 @@ describe('R3/C3: every write tool description is prefixed and every write succes
     modify_udf_list_items: { UDFLISTKEY: '1', LISTITEMS: [{ ITEMNAME: 'X', DELETE: '0' }] },
   };
 
-  it('covers every write and destructive tool name with a sample-args entry', () => {
-    expect(Object.keys(SAMPLE_ARGS).sort()).toEqual([...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
+  it('covers every pass-through write and destructive tool name with a sample-args entry', () => {
+    const passThrough = NON_DESTRUCTIVE_WRITE_TOOLS.filter((name) => !COMPOSITE_WRITE_TOOLS.includes(name));
+    expect(Object.keys(SAMPLE_ARGS).sort()).toEqual([...passThrough, ...DESTRUCTIVE_TOOLS].sort());
   });
 
   const server = new FakeServer();
   registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
 
   for (const reg of server.registrations) {
-    if (DESTRUCTIVE_TOOLS.includes(reg.name)) {
+    if (COMPOSITE_WRITE_TOOLS.includes(reg.name)) {
+      it(`${reg.name}: composite write tool description starts with "WRITE:" (its SUCCESS text is asserted against FakeNetbox in its own test file)`, () => {
+        expect(reg.description.startsWith('WRITE:')).toBe(true);
+      });
+    } else if (DESTRUCTIVE_TOOLS.includes(reg.name)) {
       it(`${reg.name}: description starts with "DESTRUCTIVE:" and success text contains SUCCESS`, async () => {
         expect(reg.description.startsWith('DESTRUCTIVE:')).toBe(true);
         const result = await reg.handler(SAMPLE_ARGS[reg.name]);
