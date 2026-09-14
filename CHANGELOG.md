@@ -9,7 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   also searches each portal's reader names and reader descriptions (joined in from `GetReaders` by
   `READERKEY`). Every whitespace-separated term must match, case-insensitively. It reads all pages
   of `GetPortals`/`GetReaders`, adds no NBAPI commands, and lists portals whose readers have no
-  description ([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6)).
+  description ([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6),
+  [#7](https://github.com/J-MaFf/s2-netbox-mcp/pull/7)).
 
 ## [0.2.0] — 2026-09-14
 ### Added
