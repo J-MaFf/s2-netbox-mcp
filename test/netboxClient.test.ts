@@ -73,12 +73,34 @@ describe('NetboxClient.login session id extraction (Command reference: Login)', 
 
   it('does not mistake a stray SESSIONID body field for the session id (no such field is documented)', async () => {
     const mock = createMockFetch();
-    // A response with a bogus SESSIONID body field but no sessionid attribute
-    // must NOT be treated as a successful login.
-    mock.queueXml('<NETBOX-API><RESPONSE command="Login"><CODE>SUCCESS</CODE><SESSIONID>BODY-FIELD</SESSIONID></RESPONSE></NETBOX-API>');
+    // A response with a bogus SESSIONID field inside DETAILS but no sessionid
+    // attribute on <NETBOX> must NOT be treated as a successful login.
+    mock.queueXml(
+      '<NETBOX><RESPONSE command="Login"><CODE>SUCCESS</CODE><DETAILS><SESSIONID>BODY-FIELD</SESSIONID></DETAILS></RESPONSE></NETBOX>'
+    );
 
     const client = new NetboxClient(CONFIG, mock.fetchImpl);
     await expect(client.call('GetAPIVersion', {})).rejects.toThrow(/no session id/i);
+  });
+});
+
+describe('NetboxClient DETAILS unwrapping (R11-R17 / C11)', () => {
+  it('flattens the real documented envelope — fields nested in <RESPONSE><DETAILS> — into the returned data', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(
+      '<NETBOX sessionid="SESS-1"><RESPONSE command="GetPerson" num="1"><CODE>SUCCESS</CODE>' +
+        '<DETAILS><PERSONID>21001</PERSONID><FIRSTNAME>Isaac</FIRSTNAME><LASTNAME>Newton</LASTNAME></DETAILS>' +
+        '</RESPONSE></NETBOX>'
+    );
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    const result = await client.call('GetPerson', { PERSONID: '21001' });
+
+    expect(result.notFound).toBe(false);
+    // The result must be the flat field set from inside <DETAILS>, not
+    // { DETAILS: { ... } } and not the <RESPONSE> element's own attributes.
+    expect(result.data).toEqual({ PERSONID: '21001', FIRSTNAME: 'Isaac', LASTNAME: 'Newton' });
   });
 });
 

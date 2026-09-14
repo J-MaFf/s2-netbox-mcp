@@ -137,8 +137,7 @@ automatic and match the NBAPI documentation:
 - If a call fails with `APIERROR 5` (auth failure / expired session), the
   client transparently re-logs-in once and retries the original command.
 - An `<APIERROR>` response surfaces as a tool error like
-  `"5: Authentication failure — invalid username/password, or an
-  invalid/expired session ID."`
+  `"5: There was an authentication failure."`
 - A `<CODE>FAIL</CODE>` response surfaces as a tool error including the
   controller's `ERRMSG` text verbatim.
 - A `<CODE>NOT FOUND</CODE>` response (e.g. an unknown `PERSONID`) is

@@ -42,46 +42,60 @@ function textOf(value: unknown): string | undefined {
 /**
  * Resolves the outer envelope element of a parsed NBAPI response document.
  *
- * Per the Command reference (see spec Context/Login entry), NBAPI *responses*
- * are wrapped in `<NETBOX ...>`, distinct from the `<NETBOX-API ...>` element
- * used to wrap *requests* (per R2). Both are accepted here defensively (some
- * commands' documented examples are easy to misread as sharing the request's
- * wrapper name), but `<NETBOX>` is the documented, authoritative one.
+ * Per the Command reference (see spec Context/Login entry) and the doc's
+ * general "XML Responses" section, every NBAPI *response* is wrapped in
+ * `<NETBOX sessionid="...">` — documented as "the outermost element of the
+ * response." `<NETBOX-API>` is documented as the *request* wrapper only (per
+ * R2) and never appears in a response, so it is deliberately not accepted
+ * here as a fallback.
  */
 function responseRoot(parsed: unknown): Record<string, unknown> {
   const doc = asRecord(parsed);
-  if ('NETBOX' in doc) return asRecord(doc.NETBOX);
-  return asRecord(doc['NETBOX-API']);
+  return asRecord(doc.NETBOX);
 }
 
 /**
  * Interprets a parsed NBAPI response document per the documented error model:
- *  - An `<APIERROR>` element anywhere under the response envelope is a session/API-level failure.
- *  - Otherwise <RESPONSE><CODE> is one of SUCCESS, FAIL (with optional ERRMSG), or NOT FOUND.
+ *
+ *   <NETBOX sessionid="...">
+ *     <RESPONSE command="..." num="1">
+ *       <CODE>SUCCESS</CODE>
+ *       <DETAILS>...every returned field lives here...</DETAILS>
+ *     </RESPONSE>
+ *   </NETBOX>
+ *
+ *  - `<APIERROR>` is nested *inside* `<RESPONSE>` (not a direct child of
+ *    `<NETBOX>`) and signals an API-level failure that happens before command
+ *    processing — independent of, and mutually exclusive with, `<CODE>`.
+ *  - Otherwise `<RESPONSE><CODE>` is one of SUCCESS, FAIL, or NOT FOUND.
+ *  - On SUCCESS or FAIL, the data/errmsg-bearing fields live inside
+ *    `<DETAILS>`, not as direct children of `<RESPONSE>`. NOT FOUND typically
+ *    carries no `<DETAILS>` block at all.
  */
 export function interpretResponse(parsed: unknown): InterpretedResponse {
   const root = responseRoot(parsed);
+  const response = asRecord(root.RESPONSE);
 
-  if ('APIERROR' in root) {
-    const raw = textOf(root.APIERROR) ?? String(root.APIERROR);
+  if ('APIERROR' in response) {
+    const raw = textOf(response.APIERROR) ?? String(response.APIERROR);
     const code = Number.parseInt(raw, 10);
     return { kind: 'apierror', code: Number.isNaN(code) ? -1 : code };
   }
 
-  const response = asRecord(root.RESPONSE);
   const code = textOf(response.CODE)?.trim().toUpperCase();
 
   if (code === 'FAIL') {
-    return { kind: 'fail', errmsg: textOf(response.ERRMSG) };
+    const details = asRecord(response.DETAILS);
+    return { kind: 'fail', errmsg: textOf(details.ERRMSG) };
   }
   if (code === 'NOT FOUND') {
     return { kind: 'not_found' };
   }
 
   // SUCCESS, or an undocumented/absent CODE: treat as a successful
-  // pass-through of whatever fields the controller returned.
-  const { CODE: _code, '@_command': _cmd, ...data } = response;
-  return { kind: 'success', data };
+  // pass-through of whatever fields the controller returned inside DETAILS.
+  const details = asRecord(response.DETAILS);
+  return { kind: 'success', data: details };
 }
 
 /**

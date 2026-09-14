@@ -4,12 +4,12 @@
  * (LenelS2, doc #API-UG-14).
  */
 export const API_ERROR_DESCRIPTIONS: Readonly<Record<number, string>> = {
-  1: 'General request error — the submitted XML could not be parsed or was otherwise malformed.',
+  1: 'The API failed to initialize.',
   2: 'The API is not enabled on the system.',
-  3: 'Invalid or unrecognized command name.',
-  4: 'A required parameter was missing or invalid for the requested command.',
-  5: 'Authentication failure — invalid username/password, or an invalid/expired session ID.',
-  6: 'The authenticated user does not have sufficient privileges to run this command.',
+  3: 'The call contains an invalid API command.',
+  4: 'The API was unable to parse the command request.',
+  5: 'There was an authentication failure.',
+  6: 'The XML code contains an unknown command.',
 };
 
 /** Formats an APIERROR code as "<code>: <documented description>". */

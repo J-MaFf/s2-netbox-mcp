@@ -46,9 +46,9 @@ describe('buildRequestXml (R2)', () => {
 });
 
 describe('parseResponseXml + interpretResponse', () => {
-  it('interprets a SUCCESS response, stripping CODE and the @_command attribute', () => {
+  it('interprets a SUCCESS response, unwrapping <DETAILS> as the data (not the <RESPONSE> element itself)', () => {
     const parsed = parseResponseXml(
-      '<NETBOX-API><RESPONSE command="GetPortals"><CODE>SUCCESS</CODE><PORTAL><NAME>Front Door</NAME></PORTAL></RESPONSE></NETBOX-API>'
+      '<NETBOX><RESPONSE command="GetPortals"><CODE>SUCCESS</CODE><DETAILS><PORTAL><NAME>Front Door</NAME></PORTAL></DETAILS></RESPONSE></NETBOX>'
     );
     const result = interpretResponse(parsed);
     expect(result.kind).toBe('success');
@@ -57,22 +57,22 @@ describe('parseResponseXml + interpretResponse', () => {
     }
   });
 
-  it('interprets an APIERROR response', () => {
-    const parsed = parseResponseXml('<NETBOX-API><APIERROR>5</APIERROR></NETBOX-API>');
+  it('interprets an APIERROR response nested inside <RESPONSE> (inside <NETBOX>), with no CODE/DETAILS', () => {
+    const parsed = parseResponseXml('<NETBOX><RESPONSE><APIERROR>5</APIERROR></RESPONSE></NETBOX>');
     const result = interpretResponse(parsed);
     expect(result).toEqual({ kind: 'apierror', code: 5 });
   });
 
-  it('interprets a FAIL response with ERRMSG', () => {
+  it('interprets a FAIL response with ERRMSG nested inside <DETAILS>', () => {
     const parsed = parseResponseXml(
-      '<NETBOX-API><RESPONSE command="GetPerson"><CODE>FAIL</CODE><ERRMSG>Bad PERSONID</ERRMSG></RESPONSE></NETBOX-API>'
+      '<NETBOX><RESPONSE command="GetPerson"><CODE>FAIL</CODE><DETAILS><ERRMSG>Bad PERSONID</ERRMSG></DETAILS></RESPONSE></NETBOX>'
     );
     const result = interpretResponse(parsed);
     expect(result).toEqual({ kind: 'fail', errmsg: 'Bad PERSONID' });
   });
 
-  it('interprets a NOT FOUND response', () => {
-    const parsed = parseResponseXml('<NETBOX-API><RESPONSE command="GetPerson"><CODE>NOT FOUND</CODE></RESPONSE></NETBOX-API>');
+  it('interprets a NOT FOUND response (no DETAILS block)', () => {
+    const parsed = parseResponseXml('<NETBOX><RESPONSE command="GetPerson"><CODE>NOT FOUND</CODE></RESPONSE></NETBOX>');
     const result = interpretResponse(parsed);
     expect(result).toEqual({ kind: 'not_found' });
   });
