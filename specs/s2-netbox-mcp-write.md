@@ -94,7 +94,17 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   Read-back weekday values are the strings `TRUE`/`FALSE` although the doc's input format is `1`/`0`.
 - Time spec groups: `1` Always → spec 1; `2` Never → spec 2; `28` GRAND OPENING → spec 3.
 - Portal groups: `26` LAB ALL ACCESS (portal 51, `UNLOCKTIMESPECGROUPKEY` `1`); `29` GRAND OPENING
-  UNLOCKED (portal 43 `01OF01A`, `UNLOCKTIMESPECGROUPKEY` `28`, `THREATLEVELGROUPKEY` empty).
+  UNLOCKED (portal 43 `01OF01A`, `UNLOCKTIMESPECGROUPKEY` `28`, `THREATLEVELGROUPKEY` empty) —
+  renamed by the user to `Entrances` later the same day; match managed objects by name only
+  for the managed prefix, never by these example names.
+- **Controller quirk (verified twice, 2026-09-14):** `GetTimeSpecGroup` with a valid
+  `TIMESPECGROUPKEY` (`1`, `28`) returns `CODE=FAIL`, `ERRMSG="NOT FOUND"` on this 6.2.0
+  controller, while `GetTimeSpecGroups` lists those groups with their `TIMESPECKEYS`, and the
+  sibling singular commands `GetTimeSpec`, `GetPortalGroup`, `GetReaderGroup` work by key.
+  Consequence: anything that must read a time spec group's membership (R25 step 7, R26) does so
+  from paginated `GetTimeSpecGroups` filtered by key, never from `GetTimeSpecGroup`; the
+  `get_time_spec_group` tool still exists and surfaces the FAIL per R8, and the read live check
+  treats that FAIL as an accepted quirk (R29).
 - Holidays: `GetHolidays` → `HOLIDAYS` is the **comma-separated string** `"1"` (not a list of
   elements); `GetHoliday` `1` → `NAME` GRAND OPENING, `HOLIDAYGROUPS` `1`,
   `STARTDATE` `2026-09-11 00:00:00`, `ENDDATE` `2026-09-21 00:00:00`.
@@ -414,9 +424,11 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
      `AddPortalGroup(NAME=prefix, DESCRIPTION as above, UNLOCKTIMESPECGROUPKEY=managed TSG,
      PORTALKEYS=targets)`; else `ModifyPortalGroup(PORTALGROUPKEY, PORTALKEYS=targets,
      UNLOCKTIMESPECGROUPKEY=managed TSG)`.
-  7. Read back (`GetPortalGroup`, `GetTimeSpecGroup`, `GetTimeSpec` and `GetHoliday` per segment)
-     and compare to the plan, normalising `TRUE`/`FALSE` ↔ `1`/`0` and `HH:MM:SS` ↔ `HH:MM`; any
-     mismatch → `isError` describing the field.
+  7. Read back (`GetPortalGroup`; the managed group's entry in paginated `GetTimeSpecGroups`
+     filtered by `TIMESPECGROUPKEY` — not `GetTimeSpecGroup`, which fails on this controller;
+     `GetTimeSpec` and `GetHoliday` per segment) and compare to the plan, normalising
+     `TRUE`/`FALSE` ↔ `1`/`0` and `HH:MM:SS` ↔ `HH:MM`; any mismatch → `isError` describing the
+     field.
   8. Return JSON `{ window:{start,end}, segments:[{kind, holidayKey, timeSpecKey, holidayGroup,
      STARTDATE, ENDDATE, STARTTIME, ENDTIME}], timeSpecGroupKey, portalGroupKey, portals:[{PORTALKEY,
      NAME}], replacedPreviousWindow:boolean, sideEffects:{suppressedTimeSpecs, overlappingHolidays},
@@ -434,7 +446,8 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   nothing can unlock) and lists what was left behind under `leftBehind`. If no managed portal group
   exists it returns a normal result saying there was nothing to cancel. `get_unlock_window` (read,
   always registered) returns the managed portal group (key, portals, unlock TSG key and whether it
-  is the managed TSG), the managed time specs and holidays, the derived window (earliest holiday
+  is the managed TSG), the managed time spec group's members (from paginated `GetTimeSpecGroups`,
+  see the controller quirk in Context), the managed time specs and holidays, the derived window (earliest holiday
   `STARTDATE` + `first` spec `STARTTIME` … latest holiday `ENDDATE`-1 day + `last`/`first` spec
   `ENDTIME`), and `activeNow` computed against the host clock. [verify: fake-client tests for
   cancel order, the tolerated-refusal path, the nothing-to-cancel path, and `get_unlock_window`
@@ -452,8 +465,9 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
 - R29. `scripts/live-check.ts` additionally exercises every R8 read tool (chaining a real
   `TIMESPECKEY`, `TIMESPECGROUPKEY`, `HOLIDAYKEY` (parsed from the comma string), `PORTALGROUPKEY`,
   `READERGROUPKEY`, `UDFLISTKEY` from the list responses; treating `NOT FOUND` and a bare
-  `ERRMSG="NOT FOUND"`/`"No configured UDF LISTS"` on an empty collection as PASS) and still issues
-  **no** write command. [verify: run with the real `.env`, expect PASS for all 34 read tools (16
+  `ERRMSG="NOT FOUND"`/`"No configured UDF LISTS"` on an empty collection as PASS, and treating
+  `GetTimeSpecGroup`'s `ERRMSG="NOT FOUND"` for a key that `GetTimeSpecGroups` just listed as the
+  accepted controller quirk documented in Context) and still issues **no** write command. [verify: run with the real `.env`, expect PASS for all 34 read tools (16
   existing + 18 new) and
   exit 0; grep the script for write command constants]
 - R30. `npm run test:live:write` runs `scripts/live-check-write.ts`, which: (a) prints one
