@@ -51,14 +51,11 @@ describe('runNbapiTool', () => {
 });
 
 describe('mergeParams', () => {
-  it('drops undefined named fields and merges in extraParams', () => {
-    expect(mergeParams({ FIRSTNAME: 'Jane', LASTNAME: undefined }, { NICKNAME: 'JJ' })).toEqual({
-      FIRSTNAME: 'Jane',
-      NICKNAME: 'JJ',
-    });
+  it('passes named fields through as a flat PARAMS map, ignoring undefined values', () => {
+    expect(mergeParams({ FIRSTNAME: 'Jane', LASTNAME: undefined })).toEqual({ FIRSTNAME: 'Jane' });
   });
 
-  it('works with no extraParams', () => {
+  it('works with a single field', () => {
     expect(mergeParams({ STARTFROMKEY: '5' })).toEqual({ STARTFROMKEY: '5' });
   });
 });

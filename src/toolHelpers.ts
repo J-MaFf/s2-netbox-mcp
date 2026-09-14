@@ -45,8 +45,8 @@ export async function runNbapiTool(
   }
 }
 
-/** Merges named optional fields with a free-form extraParams passthrough bag
- * into a single flat PARAMS map, dropping any undefined values. */
-export function mergeParams(named: NbapiParams, extraParams?: Record<string, string>): NbapiParams {
-  return { ...named, ...(extraParams ?? {}) };
+/** Passes a tool's named optional fields through as a flat PARAMS map
+ * (undefined-valued fields are dropped when the request is built). */
+export function mergeParams(named: NbapiParams): NbapiParams {
+  return { ...named };
 }

@@ -158,12 +158,11 @@ exists; only `GetPortals` (plural) does. `get_card_access_details` and
 command has a `PERSONID` parameter.
 
 Every tool returns a thin JSON pass-through of that NBAPI command's response
-fields — no reshaping. A few tools that take broader/uncertain optional
-filters (`search_person_data`, `get_event_history`, `get_access_history`)
-also accept an `extraParams` object of `{ "FIELDNAME": "value" }` pairs for
-any other documented NBAPI PARAMS field not modeled as a named parameter.
-All parameter names above are copied verbatim from the NBAPI Command
-Reference (see `specs/s2-netbox-mcp.md`) — none are invented or guessed.
+fields — no reshaping. Each tool's input schema declares exactly the
+documented PARAMS fields for its command — no invented, renamed, or
+passthrough fields. All parameter names above are copied verbatim from the
+NBAPI Command Reference (see `specs/s2-netbox-mcp.md`) — none are invented or
+guessed.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:

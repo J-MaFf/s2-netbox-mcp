@@ -88,7 +88,6 @@ describe('registerPersonTools', () => {
       'WILDCARDSEARCH',
       'ACCESSLEVELDETAILS',
       'RAWCARDNUMBER',
-      'extraParams',
     ];
     for (const field of expectedNonUdf) {
       expect(keys).toContain(field);
@@ -96,11 +95,11 @@ describe('registerPersonTools', () => {
     for (let i = 1; i <= 20; i++) {
       expect(keys).toContain(`UDF${i}`);
     }
-    // No invented fields beyond the documented set + the extraParams passthrough.
+    // No invented fields beyond the documented set — no extraParams passthrough.
     expect(keys.sort()).toEqual([...expectedNonUdf, ...Array.from({ length: 20 }, (_, i) => `UDF${i + 1}`)].sort());
   });
 
-  it('search_person_data merges named fields and extraParams', async () => {
+  it('search_person_data merges named fields, dropping undefined ones', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerPersonTools(server as unknown as McpServer, client);
@@ -108,11 +107,8 @@ describe('registerPersonTools', () => {
       FIRSTNAME: 'Jane',
       LASTNAME: undefined,
       PERSONID: undefined,
-      extraParams: { DEPARTMENT: 'IT' },
     });
-    expect(calls).toEqual([
-      { command: NBAPI_COMMANDS.SEARCH_PERSON_DATA, params: { FIRSTNAME: 'Jane', DEPARTMENT: 'IT' } },
-    ]);
+    expect(calls).toEqual([{ command: NBAPI_COMMANDS.SEARCH_PERSON_DATA, params: { FIRSTNAME: 'Jane' } }]);
   });
 
   it('get_card_access_details schema requires ENCODEDNUM + CARDFORMAT, not PERSONID', () => {
@@ -242,17 +238,17 @@ describe('registerEventsTools', () => {
     const { client, calls } = fakeClient();
     registerEventsTools(server as unknown as McpServer, client);
     const reg = byName(server, 'get_event_history');
-    expect(Object.keys(reg.schema).sort()).toEqual(['EVENTNAME', 'STARTDTTM', 'ENDDTTM', 'NEXTKEY', 'extraParams'].sort());
+    expect(Object.keys(reg.schema).sort()).toEqual(['EVENTNAME', 'STARTDTTM', 'ENDDTTM', 'NEXTKEY'].sort());
     expect(Object.keys(reg.schema)).not.toContain('STARTTIME');
     expect(Object.keys(reg.schema)).not.toContain('ENDTIME');
     expect(Object.keys(reg.schema)).not.toContain('PERSONID');
+    expect(Object.keys(reg.schema)).not.toContain('extraParams');
 
     await reg.handler({
       EVENTNAME: undefined,
       STARTDTTM: '2026-09-01T00:00:00',
       ENDDTTM: '2026-09-14T00:00:00',
       NEXTKEY: undefined,
-      extraParams: undefined,
     });
     expect(calls).toEqual([
       {
@@ -288,14 +284,14 @@ describe('registerEventsTools', () => {
         'CARDFORMAT',
         'OLDESTDTTM',
         'NEWESTDTTM',
-        'extraParams',
       ].sort()
     );
     expect(Object.keys(reg.schema)).not.toContain('STARTTIME');
     expect(Object.keys(reg.schema)).not.toContain('ENDTIME');
     expect(Object.keys(reg.schema)).not.toContain('PERSONID');
+    expect(Object.keys(reg.schema)).not.toContain('extraParams');
 
-    await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', extraParams: undefined });
+    await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' });
     expect(calls).toEqual([
       { command: NBAPI_COMMANDS.GET_ACCESS_HISTORY, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
     ]);
