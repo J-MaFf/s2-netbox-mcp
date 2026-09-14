@@ -10,10 +10,10 @@ transport, session-login auth only. See `specs/archive/s2-netbox-mcp.md` for the
 
 ## Current State — 2026-09-14
 
-`find_portals` door search ([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6)) is on
-`feat/find-portals-search`, awaiting review/merge. `npm run test:live` reports 16/16 PASS against
-the real NetBox 6.2.0 controller (`find_portals` included). 101 unit tests, clean
-typecheck, and the read-only allowlist is still the same 17 commands.
+All known issues resolved; `main` is clean. The `find_portals` door search
+([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6)) has merged. `npm run test:live` reports
+16/16 PASS against the real NetBox 6.2.0 controller (`find_portals` included). 101 unit tests,
+clean typecheck, and the read-only allowlist is still the same 17 commands.
 
 ### Components
 
@@ -35,18 +35,16 @@ typecheck, and the read-only allowlist is still the same 17 commands.
 |---|---|---|
 | [#2](https://github.com/J-MaFf/s2-netbox-mcp/issues/2) | Build read-only S2 NetBox MCP server | [#3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3) |
 | [#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4) | NetBox 6.x endpoint (`/nbws/goforms/nbapi`), 410/APIERROR-5 diagnostics, README prerequisites, `extraParams` field-name cleanup, live-check empty-collection accommodation | [#5](https://github.com/J-MaFf/s2-netbox-mcp/pull/5) |
+| [#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6) | `find_portals`: search doors by name or reader description | [#7](https://github.com/J-MaFf/s2-netbox-mcp/pull/7) |
 
 ### Open Issues
 
-| Issue | Description | Status |
-|---|---|---|
-| [#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6) | `find_portals`: search doors by name or reader description | PR open from `feat/find-portals-search`, awaiting merge approval |
+None.
 
 ## Natural Next Steps
 
-1. Review and merge the `find_portals` PR (human-gated, never auto-merged, per this user's git-policies).
-2. After merging, `git cleanup` to remove the merged feature branch.
-3. Readers with no `DESCRIPTION` on the controller (3 as of 2026-09-14) can only be found by
+1. Rebuild (`npm run build`) and restart the MCP server wherever it runs, so it picks up `find_portals`.
+2. Readers with no `DESCRIPTION` on the controller (3 as of 2026-09-14) can only be found by
    name. Filling those in on NetBox makes `find_portals` complete.
 
 ## Prerequisites to Run
