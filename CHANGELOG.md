@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Added
+- `find_portals` tool, which finds doors by location or name. Portal names are site codes, so it
+  also searches each portal's reader names and reader descriptions (joined in from `GetReaders` by
+  `READERKEY`). Every whitespace-separated term must match, case-insensitively. It reads all pages
+  of `GetPortals`/`GetReaders`, adds no NBAPI commands, and lists portals whose readers have no
+  description ([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6)).
 
 ## [0.2.0] — 2026-09-14
 ### Added

@@ -10,16 +10,17 @@ transport, session-login auth only. See `specs/archive/s2-netbox-mcp.md` for the
 
 ## Current State — 2026-09-14
 
-All known issues resolved; `main` is clean pending review/merge of PR #5. All 18 acceptance
-criteria + the catch-all pass, including live verification: `npm run test:live` reports 15/15
-PASS against the real NetBox 6.2.0 controller (`check_connection` shows `6.2.0`). 89 unit tests,
-clean typecheck/build, read-only 17-command allowlist enforced.
+`find_portals` door search ([#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6)) is on
+`feat/find-portals-search`, awaiting review/merge. `npm run test:live` reports 16/16 PASS against
+the real NetBox 6.2.0 controller (`find_portals` included). 101 unit tests, clean
+typecheck, and the read-only allowlist is still the same 17 commands.
 
 ### Components
 
 | File | Description |
 |---|---|
-| `src/index.ts` | MCP server entrypoint; registers all 15 tools, handles startup/shutdown |
+| `src/index.ts` | MCP server entrypoint; registers all 16 tools, handles startup/shutdown |
+| `src/portalSearch.ts` | `find_portals` logic: pages GetPortals + GetReaders, joins reader descriptions by READERKEY, term search |
 | `src/netboxClient.ts` | NBAPI XML client: session login/logout, retry-once-on-expiry, error mapping |
 | `src/config.ts` | Environment-variable configuration (`NETBOX_BASE_URL`/`USERNAME`/`PASSWORD`/`API_PATH`/`ALLOW_INSECURE_TLS`) |
 | `src/commands.ts` | The closed 17-command NBAPI allowlist |
@@ -37,12 +38,16 @@ clean typecheck/build, read-only 17-command allowlist enforced.
 
 ### Open Issues
 
-None. PR #5 is awaiting the user's merge approval.
+| Issue | Description | Status |
+|---|---|---|
+| [#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6) | `find_portals`: search doors by name or reader description | PR open from `feat/find-portals-search`, awaiting merge approval |
 
 ## Natural Next Steps
 
-1. Merge PR #5 (human-gated — not auto-merged per this user's git-policies).
+1. Review and merge the `find_portals` PR (human-gated, never auto-merged, per this user's git-policies).
 2. After merging, `git cleanup` to remove the merged feature branch.
+3. Readers with no `DESCRIPTION` on the controller (3 as of 2026-09-14) can only be found by
+   name. Filling those in on NetBox makes `find_portals` complete.
 
 ## Prerequisites to Run
 

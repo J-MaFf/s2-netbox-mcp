@@ -37,12 +37,18 @@ export async function runNbapiTool(
     }
     return { content: [{ type: 'text', text: formatSuccess(result.data) }] };
   } catch (err) {
-    if (err instanceof NbapiApiError || err instanceof NbapiFailError) {
-      return { content: [{ type: 'text', text: err.message }], isError: true };
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    return { content: [{ type: 'text', text: `Unexpected error calling NetBox NBAPI: ${message}` }], isError: true };
+    return toolErrorResult(err);
   }
+}
+
+/** Maps an error thrown while issuing NBAPI commands onto the MCP tool-error
+ * shape: APIERROR/FAIL messages verbatim, anything else prefixed as unexpected. */
+export function toolErrorResult(err: unknown): ToolTextResult {
+  if (err instanceof NbapiApiError || err instanceof NbapiFailError) {
+    return { content: [{ type: 'text', text: err.message }], isError: true };
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return { content: [{ type: 'text', text: `Unexpected error calling NetBox NBAPI: ${message}` }], isError: true };
 }
 
 /** Passes a tool's named optional fields through as a flat PARAMS map

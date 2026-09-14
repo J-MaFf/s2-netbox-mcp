@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { loadConfigFromEnv, NetboxConfigError } from '../src/config.js';
 import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS, type NbapiCommandName } from '../src/commands.js';
+import { findPortals } from '../src/portalSearch.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -105,6 +106,24 @@ async function runCheck(
   }
 }
 
+/** find_portals is composite (every page of GetPortals + GetReaders), so it is
+ * checked by searching for a real portal by its own name: that portal must
+ * come back among the matches. */
+async function runFindPortalsCheck(client: NetboxClient, portalName: string | undefined): Promise<CheckResult> {
+  const name = 'find_portals';
+  if (!portalName) {
+    return { name, pass: true, summary: 'SKIPPED (no portal NAME found in get_portals results to search for)' };
+  }
+  try {
+    const result = await findPortals(client, portalName);
+    const pass = result.matches.some((portal) => portal.NAME === portalName);
+    const outcome = `"${portalName}" matched ${result.matchCount} of ${result.portalsSearched} portals`;
+    return { name, pass, summary: pass ? `OK ${outcome}` : `portal not found by its own name: ${outcome}` };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -169,6 +188,8 @@ async function main(): Promise<number> {
   results.push(readers);
   const readerKey = findFirstMatchingId(readers.data, /READERKEY/i) ?? '1';
   results.push(await runCheck(client, 'get_reader', NBAPI_COMMANDS.GET_READER, { READERKEY: readerKey }));
+
+  results.push(await runFindPortalsCheck(client, findFirstMatchingId(portals.data, /^NAME$/i)));
 
   results.push(await runCheck(client, 'get_card_formats', NBAPI_COMMANDS.GET_CARD_FORMATS, {}));
 
