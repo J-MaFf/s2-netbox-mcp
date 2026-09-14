@@ -9,3 +9,8 @@ dist/
 .beads/hooks/
 .beads/*.lock
 .beads-credential-key
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads/proxieddb/
