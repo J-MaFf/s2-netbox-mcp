@@ -76,6 +76,13 @@ describe('registerThreatLevelTools (R18, write-only — no read command exists)'
     ]);
   });
 
+  it('modify_threat_level exposes LEVELNAME/SEQNUM/COLOR, same shape as add_threat_level', () => {
+    const server = new FakeServer();
+    const { client } = fakeClient();
+    registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
+    expect(Object.keys(byName(server, 'modify_threat_level').schema).sort()).toEqual(['LEVELNAME', 'SEQNUM', 'COLOR'].sort());
+  });
+
   it('modify_threat_level_group requires LEVELNAMES (not optional)', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
@@ -85,11 +92,15 @@ describe('registerThreatLevelTools (R18, write-only — no read command exists)'
     );
   });
 
-  it('remove_threat_level / remove_threat_level_group are destructive', () => {
+  it('remove_threat_level / remove_threat_level_group are destructive, each keyed by exactly one field', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
-    expect(byName(server, 'remove_threat_level').description.startsWith('DESTRUCTIVE:')).toBe(true);
-    expect(byName(server, 'remove_threat_level_group').description.startsWith('DESTRUCTIVE:')).toBe(true);
+    const removeLevel = byName(server, 'remove_threat_level');
+    expect(removeLevel.description.startsWith('DESTRUCTIVE:')).toBe(true);
+    expect(Object.keys(removeLevel.schema)).toEqual(['LEVELNAME']);
+    const removeGroup = byName(server, 'remove_threat_level_group');
+    expect(removeGroup.description.startsWith('DESTRUCTIVE:')).toBe(true);
+    expect(Object.keys(removeGroup.schema)).toEqual(['LEVELGROUPNAME']);
   });
 });

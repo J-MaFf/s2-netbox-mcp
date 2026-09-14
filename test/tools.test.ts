@@ -136,6 +136,65 @@ describe('registerPersonTools', () => {
       }
     });
 
+    it('add_person schema is exactly the documented AddPerson field set', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPersonTools(server as unknown as McpServer, client, WRITES_ON);
+      const keys = Object.keys(byName(server, 'add_person').schema);
+      const nonUdf = [
+        'PERSONID',
+        'LASTNAME',
+        'FIRSTNAME',
+        'MIDDLENAME',
+        'NOTES',
+        'EXPDATE',
+        'ACTDATE',
+        'PIN',
+        'BADGELAYOUT',
+        'CONTACTPHONE',
+        'CONTACTEMAIL',
+        'CONTACTSMSEMAIL',
+        'CONTACTLOCATION',
+        'OTHERCONTACTNAME',
+        'OTHERCONTACTPHONE1',
+        'OTHERCONTACTPHONE2',
+        'ACCESSLEVELS',
+        'VEHICLES',
+      ];
+      expect(keys.sort()).toEqual([...nonUdf, ...Array.from({ length: 20 }, (_, i) => `UDF${i + 1}`)].sort());
+    });
+
+    it('modify_person schema is add_person’s optionals plus PERSONPURGE/DELETED/ALLPARTITIONS', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPersonTools(server as unknown as McpServer, client, WRITES_ON);
+      const keys = Object.keys(byName(server, 'modify_person').schema);
+      const nonUdf = [
+        'PERSONID',
+        'LASTNAME',
+        'FIRSTNAME',
+        'MIDDLENAME',
+        'NOTES',
+        'EXPDATE',
+        'ACTDATE',
+        'PIN',
+        'BADGELAYOUT',
+        'CONTACTPHONE',
+        'CONTACTEMAIL',
+        'CONTACTSMSEMAIL',
+        'CONTACTLOCATION',
+        'OTHERCONTACTNAME',
+        'OTHERCONTACTPHONE1',
+        'OTHERCONTACTPHONE2',
+        'ACCESSLEVELS',
+        'VEHICLES',
+        'PERSONPURGE',
+        'DELETED',
+        'ALLPARTITIONS',
+      ];
+      expect(keys.sort()).toEqual([...nonUdf, ...Array.from({ length: 20 }, (_, i) => `UDF${i + 1}`)].sort());
+    });
+
     it('add_person description starts with WRITE: and carries the AD-sync caution and the replaces warning', () => {
       const server = new FakeServer();
       const { client } = fakeClient();
@@ -270,11 +329,15 @@ describe('registerPersonTools', () => {
       ]);
     });
 
-    it('modify_credential rejects a call with both DISABLED and CARDSTATUS', async () => {
+    it('modify_credential exposes the documented optionals and rejects a call with both DISABLED and CARDSTATUS', async () => {
       const server = new FakeServer();
       const { client, calls } = fakeClient();
       registerPersonTools(server as unknown as McpServer, client, WRITES_ON);
-      const result = await byName(server, 'modify_credential').handler({
+      const reg = byName(server, 'modify_credential');
+      expect(Object.keys(reg.schema).sort()).toEqual(
+        ['PERSONID', 'CARDFORMAT', 'ENCODEDNUM', 'HOTSTAMP', 'CREDENTIALID', 'DISABLED', 'CARDSTATUS', 'CARDEXPDATE'].sort()
+      );
+      const result = await reg.handler({
         PERSONID: '1',
         DISABLED: '1',
         CARDSTATUS: 'Lost',
@@ -289,6 +352,7 @@ describe('registerPersonTools', () => {
       registerPersonTools(server as unknown as McpServer, client, WRITES_ON);
       const reg = byName(server, 'remove_credential');
       expect(reg.description.startsWith('DESTRUCTIVE:')).toBe(true);
+      expect(Object.keys(reg.schema).sort()).toEqual(['PERSONID', 'CARDFORMAT', 'ENCODEDNUM', 'HOTSTAMP', 'CREDENTIALID'].sort());
       const rejected = await reg.handler({ PERSONID: '1' });
       expect(rejected.isError).toBe(true);
       expect(calls).toEqual([]);
@@ -388,6 +452,24 @@ describe('registerAccessLevelTools', () => {
       );
     });
 
+    it('add_access_level_group requires NAME; DESCRIPTION/PARTITIONKEY/SYSTEMGROUP/ACCESSLEVELS optional', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_ON);
+      expect(Object.keys(byName(server, 'add_access_level_group').schema).sort()).toEqual(
+        ['NAME', 'DESCRIPTION', 'PARTITIONKEY', 'SYSTEMGROUP', 'ACCESSLEVELS'].sort()
+      );
+    });
+
+    it('modify_access_level_group requires ACCESSLEVELGROUPKEY; NAME/DESCRIPTION/ACCESSLEVELS optional', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_ON);
+      expect(Object.keys(byName(server, 'modify_access_level_group').schema).sort()).toEqual(
+        ['ACCESSLEVELGROUPKEY', 'NAME', 'DESCRIPTION', 'ACCESSLEVELS'].sort()
+      );
+    });
+
     it('add_access_level_group wraps ACCESSLEVELS as <ACCESSLEVELS><ACCESSLEVEL>...', async () => {
       const server = new FakeServer();
       const { client, calls } = fakeClient();
@@ -404,7 +486,7 @@ describe('registerAccessLevelTools', () => {
       ]);
     });
 
-    it('delete_access_level / delete_access_level_group are destructive-only', () => {
+    it('delete_access_level / delete_access_level_group are destructive-only, each keyed by exactly one field', () => {
       const partial = new FakeServer();
       const { client } = fakeClient();
       registerAccessLevelTools(partial as unknown as McpServer, client, { writesEnabled: true, destructiveEnabled: false });
@@ -413,8 +495,12 @@ describe('registerAccessLevelTools', () => {
 
       const full = new FakeServer();
       registerAccessLevelTools(full as unknown as McpServer, client, WRITES_ON);
-      expect(byName(full, 'delete_access_level').description.startsWith('DESTRUCTIVE:')).toBe(true);
-      expect(byName(full, 'delete_access_level_group').description.startsWith('DESTRUCTIVE:')).toBe(true);
+      const deleteLevel = byName(full, 'delete_access_level');
+      expect(deleteLevel.description.startsWith('DESTRUCTIVE:')).toBe(true);
+      expect(Object.keys(deleteLevel.schema)).toEqual(['ACCESSLEVELKEY']);
+      const deleteGroup = byName(full, 'delete_access_level_group');
+      expect(deleteGroup.description.startsWith('DESTRUCTIVE:')).toBe(true);
+      expect(Object.keys(deleteGroup.schema)).toEqual(['ACCESSLEVELGROUPKEY']);
     });
   });
 });
