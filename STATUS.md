@@ -25,7 +25,7 @@ this branch is not yet merged.
 unlock-window tools (`schedule_unlock_window`, `cancel_unlock_window`, `get_unlock_window`), and
 the live write smoke test (`scripts/live-check-write.ts` / `npm run test:live:write`).
 
-497 unit tests pass, `npm run typecheck` and `npm run build` are clean, and `npm run test:live`
+307 unit tests pass (18 files), `npm run typecheck` and `npm run build` are clean, and `npm run test:live`
 reports 34/34 PASS against the real NetBox 6.2.0 controller (16 pre-existing read tools + the 18
 added this stage), issuing no write command.
 
