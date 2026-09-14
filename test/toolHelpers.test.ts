@@ -59,6 +59,6 @@ describe('mergeParams', () => {
   });
 
   it('works with no extraParams', () => {
-    expect(mergeParams({ PORTALID: '5' })).toEqual({ PORTALID: '5' });
+    expect(mergeParams({ STARTFROMKEY: '5' })).toEqual({ STARTFROMKEY: '5' });
   });
 });

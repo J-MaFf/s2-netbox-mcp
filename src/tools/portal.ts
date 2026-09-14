@@ -5,42 +5,49 @@ import { NBAPI_COMMANDS } from '../commands.js';
 import { runNbapiTool, mergeParams } from '../toolHelpers.js';
 
 /**
- * Portal/reader tools: GetPortal, GetPortals, GetReader, GetReaders. Each is
- * a thin pass-through of that NBAPI command's documented PARAMS and response
+ * Portal/reader tools: GetPortals, GetReader, GetReaders. Each is a thin
+ * pass-through of that NBAPI command's documented PARAMS and response
  * fields.
+ *
+ * There is deliberately no `get_portal` (singular) tool: per the Command
+ * reference, no singular GetPortal command exists on the real NBAPI — only
+ * the plural GetPortals command (paginated via STARTFROMKEY/NEXTKEY, no
+ * single-portal filter). `get_portals`'s response already nests each
+ * portal's readers.
  */
 export function registerPortalTools(server: McpServer, client: NetboxClient): void {
   server.tool(
-    'get_portal',
-    'Returns the details of a single portal (door) for a given PORTALID (wraps NBAPI GetPortal).',
-    {
-      PORTALID: z.string().describe('Required. The unique ID of the portal/door to retrieve.'),
-    },
-    async ({ PORTALID }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL, { PORTALID })
-  );
-
-  server.tool(
     'get_portals',
-    'Lists all portals (doors) configured on the NetBox system (wraps NBAPI GetPortals). No parameters required.',
-    {},
-    async () => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTALS, {})
+    'Lists portals (doors) configured on the NetBox system, each with its nested readers ' +
+      '(wraps NBAPI GetPortals, paginated via STARTFROMKEY/NEXTKEY — there is no single-portal filter).',
+    {
+      STARTFROMKEY: z
+        .string()
+        .optional()
+        .describe('Optional. Pagination cursor — the NEXTKEY from a previous call, to continue listing.'),
+    },
+    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTALS, mergeParams({ STARTFROMKEY }))
   );
 
   server.tool(
     'get_reader',
-    'Returns the details of a single reader for a given READERID (wraps NBAPI GetReader).',
+    'Returns the details of a single reader for a given READERKEY (wraps NBAPI GetReader).',
     {
-      READERID: z.string().describe('Required. The unique ID of the reader to retrieve.'),
+      READERKEY: z.string().describe('Required. The unique READERKEY of the reader to retrieve.'),
     },
-    async ({ READERID }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READER, { READERID })
+    async ({ READERKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READER, { READERKEY })
   );
 
   server.tool(
     'get_readers',
-    'Lists readers configured on the NetBox system, optionally scoped to one portal (wraps NBAPI GetReaders).',
+    'Lists readers configured on the NetBox system (wraps NBAPI GetReaders). ' +
+      'There is no portal-id filter — use get_portals to see each reader nested under its portal.',
     {
-      PORTALID: z.string().optional().describe('Optional. Restrict results to readers belonging to this portal/door.'),
+      STARTFROMKEY: z
+        .string()
+        .optional()
+        .describe('Optional. Pagination cursor to continue listing from a previous call.'),
     },
-    async ({ PORTALID }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READERS, mergeParams({ PORTALID }))
+    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READERS, mergeParams({ STARTFROMKEY }))
   );
 }

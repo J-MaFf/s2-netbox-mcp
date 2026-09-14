@@ -11,8 +11,10 @@ events/history — as Claude-callable tools.
 This server issues **only** query/read NBAPI commands (`Login`, `Logout`,
 `GetAPIVersion`, `GetPerson`, `SearchPersonData`, `GetCardAccessDetails`,
 `GetCardFormats`, `GetAccessLevel(s)`, `GetAccessLevelGroup(s)`,
-`GetPortal(s)`, `GetReader(s)`, `GetEventHistory`, `ListEvents`,
-`GetAccessHistory`). It is structurally incapable of adding, modifying,
+`GetPortals`, `GetReader(s)`, `GetEventHistory`, `ListEvents`,
+`GetAccessHistory`) — note there is no `GetPortal` (singular) command; only
+`GetPortals` (plural, paginated, no single-portal filter) exists on the real
+NBAPI. It is structurally incapable of adding, modifying,
 deleting, locking/unlocking, activating/deactivating, or triggering anything
 on the controller — no such command is implemented or reachable through any
 tool.
@@ -100,26 +102,32 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 | `check_connection`           | `GetAPIVersion`          | —                             |
 | `get_person`                 | `GetPerson`              | `PERSONID`                    |
 | `search_person_data`         | `SearchPersonData`       | — (all filters optional)      |
-| `get_card_access_details`    | `GetCardAccessDetails`   | `PERSONID`                    |
+| `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT`    |
 | `get_card_formats`           | `GetCardFormats`         | —                             |
-| `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELID`                |
-| `get_access_levels`          | `GetAccessLevels`        | —                             |
-| `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPID`            |
-| `get_access_level_groups`    | `GetAccessLevelGroups`   | —                             |
-| `get_portal`                 | `GetPortal`              | `PORTALID`                    |
-| `get_portals`                | `GetPortals`             | —                             |
-| `get_reader`                 | `GetReader`              | `READERID`                    |
-| `get_readers`                | `GetReaders`             | — (optional `PORTALID` filter) |
-| `get_event_history`          | `GetEventHistory`        | — (optional date range/`PERSONID`) |
+| `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY`               |
+| `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
+| `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPKEY`          |
+| `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`)   |
+| `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`; no single-portal filter — returns each portal with its nested readers) |
+| `get_reader`                 | `GetReader`              | `READERKEY`                   |
+| `get_readers`                | `GetReaders`             | — (optional `STARTFROMKEY`; no portal-id filter) |
+| `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
-| `get_access_history`         | `GetAccessHistory`       | — (optional date range/`PERSONID`) |
+| `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`OLDESTDTTM`/`NEWESTDTTM`) |
+
+There is deliberately no `get_portal` (singular) tool — no such NBAPI command
+exists; only `GetPortals` (plural) does. `get_card_access_details` and
+`get_access_history` identify a card by `ENCODEDNUM`/`CARDFORMAT` (and
+`get_access_history` optionally by `HOTSTAMP`), not by `PERSONID` — neither
+command has a `PERSONID` parameter.
 
 Every tool returns a thin JSON pass-through of that NBAPI command's response
 fields — no reshaping. A few tools that take broader/uncertain optional
-filters (`search_person_data`, `get_event_history`, `get_access_history`,
-`list_events`) also accept an `extraParams` object of
-`{ "FIELDNAME": "value" }` pairs for any other documented NBAPI PARAMS field
-not modeled as a named parameter.
+filters (`search_person_data`, `get_event_history`, `get_access_history`)
+also accept an `extraParams` object of `{ "FIELDNAME": "value" }` pairs for
+any other documented NBAPI PARAMS field not modeled as a named parameter.
+All parameter names above are copied verbatim from the NBAPI Command
+Reference (see `specs/s2-netbox-mcp.md`) — none are invented or guessed.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:
@@ -154,7 +162,7 @@ no network access and no live controller are required or contacted.
 npm run test:live
 ```
 
-This calls all 16 tools against a **real, configured** controller and prints
+This calls all 15 tools against a **real, configured** controller and prints
 a PASS/FAIL line per tool plus a summary, exiting non-zero if anything
 failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
 `NETBOX_PASSWORD` are all set (loaded from `.env` if present); otherwise it

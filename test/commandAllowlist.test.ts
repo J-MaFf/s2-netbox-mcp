@@ -54,6 +54,10 @@ const FORBIDDEN_COMMAND_LITERALS = [
   'ModifyUDFListItems',
   'GetPicture',
   'StreamEvents',
+  // Not a write/control command, but not a real NBAPI command either: only
+  // the plural `GetPortals` exists (see spec Context / R10). Listed here as
+  // a belt-and-suspenders guard against it ever being reintroduced.
+  'GetPortal',
 ];
 
 function listTsFiles(dir: string): string[] {
@@ -71,7 +75,7 @@ function listTsFiles(dir: string): string[] {
 }
 
 describe('R10: read-only command allowlist', () => {
-  it('NBAPI_COMMANDS contains exactly the 18 documented allowed commands', () => {
+  it('NBAPI_COMMANDS contains exactly the 17 documented allowed commands (no GetPortal singular)', () => {
     const values = Object.values(NBAPI_COMMANDS).sort();
     const expected = [
       'Login',
@@ -85,7 +89,6 @@ describe('R10: read-only command allowlist', () => {
       'GetAccessLevels',
       'GetAccessLevelGroup',
       'GetAccessLevelGroups',
-      'GetPortal',
       'GetPortals',
       'GetReader',
       'GetReaders',
@@ -94,7 +97,8 @@ describe('R10: read-only command allowlist', () => {
       'GetAccessHistory',
     ].sort();
     expect(values).toEqual(expected);
-    expect(values).toHaveLength(18);
+    expect(values).toHaveLength(17);
+    expect(values).not.toContain('GetPortal');
   });
 
   it('no forbidden write/control (or otherwise out-of-scope) command literal appears anywhere in src/ or scripts/', () => {
@@ -111,7 +115,7 @@ describe('R10: read-only command allowlist', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('every one of the 18 allowed command name literals is confined to src/commands.ts', () => {
+  it('every one of the 17 allowed command name literals is confined to src/commands.ts', () => {
     const files = [...listTsFiles(SRC_DIR), ...listTsFiles(SCRIPTS_DIR)].filter((f) => f !== join(SRC_DIR, 'commands.ts'));
     const offenders: string[] = [];
     for (const file of files) {

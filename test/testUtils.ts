@@ -40,8 +40,12 @@ export function createMockFetch(): MockFetchController {
   };
 }
 
+// Per the spec's Command reference: on SUCCESS there is no SESSIONID field in
+// the response body — the session id is the `sessionid` *attribute* on the
+// outer <NETBOX> response element itself (not <NETBOX-API>, which is only the
+// *request* wrapper).
 export const LOGIN_SUCCESS_XML = (sessionId: string): string =>
-  `<NETBOX-API><RESPONSE command="Login"><CODE>SUCCESS</CODE><SESSIONID>${sessionId}</SESSIONID></RESPONSE></NETBOX-API>`;
+  `<NETBOX sessionid="${sessionId}"><RESPONSE command="Login"><CODE>SUCCESS</CODE></RESPONSE></NETBOX>`;
 
 export const SUCCESS_XML = (command: string, fields: Record<string, string> = {}): string => {
   const body = Object.entries(fields)

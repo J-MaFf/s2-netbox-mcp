@@ -25,7 +25,6 @@ export const NBAPI_COMMANDS = {
   GET_ACCESS_LEVELS: 'GetAccessLevels',
   GET_ACCESS_LEVEL_GROUP: 'GetAccessLevelGroup',
   GET_ACCESS_LEVEL_GROUPS: 'GetAccessLevelGroups',
-  GET_PORTAL: 'GetPortal',
   GET_PORTALS: 'GetPortals',
   GET_READER: 'GetReader',
   GET_READERS: 'GetReaders',

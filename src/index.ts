@@ -12,7 +12,7 @@ import { registerPortalTools } from './tools/portal.js';
 import { registerEventsTools } from './tools/events.js';
 
 /**
- * MCP server entrypoint. Registers all 16 read-only NetBox NBAPI tools on a
+ * MCP server entrypoint. Registers all 15 read-only NetBox NBAPI tools on a
  * stdio transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
  */
 

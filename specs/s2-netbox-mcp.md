@@ -61,6 +61,8 @@ One MCP tool per NBAPI command below (15 user-facing tools; `Login`/`Logout` are
 ### Command reference (verified against the primary source — authoritative, use these exact field names)
 Field names below are copied from the official NBAPI Command Reference (see Context). A tool's PARAMS must use exactly these element names inside `<PARAMS>`; response parsing must expect exactly these DETAILS field names. Do not invent, rename, or guess a field name not listed here.
 
+Response envelope (applies to every command, not just Login): every response is wrapped in `<NETBOX sessionid="...">`, verified directly from the doc's general "XML Responses" section (not just the Login-specific text below) — `NETBOX` is documented as "the outermost element of the response," carrying the `sessionid` attribute for the logged-in session, with a nested `<RESPONSE command="..." num="1"><CODE>...</CODE><DETAILS>...</DETAILS></RESPONSE>`. `<NETBOX-API>` is the *request* wrapper only; `<NETBOX>` is always the *response* wrapper.
+
 - **Login** — PARAMS: `USERNAME` (required), `PASSWORD` (required). On SUCCESS there is no sessionid field inside the response body — the session id is the `sessionid` *attribute* on the outer `<NETBOX>` response element itself, to be reused as the `sessionid` attribute on every subsequent `<NETBOX-API>` call. On FAIL: `APIERROR` 5.
 - **Logout** — PARAMS: none. Response: `CODE` only.
 - **GetAPIVersion** — PARAMS: none. Response: `APIVERSION`.

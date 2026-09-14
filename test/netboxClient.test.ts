@@ -59,6 +59,29 @@ describe('NetboxClient session management (R4)', () => {
   });
 });
 
+describe('NetboxClient.login session id extraction (Command reference: Login)', () => {
+  it('reads the session id from the sessionid attribute on the outer <NETBOX> response element, not a body field', async () => {
+    const mock = createMockFetch();
+    mock.queueXml('<NETBOX sessionid="ATTR-SESS"><RESPONSE command="Login"><CODE>SUCCESS</CODE></RESPONSE></NETBOX>');
+    mock.queueXml(SUCCESS_XML('GetAPIVersion', { APIVERSION: '5.0' }));
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    await client.call('GetAPIVersion', {});
+
+    expect(mock.calls[1].body).toContain('sessionid="ATTR-SESS"');
+  });
+
+  it('does not mistake a stray SESSIONID body field for the session id (no such field is documented)', async () => {
+    const mock = createMockFetch();
+    // A response with a bogus SESSIONID body field but no sessionid attribute
+    // must NOT be treated as a successful login.
+    mock.queueXml('<NETBOX-API><RESPONSE command="Login"><CODE>SUCCESS</CODE><SESSIONID>BODY-FIELD</SESSIONID></RESPONSE></NETBOX-API>');
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    await expect(client.call('GetAPIVersion', {})).rejects.toThrow(/no session id/i);
+  });
+});
+
 describe('NetboxClient retry-once-on-expiry (R5)', () => {
   it('re-logs-in exactly once on APIERROR 5 and retries the original command, which then succeeds', async () => {
     const mock = createMockFetch();

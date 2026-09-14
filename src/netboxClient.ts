@@ -40,12 +40,27 @@ function textOf(value: unknown): string | undefined {
 }
 
 /**
+ * Resolves the outer envelope element of a parsed NBAPI response document.
+ *
+ * Per the Command reference (see spec Context/Login entry), NBAPI *responses*
+ * are wrapped in `<NETBOX ...>`, distinct from the `<NETBOX-API ...>` element
+ * used to wrap *requests* (per R2). Both are accepted here defensively (some
+ * commands' documented examples are easy to misread as sharing the request's
+ * wrapper name), but `<NETBOX>` is the documented, authoritative one.
+ */
+function responseRoot(parsed: unknown): Record<string, unknown> {
+  const doc = asRecord(parsed);
+  if ('NETBOX' in doc) return asRecord(doc.NETBOX);
+  return asRecord(doc['NETBOX-API']);
+}
+
+/**
  * Interprets a parsed NBAPI response document per the documented error model:
- *  - An `<APIERROR>` element anywhere under <NETBOX-API> is a session/API-level failure.
+ *  - An `<APIERROR>` element anywhere under the response envelope is a session/API-level failure.
  *  - Otherwise <RESPONSE><CODE> is one of SUCCESS, FAIL (with optional ERRMSG), or NOT FOUND.
  */
 export function interpretResponse(parsed: unknown): InterpretedResponse {
-  const root = asRecord(asRecord(parsed)['NETBOX-API']);
+  const root = responseRoot(parsed);
 
   if ('APIERROR' in root) {
     const raw = textOf(root.APIERROR) ?? String(root.APIERROR);
@@ -69,13 +84,20 @@ export function interpretResponse(parsed: unknown): InterpretedResponse {
   return { kind: 'success', data };
 }
 
-function extractSessionId(data: unknown): string | undefined {
-  const record = asRecord(data);
-  for (const key of ['SESSIONID', 'SESSION-ID', 'SESSION_ID']) {
-    const value = textOf(record[key]);
-    if (value) return value;
-  }
-  return undefined;
+/**
+ * Extracts the session id established by a successful Login call.
+ *
+ * Per the Command reference: "On SUCCESS there is no sessionid field inside
+ * the response body — the session id is the `sessionid` *attribute* on the
+ * outer `<NETBOX>` response element itself." There is deliberately no
+ * fallback to a `SESSIONID` body field here — the spec is explicit that no
+ * such field exists on a real response, and guessing one back in is exactly
+ * the kind of invented field name the spec warns against.
+ */
+function extractSessionIdAttr(parsed: unknown): string | undefined {
+  const root = responseRoot(parsed);
+  const raw = root['@_sessionid'];
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
 export class NetboxClient {
@@ -144,7 +166,8 @@ export class NetboxClient {
       params: { USERNAME: this.config.username, PASSWORD: this.config.password },
     });
     const responseXml = await this.postXml(xml);
-    const interpreted = interpretResponse(parseResponseXml(responseXml));
+    const parsed = parseResponseXml(responseXml);
+    const interpreted = interpretResponse(parsed);
 
     if (interpreted.kind === 'apierror') {
       throw new NbapiApiError(interpreted.code);
@@ -156,7 +179,7 @@ export class NetboxClient {
       throw new Error('NetBox NBAPI Login returned NOT FOUND, which is not a valid login outcome.');
     }
 
-    const sessionId = extractSessionId(interpreted.data);
+    const sessionId = extractSessionIdAttr(parsed);
     if (!sessionId) {
       throw new Error('NetBox NBAPI Login succeeded but no session ID was returned by the controller.');
     }

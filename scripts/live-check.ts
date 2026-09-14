@@ -36,7 +36,7 @@ function logErr(line: string): void {
 }
 
 /** Recursively searches a parsed NBAPI response for the first value whose
- * key matches `keyPattern` (e.g. /PORTALID/i), to discover a real record ID
+ * key matches `keyPattern` (e.g. /READERKEY/i), to discover a real record ID
  * for chained detail-lookup checks without assuming an exact response shape. */
 function findFirstMatchingId(value: unknown, keyPattern: RegExp): string | undefined {
   if (value === null || value === undefined) return undefined;
@@ -119,27 +119,30 @@ async function main(): Promise<number> {
 
   const accessLevels = await runCheck(client, 'get_access_levels', NBAPI_COMMANDS.GET_ACCESS_LEVELS, {});
   results.push(accessLevels);
-  const accessLevelId = findFirstMatchingId(accessLevels.data, /ACCESSLEVELID/i) ?? '1';
-  results.push(await runCheck(client, 'get_access_level', NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELID: accessLevelId }));
+  const accessLevelKey = findFirstMatchingId(accessLevels.data, /ACCESSLEVELKEY/i) ?? '1';
+  results.push(
+    await runCheck(client, 'get_access_level', NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY: accessLevelKey })
+  );
 
   const accessLevelGroups = await runCheck(client, 'get_access_level_groups', NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, {});
   results.push(accessLevelGroups);
-  const accessLevelGroupId = findFirstMatchingId(accessLevelGroups.data, /ACCESSLEVELGROUPID/i) ?? '1';
+  const accessLevelGroupKey = findFirstMatchingId(accessLevelGroups.data, /ACCESSLEVELGROUPKEY/i) ?? '1';
   results.push(
     await runCheck(client, 'get_access_level_group', NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUP, {
-      ACCESSLEVELGROUPID: accessLevelGroupId,
+      ACCESSLEVELGROUPKEY: accessLevelGroupKey,
     })
   );
 
+  // No `get_portal` (singular) check: per the Command reference, only the
+  // plural GetPortals command exists — it cannot be filtered to a single
+  // portal, and its response already nests each portal's readers.
   const portals = await runCheck(client, 'get_portals', NBAPI_COMMANDS.GET_PORTALS, {});
   results.push(portals);
-  const portalId = findFirstMatchingId(portals.data, /PORTALID/i) ?? '1';
-  results.push(await runCheck(client, 'get_portal', NBAPI_COMMANDS.GET_PORTAL, { PORTALID: portalId }));
 
   const readers = await runCheck(client, 'get_readers', NBAPI_COMMANDS.GET_READERS, {});
   results.push(readers);
-  const readerId = findFirstMatchingId(readers.data, /READERID/i) ?? '1';
-  results.push(await runCheck(client, 'get_reader', NBAPI_COMMANDS.GET_READER, { READERID: readerId }));
+  const readerKey = findFirstMatchingId(readers.data, /READERKEY/i) ?? '1';
+  results.push(await runCheck(client, 'get_reader', NBAPI_COMMANDS.GET_READER, { READERKEY: readerKey }));
 
   results.push(await runCheck(client, 'get_card_formats', NBAPI_COMMANDS.GET_CARD_FORMATS, {}));
 
@@ -147,9 +150,26 @@ async function main(): Promise<number> {
   results.push(searchPersonData);
   const personId = findFirstMatchingId(searchPersonData.data, /PERSONID/i) ?? '1';
   results.push(await runCheck(client, 'get_person', NBAPI_COMMANDS.GET_PERSON, { PERSONID: personId }));
-  results.push(
-    await runCheck(client, 'get_card_access_details', NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, { PERSONID: personId })
-  );
+
+  // GetCardAccessDetails has no PERSONID parameter — it identifies a card by
+  // ENCODEDNUM + CARDFORMAT. Discover a real card from the search results
+  // rather than guessing; skip cleanly if the test person has no card on file.
+  const encodedNum = findFirstMatchingId(searchPersonData.data, /^ENCODEDNUM$/i);
+  const cardFormat = findFirstMatchingId(searchPersonData.data, /^CARDFORMAT$/i);
+  if (encodedNum && cardFormat) {
+    results.push(
+      await runCheck(client, 'get_card_access_details', NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, {
+        ENCODEDNUM: encodedNum,
+        CARDFORMAT: cardFormat,
+      })
+    );
+  } else {
+    results.push({
+      name: 'get_card_access_details',
+      pass: true,
+      summary: 'SKIPPED (no ENCODEDNUM/CARDFORMAT found in search_person_data results to test against)',
+    });
+  }
 
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
