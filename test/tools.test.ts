@@ -183,11 +183,13 @@ describe('registerAccessLevelTools', () => {
 });
 
 describe('registerPortalTools', () => {
-  it('registers exactly get_portals, get_reader, get_readers — no get_portal (singular)', () => {
+  it('registers exactly get_portals, get_reader, get_readers, find_portals — no get_portal (singular)', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerPortalTools(server as unknown as McpServer, client);
-    expect(server.registrations.map((r) => r.name).sort()).toEqual(['get_portals', 'get_reader', 'get_readers'].sort());
+    expect(server.registrations.map((r) => r.name).sort()).toEqual(
+      ['find_portals', 'get_portals', 'get_reader', 'get_readers'].sort()
+    );
     expect(server.registrations.map((r) => r.name)).not.toContain('get_portal');
   });
 

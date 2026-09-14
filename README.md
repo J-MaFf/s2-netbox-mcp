@@ -147,6 +147,7 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 | `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`; no single-portal filter — returns each portal with its nested readers) |
 | `get_reader`                 | `GetReader`              | `READERKEY`                   |
 | `get_readers`                | `GetReaders`             | — (optional `STARTFROMKEY`; no portal-id filter) |
+| `find_portals`               | `GetPortals` + `GetReaders` (composite) | `query` (search terms) |
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
 | `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`OLDESTDTTM`/`NEWESTDTTM`) |
@@ -157,12 +158,25 @@ exists; only `GetPortals` (plural) does. `get_card_access_details` and
 `get_access_history` optionally by `HOTSTAMP`), not by `PERSONID` — neither
 command has a `PERSONID` parameter.
 
-Every tool returns a thin JSON pass-through of that NBAPI command's response
-fields — no reshaping. Each tool's input schema declares exactly the
-documented PARAMS fields for its command — no invented, renamed, or
-passthrough fields. All parameter names above are copied verbatim from the
-NBAPI Command Reference (see `specs/archive/s2-netbox-mcp.md`) — none are invented or
-guessed.
+Every tool except `find_portals` returns a thin JSON pass-through of that NBAPI
+command's response fields — no reshaping. Each of those tools' input schema
+declares exactly the documented PARAMS fields for its command — no invented,
+renamed, or passthrough fields. All NBAPI parameter names above are copied
+verbatim from the NBAPI Command Reference (see `specs/archive/s2-netbox-mcp.md`)
+— none are invented or guessed.
+
+`find_portals` is the one composite tool, for finding a door when you only know
+where it is. Portal names are site codes (`01OF05A`), and the only
+human-readable location text on the controller is each reader's `DESCRIPTION`.
+`GetPortals` doesn't return it, and neither command takes a filter. So
+`find_portals` reads every page of `GetPortals` and `GetReaders`, joins them by
+`READERKEY`, and returns the portals where every term of `query` appears
+(case-insensitive) in the portal name, a reader name, or a reader description.
+For example, `"maintenance office"` matches a reader described as
+`BREAKROOM TO MAINTENANCE OFFICE`. Each match includes its readers' names and
+descriptions. The result also lists `portalsWithoutDescriptions`: portals none
+of whose readers has a description, which can only be found by name. It issues
+no commands beyond those two.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:
@@ -196,7 +210,7 @@ no network access and no live controller are required or contacted.
 npm run test:live
 ```
 
-This calls all 15 tools against a **real, configured** controller and prints
+This calls all 16 tools against a **real, configured** controller and prints
 a PASS/FAIL line per tool plus a summary, exiting non-zero if anything
 failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
 `NETBOX_PASSWORD` are all set (loaded from `.env` if present); otherwise it
