@@ -1,5 +1,13 @@
 # Spec: S2 NetBox MCP Server (Read-Only)
 
+> **COMPLETED, 2026-09-14.** All 18 acceptance criteria + C-final PASS, including live
+> verification (`npm run test:live`, 15/15 PASS, `check_connection` reporting `6.2.0`) against
+> the user's real NetBox 6.2.0 controller. Built via #2/[PR #3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3)
+> (initial v1) and #4/[PR #5](https://github.com/J-MaFf/s2-netbox-mcp/pull/5) (R20-R24: NetBox
+> 6.x endpoint default, 410/APIERROR-5 diagnostics, README prerequisites, and a live-observed
+> empty-Access-Level-Group-collection accommodation in `scripts/live-check.ts`). Archived here as
+> a historical record; see `CHANGELOG.md`/`STATUS.md` at the repo root for current state.
+
 ## Goal
 Build a local MCP server that exposes read-only S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, events/history) as Claude-callable tools, so NetBox data can be queried conversationally instead of hand-built XML/HTTP calls.
 
@@ -81,7 +89,7 @@ Items marked **[live 6.2.0]** were additionally confirmed byte-for-byte against 
 - **GetAccessLevel** — PARAMS: `ACCESSLEVELKEY` (required). Response: `ACCESSLEVELNAME`, `ACCESSLEVELDESCRIPTION`, `READERGROUPKEY`, `TIMESPECGROUPKEY`, `THREATLEVELGROUPKEY`.
 - **GetAccessLevels** — PARAMS: `STARTFROMKEY` (optional), `STARTFROMNAME` (optional), `WANTKEY` (optional). Response: `ACCESSLEVELS` (list of `ACCESSLEVEL`), `NEXTKEY`, `NEXTNAME`. **[live 6.2.0]** with no PARAMS: `<DETAILS><ACCESSLEVELS><ACCESSLEVEL>ALL ACCESS</ACCESSLEVEL>…</ACCESSLEVELS><NEXTNAME></NEXTNAME></DETAILS>` — each `ACCESSLEVEL` is a bare name string (no key) unless `WANTKEY` is sent; `NEXTNAME` is present but empty on the last page and `NEXTKEY` is absent. Parsers must treat an empty `NEXTNAME`/`NEXTKEY` as "no more pages".
 - **GetAccessLevelGroup** — PARAMS: `ACCESSLEVELGROUPKEY` (required). Response: `ACCESSLEVELGROUPKEY`, `NAME`, `DESCRIPTION`, `ACCESSLEVELS` (list of `ACCESSLEVEL`: `KEY`, `NAME`).
-- **GetAccessLevelGroups** — PARAMS: `STARTFROMKEY` (optional). Response: `ACCESSLEVELGROUPS` (list of `ACCESSLEVELGROUP`: `KEY`, `NAME`), `NEXTKEY`, `NEXTNAME`.
+- **GetAccessLevelGroups** — PARAMS: `STARTFROMKEY` (optional). Response: `ACCESSLEVELGROUPS` (list of `ACCESSLEVELGROUP`: `KEY`, `NAME`), `NEXTKEY`, `NEXTNAME`. **[live 6.2.0]**: on a controller with zero Access Level Groups configured (access levels present but not grouped), both `GetAccessLevelGroups` and `GetAccessLevelGroup` return `<CODE>FAIL</CODE><DETAILS><ERRMSG>NOT FOUND</ERRMSG></DETAILS>` rather than an empty `ACCESSLEVELGROUPS` list or the documented `<CODE>NOT FOUND</CODE>` — a controller-specific "empty collection" signal, not a client defect. `scripts/live-check.ts` treats a bare `ERRMSG="NOT FOUND"` on these two commands as an accepted no-data outcome for smoke-test purposes; the NBAPI client itself still surfaces it as a normal `<CODE>FAIL</CODE>` tool error per R8 — this is a live-check harness accommodation, not a change to R8/R9's documented error semantics.
 - **GetPortals** — PARAMS: `STARTFROMKEY` (optional pagination cursor) — this is the *only* parameter; there is no single-portal filter. Response: `PORTALS` (list of `PORTAL`: `NAME`, `PORTALKEY`, `READERS` (list of `READER`: `READERKEY`, `NAME`, `DESCRIPTION`, `PORTALORDER`)), `NEXTKEY`. **[live 6.2.0]**: `<PORTAL><PORTALKEY>1</PORTALKEY><NAME>…</NAME><READERS><READER><READERKEY>1</READERKEY><NAME>…</NAME><PORTALORDER>1</PORTALORDER></READER></READERS></PORTAL>` — nested readers omit `DESCRIPTION` here (it is returned by `GetReaders`/`GetReader` instead); element order is `PORTALKEY` before `NAME`. Parsers must not require `DESCRIPTION` on nested readers.
 - **GetReader** — PARAMS: `READERKEY` (required). Response: `READER` (`READERKEY`, `NAME`, `DESCRIPTION`).
 - **GetReaders** — PARAMS: `STARTFROMKEY` (optional) — no portal-id or other filter. Response: `READERS` (list of `READER`: `READERKEY`, `NAME`, `DESCRIPTION`). **[live 6.2.0]**: `<READERS><READER><READERKEY>1</READERKEY><NAME>…</NAME><DESCRIPTION>…</DESCRIPTION></READER>…` — reader keys are not contiguous (1, 4, 7, 10, 13 … on the test controller); never assume sequential keys.

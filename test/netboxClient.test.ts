@@ -15,6 +15,7 @@ const CONFIG = {
   username: 'svc-account',
   password: 'super-secret-password',
   allowInsecureTls: false,
+  apiPath: '/nbws/goforms/nbapi',
 };
 
 describe('NetboxClient session management (R4)', () => {
@@ -33,12 +34,25 @@ describe('NetboxClient session management (R4)', () => {
     expect(mock.calls).toHaveLength(3);
   });
 
-  it('posts to <baseUrl>/goforms/nbapi', async () => {
+  it('posts to <baseUrl><apiPath>, defaulting to /nbws/goforms/nbapi (R20)', async () => {
     const mock = createMockFetch();
     mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
     mock.queueXml(SUCCESS_XML('GetAPIVersion', { VERSION: '5.0' }));
 
     const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    await client.call('GetAPIVersion', {});
+
+    for (const call of mock.calls) {
+      expect(call.url).toBe('https://netbox.example.internal/nbws/goforms/nbapi');
+    }
+  });
+
+  it('honours a NETBOX_API_PATH override for the request URL (R20)', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(SUCCESS_XML('GetAPIVersion', { VERSION: '5.0' }));
+
+    const client = new NetboxClient({ ...CONFIG, apiPath: '/goforms/nbapi' }, mock.fetchImpl);
     await client.call('GetAPIVersion', {});
 
     for (const call of mock.calls) {
@@ -185,6 +199,80 @@ describe('NetboxClient error surfacing (R7-R9)', () => {
 
     const result = await client.call('GetPerson', { PERSONID: '999' });
     expect(result).toEqual({ notFound: true, data: undefined });
+  });
+});
+
+describe('NetboxClient non-2xx HTTP error surfacing (R21 / C15)', () => {
+  it('surfaces a 410 with the status, the request path, and a NETBOX_API_PATH hint, with no credentials', async () => {
+    const mock = createMockFetch();
+    mock.queueXml('', 410);
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    let message = '';
+    try {
+      await client.call('GetAPIVersion', {});
+      expect.unreachable('expected call to throw');
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain('410');
+    expect(message).toContain('/nbws/goforms/nbapi');
+    expect(message).toContain('NETBOX_API_PATH');
+    expect(message).not.toContain(CONFIG.password);
+    expect(message).not.toContain(CONFIG.username);
+  });
+
+  it('surfaces a 500 with the status and request path, with no credentials', async () => {
+    const mock = createMockFetch();
+    mock.queueXml('', 500);
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    let message = '';
+    try {
+      await client.call('GetAPIVersion', {});
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain('500');
+    expect(message).toContain('/nbws/goforms/nbapi');
+    expect(message).not.toContain(CONFIG.password);
+    expect(message).not.toContain(CONFIG.username);
+  });
+});
+
+describe('NetboxClient APIERROR 5 after successful re-login (R22 / C16)', () => {
+  it('names "Use login username/password" when Login succeeds but the retried command still gets APIERROR 5', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1')); // initial login
+    mock.queueXml(API_ERROR_XML(5)); // original call fails
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-2')); // re-login succeeds
+    mock.queueXml(API_ERROR_XML(5)); // retried call still fails
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    let message = '';
+    try {
+      await client.call('GetPortals', {});
+      expect.unreachable('expected call to throw');
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain('Use login username/password');
+  });
+
+  it('does not name "Use login username/password" when Login itself returns APIERROR 5', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(API_ERROR_XML(5)); // Login itself fails
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    let message = '';
+    try {
+      await client.call('GetPortals', {});
+      expect.unreachable('expected call to throw');
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).not.toContain('Use login username/password');
+    expect(message).toContain('5');
   });
 });
 

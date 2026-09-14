@@ -56,14 +56,50 @@ npm start
 
 | Variable                      | Required | Default | Description                                                                                       |
 | ------------------------------ | -------- | ------- | --------------------------------------------------------------------------------------------------- |
-| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `/goforms/nbapi` itself. |
+| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `NETBOX_API_PATH` itself. |
 | `NETBOX_USERNAME`               | Yes      | —       | NBAPI session-login username.                                                                       |
 | `NETBOX_PASSWORD`               | Yes      | —       | NBAPI session-login password. Never logged, never written to any tracked file.                      |
 | `NETBOX_ALLOW_INSECURE_TLS`     | No       | `false` | Set to `true`/`1`/`yes` to accept a self-signed/on-prem TLS certificate. **Explicit opt-in only** — any other value (including unset) keeps normal certificate verification. |
+| `NETBOX_API_PATH`               | No       | `/nbws/goforms/nbapi` | The NBAPI path appended to `NETBOX_BASE_URL`. The default is the verified path on NetBox 6.x controllers. Only set this to override the default — e.g. to the legacy, pre-6.x path `/goforms/nbapi`, which returns **HTTP 410 Gone** on 6.x controllers (see Controller prerequisites below). A value without a leading `/` has one added automatically. |
 
 If any of the three required variables is missing, the server prints a single
 actionable line to stderr and exits with a non-zero status — it never prints
 a stack trace on startup misconfiguration.
+
+## Controller prerequisites
+
+Before this server can talk to your controller, on the NetBox web UI go to
+**Configuration → Site Settings → Network Controller → Data Integration** and
+confirm all three of these are checked:
+
+- **Enable V2**
+- **Use Authentication**
+- **Use login username/password for authentication (requires setup privilege)**
+
+The NBAPI user account also needs a role with **NBAPI read access** (see the
+NBAPI doc's "Creating User Roles for API" section) — a login that succeeds
+but can't read the resources this server queries will surface as `FAIL` or
+`APIERROR` responses per tool call.
+
+### Troubleshooting
+
+- **"Login succeeds but every other command returns `APIERROR 5`."** This is
+  the live-observed symptom of the *Use login username/password for
+  authentication (requires setup privilege)* checkbox being unticked, which
+  puts the controller in MAC-authentication mode instead of session-login
+  mode (MAC auth is out of scope for this server — see the spec). `Login`
+  still returns `SUCCESS` with a session ID, but every subsequent command —
+  including `Logout` — fails with `APIERROR 5`. Fix: tick that checkbox on
+  the *Data Integration* tab. This server's client detects this exact
+  pattern (a successful re-login followed by another `APIERROR 5`) and
+  surfaces a tool error naming the checkbox directly.
+- **"HTTP 410 Gone."** The configured `NETBOX_API_PATH` is not served by this
+  controller. NetBox 6.x serves the NBAPI at `/nbws/goforms/nbapi` (the
+  default this server uses); the 2020 doc's `/goforms/nbapi` path is
+  deregistered on 6.x and returns 410 for every request. If you're on a
+  pre-6.x controller, set `NETBOX_API_PATH=/goforms/nbapi` explicitly; if
+  you're on 6.x and still see this, double-check `NETBOX_API_PATH` isn't set
+  to something else by mistake.
 
 ## Registering with Claude Code
 
@@ -122,12 +158,11 @@ exists; only `GetPortals` (plural) does. `get_card_access_details` and
 command has a `PERSONID` parameter.
 
 Every tool returns a thin JSON pass-through of that NBAPI command's response
-fields — no reshaping. A few tools that take broader/uncertain optional
-filters (`search_person_data`, `get_event_history`, `get_access_history`)
-also accept an `extraParams` object of `{ "FIELDNAME": "value" }` pairs for
-any other documented NBAPI PARAMS field not modeled as a named parameter.
-All parameter names above are copied verbatim from the NBAPI Command
-Reference (see `specs/s2-netbox-mcp.md`) — none are invented or guessed.
+fields — no reshaping. Each tool's input schema declares exactly the
+documented PARAMS fields for its command — no invented, renamed, or
+passthrough fields. All parameter names above are copied verbatim from the
+NBAPI Command Reference (see `specs/archive/s2-netbox-mcp.md`) — none are invented or
+guessed.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:
@@ -187,5 +222,5 @@ keeping in mind if this project is ever extended with write tools.
 - Any GUI/dashboard beyond the MCP tool surface
 - Publishing/packaging this server, or a CI/CD pipeline
 
-See `specs/s2-netbox-mcp.md` for the full requirements this server was built
-against.
+See `specs/archive/s2-netbox-mcp.md` for the full requirements this server was built
+against (archived — all acceptance criteria passed, including live verification).

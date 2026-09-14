@@ -148,14 +148,23 @@ export class NetboxClient {
   }
 
   private async postXml(xml: string): Promise<string> {
-    const url = `${this.config.baseUrl}/goforms/nbapi`;
+    const path = this.config.apiPath;
+    const url = `${this.config.baseUrl}${path}`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/xml' },
       body: xml,
     });
     if (!response.ok) {
-      throw new Error(`NetBox NBAPI HTTP error: ${response.status} ${response.statusText}`);
+      // Never include credentials or the request body here (R21) — only the
+      // status code and the request path.
+      if (response.status === 410) {
+        throw new Error(
+          `NetBox NBAPI HTTP error: 410 Gone at path ${path}. The controller has retired this path; ` +
+            'check NETBOX_API_PATH (NetBox 6.x uses /nbws/goforms/nbapi).'
+        );
+      }
+      throw new Error(`NetBox NBAPI HTTP error: ${response.status} ${response.statusText} at path ${path}`);
     }
     return response.text();
   }
@@ -227,8 +236,24 @@ export class NetboxClient {
     if (interpreted.kind === 'apierror') {
       if (interpreted.code === 5 && allowRetryOnExpiry) {
         this.sessionId = null;
+        // ensureSession() re-logs-in; if the re-login itself fails (e.g. with
+        // its own APIERROR 5), login() throws a plain NbapiApiError with no
+        // R22 hint, and that propagates straight out of here.
         await this.ensureSession();
         return this.callInternal(command, params, false);
+      }
+      if (interpreted.code === 5 && !allowRetryOnExpiry) {
+        // R22: we only reach this branch after a re-login that itself
+        // returned SUCCESS (otherwise ensureSession() above would have
+        // thrown), yet the retried command still got APIERROR 5. This is the
+        // live-observed symptom of MAC-auth mode being enabled instead of
+        // session-login mode.
+        throw new NbapiApiError(
+          interpreted.code,
+          '— the controller accepted the credentials (re-login succeeded) but rejected the session for this ' +
+            'command. Check that "Use login username/password for authentication (requires setup privilege)" is ' +
+            'ticked under Configuration → Site Settings → Network Controller → Data Integration.'
+        );
       }
       throw new NbapiApiError(interpreted.code);
     }

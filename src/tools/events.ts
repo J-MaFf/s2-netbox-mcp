@@ -4,14 +4,6 @@ import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
 import { runNbapiTool, mergeParams } from '../toolHelpers.js';
 
-const extraParamsSchema = z
-  .record(z.string())
-  .optional()
-  .describe(
-    'Optional. Additional NBAPI PARAMS fields for this command (per the Command Reference) not covered ' +
-      'above, as {"FIELDNAME": "value"} pairs passed through verbatim.'
-  );
-
 /**
  * Event/history tools: GetEventHistory, ListEvents, GetAccessHistory. Each is
  * a thin pass-through of that NBAPI command's documented PARAMS and response
@@ -29,12 +21,8 @@ export function registerEventsTools(server: McpServer, client: NetboxClient): vo
       STARTDTTM: z.string().optional().describe('Optional. Start of the date/time range to query (NBAPI-documented format).'),
       ENDDTTM: z.string().optional().describe('Optional. End of the date/time range to query (NBAPI-documented format).'),
       NEXTKEY: z.string().optional().describe('Optional. Pagination continuation cursor from a previous call.'),
-      extraParams: extraParamsSchema,
     },
-    async (args) => {
-      const { extraParams, ...rest } = args;
-      return runNbapiTool(client, NBAPI_COMMANDS.GET_EVENT_HISTORY, mergeParams(rest, extraParams));
-    }
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_EVENT_HISTORY, mergeParams(args))
   );
 
   server.tool(
@@ -58,11 +46,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient): vo
       CARDFORMAT: z.string().optional().describe('Optional. Card format of ENCODEDNUM/HOTSTAMP.'),
       OLDESTDTTM: z.string().optional().describe('Optional. Oldest date/time to include.'),
       NEWESTDTTM: z.string().optional().describe('Optional. Newest date/time to include.'),
-      extraParams: extraParamsSchema,
     },
-    async (args) => {
-      const { extraParams, ...rest } = args;
-      return runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(rest, extraParams));
-    }
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(args))
   );
 }

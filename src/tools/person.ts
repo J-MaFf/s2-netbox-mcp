@@ -60,18 +60,8 @@ export function registerPersonTools(server: McpServer, client: NetboxClient): vo
       WILDCARDSEARCH: z.string().optional().describe('Optional. Treat text filters as wildcard patterns.'),
       ACCESSLEVELDETAILS: z.string().optional().describe('Optional. Include full access level details in the response.'),
       RAWCARDNUMBER: z.string().optional().describe('Optional. Match on a raw (unformatted) card number.'),
-      extraParams: z
-        .record(z.string())
-        .optional()
-        .describe(
-          'Optional. Additional NBAPI SearchPersonData PARAMS fields (per the Command Reference) not ' +
-            'covered above, as {"FIELDNAME": "value"} pairs passed through verbatim.'
-        ),
     },
-    async (args) => {
-      const { extraParams, ...rest } = args;
-      return runNbapiTool(client, NBAPI_COMMANDS.SEARCH_PERSON_DATA, mergeParams(rest, extraParams));
-    }
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.SEARCH_PERSON_DATA, mergeParams(args))
   );
 
   server.tool(
