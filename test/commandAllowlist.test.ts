@@ -8,56 +8,114 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC_DIR = join(ROOT, 'src');
 const SCRIPTS_DIR = join(ROOT, 'scripts');
 
-// Explicitly out-of-scope write/control commands and other deferred commands
-// named in the spec (spec "Out of scope" section) plus their common Add/
-// Modify/Delete/Remove family members for the resources this server reads.
-// None of these strings may ever appear as a quoted literal anywhere in src/.
-const FORBIDDEN_COMMAND_LITERALS = [
-  'AddPerson',
-  'ModifyPerson',
-  'RemovePerson',
-  'DeletePerson',
-  'AddAccessLevel',
-  'ModifyAccessLevel',
-  'DeleteAccessLevel',
-  'AddAccessLevelGroup',
-  'ModifyAccessLevelGroup',
-  'DeleteAccessLevelGroup',
-  'LockPortal',
-  'UnlockPortal',
-  'MomentaryUnlockPortal',
+// R4: the exact 80-command closed set. Confined to src/commands.ts only.
+const EXPECTED_COMMANDS = [
+  // Session lifecycle + v0.2.0 reads (17)
+  'Login',
+  'Logout',
+  'GetAPIVersion',
+  'GetPerson',
+  'SearchPersonData',
+  'GetCardAccessDetails',
+  'GetCardFormats',
+  'GetAccessLevel',
+  'GetAccessLevels',
+  'GetAccessLevelGroup',
+  'GetAccessLevelGroups',
+  'GetPortals',
+  'GetReader',
+  'GetReaders',
+  'GetEventHistory',
+  'ListEvents',
+  'GetAccessHistory',
+  // Additional reads (18)
+  'GetTimeSpec',
+  'GetTimeSpecs',
+  'GetTimeSpecGroup',
+  'GetTimeSpecGroups',
+  'GetHoliday',
+  'GetHolidays',
+  'GetPortalGroup',
+  'GetPortalGroups',
+  'GetReaderGroup',
+  'GetReaderGroups',
+  'GetOutputs',
+  'GetAccessLevelNames',
+  'GetPartitions',
+  'GetUDFLists',
+  'GetUDFListItems',
+  'GetElevators',
+  'GetFloors',
+  'PingApp',
+  // Actions (7)
   'ActivateOutput',
   'DeactivateOutput',
+  'DogOnNextExitPortal',
+  'LockPortal',
+  'MomentaryUnlockPortal',
+  'UnlockPortal',
   'SetThreatLevel',
-  'AddThreatLevel',
-  'ModifyThreatLevel',
-  'RemoveThreatLevel',
-  'AddThreatLevelGroup',
-  'ModifyThreatLevelGroup',
-  'RemoveThreatLevelGroup',
-  'TriggerEvent',
+  // Adds (10)
+  'AddAccessLevel',
+  'AddAccessLevelGroup',
   'AddHoliday',
-  'ModifyHoliday',
-  'DeleteHoliday',
-  'AddTimeSpec',
-  'ModifyTimeSpec',
-  'DeleteTimeSpec',
-  'AddTimeSpecGroup',
-  'ModifyTimeSpecGroup',
-  'DeleteTimeSpecGroup',
-  'AddCredential',
-  'ModifyCredential',
-  'RemoveCredential',
   'AddPartition',
-  'SwitchPartition',
-  'InsertActivity',
+  'AddPortalGroup',
+  'AddReaderGroup',
+  'AddTimeSpec',
+  'AddTimeSpecGroup',
+  'AddThreatLevel',
+  'AddThreatLevelGroup',
+  // Deletes (7)
+  'DeleteAccessLevel',
+  'DeleteAccessLevelGroup',
+  'DeleteHoliday',
+  'DeletePortalGroup',
+  'DeleteReaderGroup',
+  'DeleteTimeSpec',
+  'DeleteTimeSpecGroup',
+  // Modifies (10)
+  'ModifyAccessLevel',
+  'ModifyAccessLevelGroup',
+  'ModifyHoliday',
+  'ModifyPortalGroup',
+  'ModifyReaderGroup',
+  'ModifyThreatLevel',
+  'ModifyThreatLevelGroup',
+  'ModifyTimeSpec',
+  'ModifyTimeSpecGroup',
   'ModifyUDFListItems',
+  // Removes (2)
+  'RemoveThreatLevel',
+  'RemoveThreatLevelGroup',
+  // Person/credential writes (6)
+  'AddCredential',
+  'AddPerson',
+  'ModifyCredential',
+  'ModifyPerson',
+  'RemoveCredential',
+  'RemovePerson',
+  // Events (2)
+  'TriggerEvent',
+  'InsertActivity',
+  // Partition switch (1)
+  'SwitchPartition',
+];
+
+// R4: the rewritten forbidden list — GetPicture, StreamEvents, GetPortal, and
+// the seven deprecated commands. None of these may ever appear as a quoted
+// literal anywhere in src/ or scripts/.
+const FORBIDDEN_COMMAND_LITERALS = [
   'GetPicture',
   'StreamEvents',
-  // Not a write/control command, but not a real NBAPI command either: only
-  // the plural `GetPortals` exists (see spec Context / R10). Listed here as
-  // a belt-and-suspenders guard against it ever being reintroduced.
   'GetPortal',
+  'EditPerson',
+  'EditThreatLevel',
+  'EditThreatLevelGroup',
+  'GetAccessDataLog',
+  'GetAccessCardDetails',
+  'LoginUserName',
+  'LoginUserPassword',
 ];
 
 function listTsFiles(dir: string): string[] {
@@ -74,34 +132,15 @@ function listTsFiles(dir: string): string[] {
   return out;
 }
 
-describe('R10: read-only command allowlist', () => {
-  it('NBAPI_COMMANDS contains exactly the 17 documented allowed commands (no GetPortal singular)', () => {
+describe('R4: 80-command NBAPI allowlist', () => {
+  it('NBAPI_COMMANDS contains exactly the 80 documented commands, no more, no less', () => {
     const values = Object.values(NBAPI_COMMANDS).sort();
-    const expected = [
-      'Login',
-      'Logout',
-      'GetAPIVersion',
-      'GetPerson',
-      'SearchPersonData',
-      'GetCardAccessDetails',
-      'GetCardFormats',
-      'GetAccessLevel',
-      'GetAccessLevels',
-      'GetAccessLevelGroup',
-      'GetAccessLevelGroups',
-      'GetPortals',
-      'GetReader',
-      'GetReaders',
-      'GetEventHistory',
-      'ListEvents',
-      'GetAccessHistory',
-    ].sort();
-    expect(values).toEqual(expected);
-    expect(values).toHaveLength(17);
-    expect(values).not.toContain('GetPortal');
+    expect(values).toEqual([...EXPECTED_COMMANDS].sort());
+    expect(values).toHaveLength(80);
+    expect(new Set(values).size).toBe(80); // no duplicates
   });
 
-  it('no forbidden write/control (or otherwise out-of-scope) command literal appears anywhere in src/ or scripts/', () => {
+  it('no forbidden (out-of-scope/deprecated) command literal appears anywhere in src/ or scripts/', () => {
     const files = [...listTsFiles(SRC_DIR), ...listTsFiles(SCRIPTS_DIR)];
     const offenders: string[] = [];
     for (const file of files) {
@@ -115,7 +154,7 @@ describe('R10: read-only command allowlist', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('every one of the 17 allowed command name literals is confined to src/commands.ts', () => {
+  it('every one of the 80 allowed command name literals is confined to src/commands.ts', () => {
     const files = [...listTsFiles(SRC_DIR), ...listTsFiles(SCRIPTS_DIR)].filter((f) => f !== join(SRC_DIR, 'commands.ts'));
     const offenders: string[] = [];
     for (const file of files) {

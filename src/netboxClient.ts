@@ -147,8 +147,14 @@ export class NetboxClient {
     return this.commandSeq;
   }
 
-  private async postXml(xml: string): Promise<string> {
-    const path = this.config.apiPath;
+  /** R6: the request path for a given command — every command uses the
+   * configured NETBOX_API_PATH except TriggerEvent, which uses the
+   * (separately resolved) NETBOX_EVENT_API_PATH. */
+  private defaultPathFor(command: NbapiCommandName): string {
+    return command === NBAPI_COMMANDS.TRIGGER_EVENT ? this.config.eventApiPath : this.config.apiPath;
+  }
+
+  private async postXml(xml: string, path: string): Promise<string> {
     const url = `${this.config.baseUrl}${path}`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
@@ -188,7 +194,7 @@ export class NetboxClient {
       num: this.nextNum(),
       params: { USERNAME: this.config.username, PASSWORD: this.config.password },
     });
-    const responseXml = await this.postXml(xml);
+    const responseXml = await this.postXml(xml, this.config.apiPath);
     const parsed = parseResponseXml(responseXml);
     const interpreted = interpretResponse(parsed);
 
@@ -219,18 +225,19 @@ export class NetboxClient {
    *   is dropped, a single re-login is attempted, and the original command
    *   is retried exactly once before giving up.
    */
-  async call(command: NbapiCommandName, params: NbapiParams = {}): Promise<NbapiCallResult> {
+  async call(command: NbapiCommandName, params: NbapiParams = {}, path?: string): Promise<NbapiCallResult> {
     await this.ensureSession();
-    return this.callInternal(command, params, true);
+    return this.callInternal(command, params, true, path ?? this.defaultPathFor(command));
   }
 
   private async callInternal(
     command: NbapiCommandName,
     params: NbapiParams,
-    allowRetryOnExpiry: boolean
+    allowRetryOnExpiry: boolean,
+    path: string
   ): Promise<NbapiCallResult> {
     const xml = buildRequestXml({ sessionId: this.sessionId, command, num: this.nextNum(), params });
-    const responseXml = await this.postXml(xml);
+    const responseXml = await this.postXml(xml, path);
     const interpreted = interpretResponse(parseResponseXml(responseXml));
 
     if (interpreted.kind === 'apierror') {
@@ -240,7 +247,7 @@ export class NetboxClient {
         // its own APIERROR 5), login() throws a plain NbapiApiError with no
         // R22 hint, and that propagates straight out of here.
         await this.ensureSession();
-        return this.callInternal(command, params, false);
+        return this.callInternal(command, params, false, path);
       }
       if (interpreted.code === 5 && !allowRetryOnExpiry) {
         // R22: we only reach this branch after a re-login that itself
@@ -274,7 +281,7 @@ export class NetboxClient {
     this.sessionId = null;
     try {
       const xml = buildRequestXml({ sessionId, command: NBAPI_COMMANDS.LOGOUT, num: this.nextNum(), params: {} });
-      await this.postXml(xml);
+      await this.postXml(xml, this.config.apiPath);
     } catch {
       // Best-effort on shutdown — the process is exiting either way.
     }

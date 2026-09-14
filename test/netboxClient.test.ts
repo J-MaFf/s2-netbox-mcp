@@ -16,6 +16,12 @@ const CONFIG = {
   password: 'super-secret-password',
   allowInsecureTls: false,
   apiPath: '/nbws/goforms/nbapi',
+  eventApiPath: '/nbws/goforms/nbapi',
+  enableWrites: false,
+  enableDestructive: false,
+  unlockHolidayGroups: [8, 7, 6] as [number, number, number],
+  unlockNamePrefix: 'MCP Unlock Window',
+  liveTestPortalKey: undefined,
 };
 
 describe('NetboxClient session management (R4)', () => {
@@ -311,5 +317,48 @@ describe('NetboxClient.logout (R6)', () => {
     const client = new NetboxClient(CONFIG, mock.fetchImpl);
     await client.call('GetPortals', {});
     await expect(client.logout()).resolves.toBeUndefined();
+  });
+});
+
+describe('NetboxClient per-command request path (R6)', () => {
+  it('posts TriggerEvent to NETBOX_EVENT_API_PATH when it differs from NETBOX_API_PATH, while another command still uses NETBOX_API_PATH', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(SUCCESS_XML('TriggerEvent'));
+    mock.queueXml(SUCCESS_XML('GetPortals'));
+
+    const client = new NetboxClient({ ...CONFIG, eventApiPath: '/appd/nbapi' }, mock.fetchImpl);
+    await client.call('TriggerEvent', { EVENTNAME: 'Door Alarm', EVENTACTION: 'ACTIVATE' });
+    await client.call('GetPortals', {});
+
+    // calls[0] is Login (always on the main api path); calls[1] is TriggerEvent; calls[2] is GetPortals.
+    expect(mock.calls[1].url).toBe('https://netbox.example.internal/appd/nbapi');
+    expect(mock.calls[2].url).toBe('https://netbox.example.internal/nbws/goforms/nbapi');
+  });
+
+  it('posts TriggerEvent to the same path as everything else when NETBOX_EVENT_API_PATH is not overridden', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(SUCCESS_XML('TriggerEvent'));
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl); // eventApiPath === apiPath (config default)
+    await client.call('TriggerEvent', { EVENTNAME: 'Door Alarm', EVENTACTION: 'ACTIVATE' });
+
+    expect(mock.calls[1].url).toBe('https://netbox.example.internal/nbws/goforms/nbapi');
+  });
+
+  it('Login and Logout always use NETBOX_API_PATH, never the event path', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(SUCCESS_XML('GetAPIVersion', { APIVERSION: '6.2.0' }));
+    mock.queueXml(SUCCESS_XML('Logout'));
+
+    const client = new NetboxClient({ ...CONFIG, eventApiPath: '/appd/nbapi' }, mock.fetchImpl);
+    await client.call('GetAPIVersion', {}); // triggers Login, then GetAPIVersion
+    await client.logout();
+
+    for (const call of mock.calls) {
+      expect(call.url).toBe('https://netbox.example.internal/nbws/goforms/nbapi');
+    }
   });
 });
