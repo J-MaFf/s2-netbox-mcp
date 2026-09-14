@@ -5,15 +5,15 @@
 A local MCP server exposing read-only LenelS2 S2 NetBox NBAPI operations (persons/credentials,
 access levels, portals/readers, event/access history) as Claude-callable tools, so NetBox data can
 be queried conversationally instead of hand-built XML/HTTP calls. Node/TypeScript, stdio
-transport, session-login auth only. See `specs/s2-netbox-mcp.md` for the full spec.
+transport, session-login auth only. See `specs/archive/s2-netbox-mcp.md` for the full spec
+(archived — all acceptance criteria passed).
 
 ## Current State — 2026-09-14
 
-All code-level acceptance criteria pass (89 unit tests, clean typecheck/build, read-only command
-allowlist enforced). **Live verification against the real controller (C11, and half of C18) is
-still pending** — it requires running `npm run test:live` with the real `.env` against the live
-NetBox 6.2.0 controller, which this working environment does not have permission to do
-automatically (a production physical-access-control system). See "Open Issues" below.
+All known issues resolved; `main` is clean pending review/merge of PR #5. All 18 acceptance
+criteria + the catch-all pass, including live verification: `npm run test:live` reports 15/15
+PASS against the real NetBox 6.2.0 controller (`check_connection` shows `6.2.0`). 89 unit tests,
+clean typecheck/build, read-only 17-command allowlist enforced.
 
 ### Components
 
@@ -33,23 +33,16 @@ automatically (a production physical-access-control system). See "Open Issues" b
 | Issue | Description | PR |
 |---|---|---|
 | [#2](https://github.com/J-MaFf/s2-netbox-mcp/issues/2) | Build read-only S2 NetBox MCP server | [#3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3) |
-| [#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4) | NetBox 6.x endpoint (`/nbws/goforms/nbapi`), 410/APIERROR-5 diagnostics, README prerequisites, `extraParams` field-name cleanup | (this PR) |
+| [#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4) | NetBox 6.x endpoint (`/nbws/goforms/nbapi`), 410/APIERROR-5 diagnostics, README prerequisites, `extraParams` field-name cleanup, live-check empty-collection accommodation | [#5](https://github.com/J-MaFf/s2-netbox-mcp/pull/5) |
 
 ### Open Issues
 
-- **Live verification blocked on production-system permission.** `npm run test:live` needs to run
-  with the real `.env` (host/username/password for the live NetBox 6.2.0 controller) to satisfy
-  C11 and the live half of C18. The orchestrating session's auto-mode classifier denies this
-  automatically ("Production Reads") since it's a live physical-access-control system — this needs
-  either the user running `npm run test:live` themselves and reporting the result, or explicit
-  per-session permission to run it. Tracked via beads issue `s2-netbox-mcp-aej`.
+None. PR #5 is awaiting the user's merge approval.
 
 ## Natural Next Steps
 
-1. Run `npm run test:live` against the real controller (user-run, or explicitly approved) and
-   confirm all 15 PASS lines plus `check_connection` showing `6.2.0`.
-2. Once live-verified, close beads issue `s2-netbox-mcp-aej`, archive `specs/s2-netbox-mcp.md` to
-   `specs/archive/`, and merge this PR.
+1. Merge PR #5 (human-gated — not auto-merged per this user's git-policies).
+2. After merging, `git cleanup` to remove the merged feature branch.
 
 ## Prerequisites to Run
 

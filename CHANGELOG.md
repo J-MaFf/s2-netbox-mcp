@@ -28,6 +28,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `get_event_history`, and `get_access_history`'s input schemas; each tool now declares only the
   field names documented in the NBAPI Command Reference, per the read-only server's "no invented
   field names" requirement ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
+- `npm run test:live` now treats `GetAccessLevelGroups`/`GetAccessLevelGroup` returning
+  `CODE=FAIL, ERRMSG="NOT FOUND"` as an accepted no-data outcome rather than a failure — observed
+  live against a real controller with zero Access Level Groups configured; the underlying NBAPI
+  client's error handling is unchanged ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
 
 ## [0.1.0] — 2026-09-14
 ### Added

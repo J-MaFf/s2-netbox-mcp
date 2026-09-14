@@ -1,5 +1,13 @@
 # Spec: S2 NetBox MCP Server (Read-Only)
 
+> **COMPLETED, 2026-09-14.** All 18 acceptance criteria + C-final PASS, including live
+> verification (`npm run test:live`, 15/15 PASS, `check_connection` reporting `6.2.0`) against
+> the user's real NetBox 6.2.0 controller. Built via #2/[PR #3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3)
+> (initial v1) and #4/[PR #5](https://github.com/J-MaFf/s2-netbox-mcp/pull/5) (R20-R24: NetBox
+> 6.x endpoint default, 410/APIERROR-5 diagnostics, README prerequisites, and a live-observed
+> empty-Access-Level-Group-collection accommodation in `scripts/live-check.ts`). Archived here as
+> a historical record; see `CHANGELOG.md`/`STATUS.md` at the repo root for current state.
+
 ## Goal
 Build a local MCP server that exposes read-only S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, events/history) as Claude-callable tools, so NetBox data can be queried conversationally instead of hand-built XML/HTTP calls.
 

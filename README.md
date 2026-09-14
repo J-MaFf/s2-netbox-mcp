@@ -161,7 +161,7 @@ Every tool returns a thin JSON pass-through of that NBAPI command's response
 fields — no reshaping. Each tool's input schema declares exactly the
 documented PARAMS fields for its command — no invented, renamed, or
 passthrough fields. All parameter names above are copied verbatim from the
-NBAPI Command Reference (see `specs/s2-netbox-mcp.md`) — none are invented or
+NBAPI Command Reference (see `specs/archive/s2-netbox-mcp.md`) — none are invented or
 guessed.
 
 Session handling, retry-on-expired-session, and error mapping are all
@@ -222,5 +222,5 @@ keeping in mind if this project is ever extended with write tools.
 - Any GUI/dashboard beyond the MCP tool surface
 - Publishing/packaging this server, or a CI/CD pipeline
 
-See `specs/s2-netbox-mcp.md` for the full requirements this server was built
-against.
+See `specs/archive/s2-netbox-mcp.md` for the full requirements this server was built
+against (archived — all acceptance criteria passed, including live verification).
