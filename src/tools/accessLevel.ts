@@ -107,6 +107,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
       'WRITE: Modifies an existing access level (wraps NBAPI ModifyAccessLevel).',
       {
         ACCESSLEVELKEY: z.string().describe('Required. The ACCESSLEVELKEY of the access level to modify.'),
+        ACCESSLEVELNAME: z.string().optional().describe('Optional. New name for the access level.'),
         ACCESSLEVELDESCRIPTION: z.string().optional().describe('Optional. Description of the access level.'),
         READERKEY: z.string().optional().describe('Optional. A single reader this access level applies to. Mutually exclusive with READERGROUPKEY.'),
         READERGROUPKEY: z.string().optional().describe('Optional. A reader group this access level applies to. Mutually exclusive with READERKEY.'),

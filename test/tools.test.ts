@@ -448,7 +448,7 @@ describe('registerAccessLevelTools', () => {
       registerAccessLevelTools(server as unknown as McpServer, client, WRITES_ON);
       const reg = byName(server, 'modify_access_level');
       expect(Object.keys(reg.schema).sort()).toEqual(
-        ['ACCESSLEVELKEY', 'ACCESSLEVELDESCRIPTION', 'READERKEY', 'READERGROUPKEY', 'TIMESPECGROUPKEY', 'THREATLEVELGROUPKEY'].sort()
+        ['ACCESSLEVELKEY', 'ACCESSLEVELNAME', 'ACCESSLEVELDESCRIPTION', 'READERKEY', 'READERGROUPKEY', 'TIMESPECGROUPKEY', 'THREATLEVELGROUPKEY'].sort()
       );
     });
 
