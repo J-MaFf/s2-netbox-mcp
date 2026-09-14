@@ -26,35 +26,31 @@ bd close <id>         # Complete work
 
 ## Agent Context Profiles
 
-The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
+This repo opts into the **team-maintainer** profile, per this user's global git-policies
+(`~/.claude/skills/git-policies`), which take precedence over the defaults below:
 
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
+- `bd dolt push` runs automatically after every `bd create` / `bd update` / `bd close` — no
+  confirmation, not batched for session close. It syncs `refs/dolt/data`, which is not covered
+  by the `main` branch ruleset, so it carries none of the review weight of a merge.
+- Feature-branch `git push` also runs freely, without asking.
+- **Merges to `main` stay human-gated via PR** — never auto-merge, regardless of how freely
+  bead/branch state syncs. Issue-first workflow, signed commits, and PR conventions from
+  git-policies apply to all code changes in this repo.
+- Repo-scoped knowledge goes in `bd remember`, not `MEMORY.md` — this only overrides
+  project-local memory files; the user's global cross-repo memory system is unaffected and
+  still applies.
 
 ## Session Completion
 
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
+1. **File issues for remaining work** — create beads for anything that needs follow-up.
+2. **Run quality gates** (if code changed) — tests, linters, builds.
+3. **Update issue status** — close finished work, update in-progress items, `bd dolt push`
+   immediately (see above — no confirmation needed for this step).
+4. **Git**: push the feature branch; open/update the PR referencing its issue (`Fixes #N`);
+   stop at the merge gate for human approval — never auto-merge into `main`.
+5. **Hand off** — summarize changes, validation, issue/PR status.
 
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   git push
-   git status
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
-
-**Critical rules:**
-- Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
-- If a required sync or push is blocked, stop and report the exact command and error.
+**Critical rule:** explicit user instruction in the moment always overrides this file.
 <!-- END BEADS INTEGRATION -->
 
 
