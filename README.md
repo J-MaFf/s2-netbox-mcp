@@ -1,23 +1,28 @@
 # s2-netbox-mcp
 
-A local, **read-only** MCP server that exposes LenelS2 S2 NetBox NBAPI
-operations — persons/credentials, access levels, portals/readers, and
-events/history — as Claude-callable tools.
+A local MCP server that exposes LenelS2 S2 NetBox NBAPI operations —
+persons/credentials, access levels, portals/readers/outputs, time specs,
+holidays, portal/reader groups, threat levels, events/activity, and
+partitions/UDF lists — as Claude-callable tools.
 
 > **Not** the open-source netboxlabs.com "NetBox" DCIM/IPAM tool. This targets
 > LenelS2's **S2 NetBox** physical access-control appliance and its NBAPI
 > (`Web-Based API for S2 NetBox and S2 Global`, LenelS2 doc #API-UG-14).
 
-This server issues **only** query/read NBAPI commands (`Login`, `Logout`,
+**Read-only by default.** With no write-related environment variables set,
+this server registers only query/read NBAPI commands (`Login`, `Logout`,
 `GetAPIVersion`, `GetPerson`, `SearchPersonData`, `GetCardAccessDetails`,
 `GetCardFormats`, `GetAccessLevel(s)`, `GetAccessLevelGroup(s)`,
-`GetPortals`, `GetReader(s)`, `GetEventHistory`, `ListEvents`,
-`GetAccessHistory`) — note there is no `GetPortal` (singular) command; only
-`GetPortals` (plural, paginated, no single-portal filter) exists on the real
-NBAPI. It is structurally incapable of adding, modifying,
+`GetPortals`, `GetReader(s)`, `GetOutputs`, `GetTimeSpec(s)`,
+`GetTimeSpecGroup(s)`, `GetHoliday(s)`, `GetPortalGroup(s)`,
+`GetReaderGroup(s)`, `GetAccessLevelNames`, `GetPartitions`, `GetUDFLists`,
+`GetUDFListItems`, `GetElevators`, `GetFloors`, `PingApp`, `GetEventHistory`,
+`ListEvents`, `GetAccessHistory`) and is incapable of adding, modifying,
 deleting, locking/unlocking, activating/deactivating, or triggering anything
-on the controller — no such command is implemented or reachable through any
-tool.
+on the controller. Write/control tools exist in the codebase but are not
+registered unless you explicitly opt in — see **Write access** below. Note
+there is no `GetPortal` (singular) command; only `GetPortals` (plural,
+paginated, no single-portal filter) exists on the real NBAPI.
 
 ## Requirements
 
@@ -61,10 +66,52 @@ npm start
 | `NETBOX_PASSWORD`               | Yes      | —       | NBAPI session-login password. Never logged, never written to any tracked file.                      |
 | `NETBOX_ALLOW_INSECURE_TLS`     | No       | `false` | Set to `true`/`1`/`yes` to accept a self-signed/on-prem TLS certificate. **Explicit opt-in only** — any other value (including unset) keeps normal certificate verification. |
 | `NETBOX_API_PATH`               | No       | `/nbws/goforms/nbapi` | The NBAPI path appended to `NETBOX_BASE_URL`. The default is the verified path on NetBox 6.x controllers. Only set this to override the default — e.g. to the legacy, pre-6.x path `/goforms/nbapi`, which returns **HTTP 410 Gone** on 6.x controllers (see Controller prerequisites below). A value without a leading `/` has one added automatically. |
+| `NETBOX_ENABLE_WRITES`          | No       | `false` | Set to `true`/`1`/`yes` to register the write tools (see **Write access** below). Unset (or any other value) leaves the server strictly read-only. |
+| `NETBOX_ENABLE_DESTRUCTIVE`     | No       | `false` | Set to `true`/`1`/`yes`, **together with** `NETBOX_ENABLE_WRITES`, to additionally register the 11 destructive tools (see **Write access** below). |
+| `NETBOX_EVENT_API_PATH`         | No       | tracks `NETBOX_API_PATH` | Request path used only for `trigger_event`. Unset/empty tracks whatever `NETBOX_API_PATH` resolves to; a non-empty override is used verbatim (leading `/` added if missing) — e.g. the doc's pre-6.x Event API path `/appd/nbapi`, if your controller serves it separately. |
+| `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | Reserved for the managed unlock-window feature (not yet implemented in this build). Must be 1-3 distinct integers in `1..8`, comma-separated. |
+| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Reserved for the managed unlock-window feature (not yet implemented in this build). 1-40 characters. |
+| `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | Reserved for the (not yet implemented) live write smoke test; read only by that script, never by the server itself. |
 
 If any of the three required variables is missing, the server prints a single
 actionable line to stderr and exits with a non-zero status — it never prints
 a stack trace on startup misconfiguration.
+
+## Write access
+
+Write/control tools exist in this server but are **not registered** unless
+you explicitly opt in:
+
+- **`NETBOX_ENABLE_WRITES=true`** registers the 45 write tools listed in the
+  "Write tools" table below — creating, modifying, locking/unlocking,
+  activating, and triggering. Left unset (the default), the server's tool
+  surface is exactly the read tools below — byte-for-byte the same read-only
+  posture as before this variable existed.
+- **`NETBOX_ENABLE_DESTRUCTIVE=true`**, set **in addition to**
+  `NETBOX_ENABLE_WRITES`, registers the 11 **destructive** tools (each
+  description is `DESTRUCTIVE:`-prefixed): `delete_access_level`,
+  `delete_access_level_group`, `delete_holiday`, `delete_portal_group`,
+  `delete_reader_group`, `delete_time_spec`, `delete_time_spec_group`,
+  `remove_credential`, `remove_person`, `remove_threat_level`,
+  `remove_threat_level_group`. Two ordinarily non-destructive write tools
+  also independently refuse one specific destructive-shaped call when this
+  flag is off, regardless of whether the tool itself is registered:
+  `modify_person` refuses a call with `DELETED="TRUE"` or
+  `PERSONPURGE="TRUE"`, and `modify_udf_list_items` refuses a call where any
+  list item has `DELETE="1"` — both name `NETBOX_ENABLE_DESTRUCTIVE` in the
+  error and send nothing to the controller.
+- Every write tool's description starts with `WRITE:` (or `DESTRUCTIVE:` for
+  the 11 above), and every successful write's result text contains the
+  literal `SUCCESS` followed by the controller's response data as pretty
+  JSON (which may be `{}` when the command returns no data), so you can
+  always tell a write actually happened.
+- Client-side guards (e.g. "give either `READERKEY` or `READERGROUPKEY`, not
+  both") reject malformed calls with a tool error **before** any NBAPI
+  command is issued — no partial or guessed request ever reaches the
+  controller.
+
+Set these the same way as the other variables — in `.env` (see
+`.env.example`) or your MCP server config's `env` block.
 
 ## Controller prerequisites
 
@@ -77,9 +124,12 @@ confirm all three of these are checked:
 - **Use login username/password for authentication (requires setup privilege)**
 
 The NBAPI user account also needs a role with **NBAPI read access** (see the
-NBAPI doc's "Creating User Roles for API" section) — a login that succeeds
-but can't read the resources this server queries will surface as `FAIL` or
-`APIERROR` responses per tool call.
+NBAPI doc's "Setting Up User Roles for the API" section) — a login that
+succeeds but can't read the resources this server queries will surface as
+`FAIL` or `APIERROR` responses per tool call. If you set
+`NETBOX_ENABLE_WRITES`, that role needs **Read-Write** API privilege instead
+(Configuration → Site Settings → User Roles → API Privilege) — Read-Only
+suffices only for the read tools.
 
 ### Troubleshooting
 
@@ -133,6 +183,8 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 
 ## Tools exposed
 
+### Read tools (always registered)
+
 | Tool                       | Wraps NBAPI command    | Required params            |
 | --------------------------- | ----------------------- | ---------------------------- |
 | `check_connection`           | `GetAPIVersion`          | —                             |
@@ -144,13 +196,31 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 | `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
 | `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPKEY`          |
 | `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`)   |
+| `get_access_level_names`     | `GetAccessLevelNames`    | — (optional `PARTITIONKEY`/`STARTFROMNAME`) |
 | `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`; no single-portal filter — returns each portal with its nested readers) |
 | `get_reader`                 | `GetReader`              | `READERKEY`                   |
 | `get_readers`                | `GetReaders`             | — (optional `STARTFROMKEY`; no portal-id filter) |
+| `get_outputs`                | `GetOutputs`             | — (optional `STARTFROMKEY`)   |
 | `find_portals`               | `GetPortals` + `GetReaders` (composite) | `query` (search terms) |
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
 | `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`OLDESTDTTM`/`NEWESTDTTM`) |
+| `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
+| `get_time_specs`             | `GetTimeSpecs`           | — (optional `STARTFROMKEY`)   |
+| `get_time_spec_group`        | `GetTimeSpecGroup`       | `TIMESPECGROUPKEY`            |
+| `get_time_spec_groups`       | `GetTimeSpecGroups`      | — (optional `STARTFROMKEY`)   |
+| `get_holiday`                | `GetHoliday`             | `HOLIDAYKEY`                  |
+| `get_holidays`               | `GetHolidays`            | — (optional `STARTFROMKEY`)   |
+| `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY`              |
+| `get_portal_groups`          | `GetPortalGroups`        | — (optional `STARTFROMKEY`)   |
+| `get_reader_group`           | `GetReaderGroup`         | `READERGROUPKEY`              |
+| `get_reader_groups`          | `GetReaderGroups`        | — (optional `STARTFROMKEY`)   |
+| `get_partitions`             | `GetPartitions`          | —                             |
+| `get_udf_lists`              | `GetUDFLists`            | —                             |
+| `get_udf_list_items`         | `GetUDFListItems`        | `UDFLISTKEY`                  |
+| `get_elevators`               | `GetElevators`           | — (optional `STARTFROMKEY`)   |
+| `get_floors`                 | `GetFloors`              | — (optional `STARTFROMKEY`)   |
+| `ping_app`                   | `PingApp`                | —                             |
 
 There is deliberately no `get_portal` (singular) tool — no such NBAPI command
 exists; only `GetPortals` (plural) does. `get_card_access_details` and
@@ -158,11 +228,12 @@ exists; only `GetPortals` (plural) does. `get_card_access_details` and
 `get_access_history` optionally by `HOTSTAMP`), not by `PERSONID` — neither
 command has a `PERSONID` parameter.
 
-Every tool except `find_portals` returns a thin JSON pass-through of that NBAPI
-command's response fields — no reshaping. Each of those tools' input schema
-declares exactly the documented PARAMS fields for its command — no invented,
-renamed, or passthrough fields. All NBAPI parameter names above are copied
-verbatim from the NBAPI Command Reference (see `specs/archive/s2-netbox-mcp.md`)
+Every read tool except `find_portals` returns a thin JSON pass-through of
+that NBAPI command's response fields — no reshaping. Each tool's input
+schema declares exactly the documented PARAMS fields for its command — no
+invented, renamed, or passthrough fields. All NBAPI parameter names above
+are copied verbatim from the NBAPI Command Reference (see
+`specs/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
 — none are invented or guessed.
 
 `find_portals` is the one composite tool, for finding a door when you only know
@@ -177,6 +248,85 @@ For example, `"maintenance office"` matches a reader described as
 descriptions. The result also lists `portalsWithoutDescriptions`: portals none
 of whose readers has a description, which can only be found by name. It issues
 no commands beyond those two.
+
+### Write tools (registered only with `NETBOX_ENABLE_WRITES`)
+
+`Tier` is `write` (needs only `NETBOX_ENABLE_WRITES`) or `destructive` (needs
+`NETBOX_ENABLE_WRITES` **and** `NETBOX_ENABLE_DESTRUCTIVE`). Every write
+tool's input schema declares exactly the documented PARAMS fields for its
+command, matching required/optional as documented — see the "Write access"
+section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
+`DESTRUCTIVE:` conventions.
+
+| Tool                         | Wraps NBAPI command      | Required params                              | Tier        |
+| ----------------------------- | ------------------------- | ----------------------------------------------- | ----------- |
+| `lock_portal`                 | `LockPortal`               | `PORTALKEY`                                      | write       |
+| `unlock_portal`               | `UnlockPortal`             | `PORTALKEY`                                      | write       |
+| `momentary_unlock_portal`     | `MomentaryUnlockPortal`    | `PORTALKEY`                                      | write       |
+| `dog_on_next_exit_portal`     | `DogOnNextExitPortal`      | `PORTALKEY`                                      | write       |
+| `activate_output`             | `ActivateOutput`           | `OUTPUTKEY`                                      | write       |
+| `deactivate_output`           | `DeactivateOutput`         | `OUTPUTKEY`                                      | write       |
+| `add_time_spec`               | `AddTimeSpec`              | `NAME`                                           | write       |
+| `modify_time_spec`            | `ModifyTimeSpec`           | `TIMESPECKEY`                                    | write       |
+| `add_time_spec_group`         | `AddTimeSpecGroup`         | `NAME`                                           | write       |
+| `modify_time_spec_group`      | `ModifyTimeSpecGroup`      | `TIMESPECGROUPKEY`                               | write       |
+| `delete_time_spec`            | `DeleteTimeSpec`           | `TIMESPECKEY`                                    | destructive |
+| `delete_time_spec_group`      | `DeleteTimeSpecGroup`      | `TIMESPECGROUPKEY`                               | destructive |
+| `add_holiday`                 | `AddHoliday`               | `HOLIDAYNAME`, `STARTDATE`, `ENDDATE`             | write       |
+| `modify_holiday`              | `ModifyHoliday`            | `HOLIDAYKEY`                                     | write       |
+| `delete_holiday`              | `DeleteHoliday`            | `HOLIDAYKEY`                                     | destructive |
+| `add_portal_group`            | `AddPortalGroup`           | `NAME`, `PORTALKEYS`                             | write       |
+| `modify_portal_group`         | `ModifyPortalGroup`        | `PORTALGROUPKEY`, `PORTALKEYS`                   | write       |
+| `delete_portal_group`         | `DeletePortalGroup`        | `PORTALGROUPKEY`                                 | destructive |
+| `add_reader_group`            | `AddReaderGroup`           | `NAME`, `READERKEYS`                             | write       |
+| `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`                                 | write       |
+| `delete_reader_group`         | `DeleteReaderGroup`        | `READERGROUPKEY`                                 | destructive |
+| `add_access_level`            | `AddAccessLevel`           | `ACCESSLEVELNAME`, `TIMESPECGROUPKEY`             | write       |
+| `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`                                 | write       |
+| `delete_access_level`         | `DeleteAccessLevel`        | `ACCESSLEVELKEY`                                 | destructive |
+| `add_access_level_group`      | `AddAccessLevelGroup`      | `NAME`                                           | write       |
+| `modify_access_level_group`   | `ModifyAccessLevelGroup`   | `ACCESSLEVELGROUPKEY`                            | write       |
+| `delete_access_level_group`   | `DeleteAccessLevelGroup`   | `ACCESSLEVELGROUPKEY`                            | destructive |
+| `add_person`                  | `AddPerson`                | `LASTNAME`                                       | write       |
+| `modify_person`               | `ModifyPerson`             | `PERSONID`                                       | write       |
+| `remove_person`               | `RemovePerson`             | `PERSONID`                                       | destructive |
+| `add_credential`              | `AddCredential`            | `PERSONID`, `CARDFORMAT` (+ `ENCODEDNUM` or `HOTSTAMP`) | write |
+| `modify_credential`           | `ModifyCredential`         | `PERSONID`                                       | write       |
+| `remove_credential`           | `RemoveCredential`         | `PERSONID` (+ `CREDENTIALID` or `ENCODEDNUM`/`HOTSTAMP`) | destructive |
+| `set_threat_level`            | `SetThreatLevel`           | `LEVELNAME`                                      | write       |
+| `add_threat_level`            | `AddThreatLevel`           | `LEVELNAME`                                      | write       |
+| `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`                                      | write       |
+| `remove_threat_level`         | `RemoveThreatLevel`        | `LEVELNAME`                                      | destructive |
+| `add_threat_level_group`      | `AddThreatLevelGroup`      | `LEVELGROUPNAME`                                 | write       |
+| `modify_threat_level_group`   | `ModifyThreatLevelGroup`   | `LEVELGROUPNAME`, `LEVELNAMES`                    | write       |
+| `remove_threat_level_group`   | `RemoveThreatLevelGroup`   | `LEVELGROUPNAME`                                 | destructive |
+| `trigger_event`               | `TriggerEvent`             | `EVENTNAME`, `EVENTACTION`                        | write       |
+| `insert_activity`             | `InsertActivity`           | `ACTIVITYTYPE`                                   | write       |
+| `add_partition`               | `AddPartition`             | `NAME`, `TIMEZONE`                                | write       |
+| `switch_partition`            | `SwitchPartition`          | `PARTITIONKEY`                                   | write       |
+| `modify_udf_list_items`       | `ModifyUDFListItems`       | `UDFLISTKEY`, `LISTITEMS`                         | write       |
+
+`trigger_event` is **unverified live on 6.x**; `NETBOX_EVENT_API_PATH` is
+available to override the request path if your controller serves the Event
+API separately from the main NBAPI path (see the environment variable table
+above).
+
+`switch_partition` changes the partition for **every later call made by this
+server process**, not just the caller's own next request — the NBAPI session
+is cached and reused, and `SwitchPartition` has no per-call scope.
+
+#### Person / credential tools and Active Directory
+
+If this NetBox instance syncs person/access-level data from Active
+Directory, any *write* this server makes to a synced field is silently
+overwritten on the next AD sync — `add_person` and `modify_person` both
+carry this caution in their tool descriptions. Separately, `modify_person`'s
+`ACCESSLEVELS` has two syntaxes: a plain list of access-level name strings
+**replaces** the person's entire set of access levels, while a list of
+`{ ACCESSLEVELNAME, DELETE?, ACTDATE?, EXPDATE?, AUTOREMOVE? }` blocks is
+additive (adds/removes individual levels without touching the rest). Mixing
+the two syntaxes in one call is rejected client-side before any command is
+sent.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:
@@ -210,31 +360,33 @@ no network access and no live controller are required or contacted.
 npm run test:live
 ```
 
-This calls all 16 tools against a **real, configured** controller and prints
-a PASS/FAIL line per tool plus a summary, exiting non-zero if anything
-failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
+This calls all 34 read tools against a **real, configured** controller and
+prints a PASS/FAIL line per tool plus a summary, exiting non-zero if
+anything failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
 `NETBOX_PASSWORD` are all set (loaded from `.env` if present); otherwise it
 prints one line saying live testing was skipped and exits 0. It never prints
-the value of `NETBOX_PASSWORD`, under any circumstance. `npm test` never runs
-this script and never requires `.env` to exist.
+the value of `NETBOX_PASSWORD`, under any circumstance, and it never issues
+a write/control command regardless of `NETBOX_ENABLE_WRITES`. `npm test`
+never runs this script and never requires `.env` to exist.
 
-## A caution carried from the NBAPI documentation
+## Out of scope
 
-If this (or any) NetBox instance syncs person/access-level data from Active
-Directory, any *write* to those fields via NBAPI gets silently overwritten on
-the next AD sync. Not directly relevant to this read-only server, but worth
-keeping in mind if this project is ever extended with write tools.
-
-## Out of scope (v1)
-
-- Any write/control NBAPI command (adding, modifying, deleting,
-  locking/unlocking, activating/deactivating, triggering, etc.)
 - Photo ID handling (`GetPicture` and photo upload)
 - `StreamEvents` / the persistent `/appdevent/nbapi/event` push feed
 - MAC-based authentication (session-login only)
 - The S2 Global API variant
+- The deprecated NBAPI commands (`EditPerson`, `EditThreatLevel`,
+  `EditThreatLevelGroup`, `GetAccessDataLog`, `GetAccessCardDetails`,
+  `LoginUserName`, `LoginUserPassword`)
+- A composite "unlock all doors for a time window" tool and its supporting
+  `set_portals_state` bulk portal-state tool — not yet implemented in this
+  build (planned; see `specs/s2-netbox-mcp-write.md`)
+- A live write smoke test (`npm run test:live:write`) — not yet implemented
+  in this build
 - Any GUI/dashboard beyond the MCP tool surface
 - Publishing/packaging this server, or a CI/CD pipeline
 
-See `specs/archive/s2-netbox-mcp.md` for the full requirements this server was built
-against (archived — all acceptance criteria passed, including live verification).
+See `specs/s2-netbox-mcp-write.md` for the full requirements the write-tool
+surface was built against, and `specs/archive/s2-netbox-mcp.md` for the
+original read-only v1 spec (archived — all its acceptance criteria passed,
+including live verification).
