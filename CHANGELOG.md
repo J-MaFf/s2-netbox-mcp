@@ -18,9 +18,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default `MCP Daily Unlock Window`), so the two features may be scheduled and active at the same
   time. Adds `scripts/live-check-write-daily.ts` (`npm run test:live:write:daily`), the daily
   window's opt-in live write smoke test, mirroring `npm run test:live:write`'s CRUD round-trips,
-  clock-skew gate, and `--go` door-unlock phase under its own `MCP livecheck daily` prefix.
-  (See the GitHub issue and PR that introduce this feature, opened per this repo's issue-first
-  workflow.)
+  clock-skew gate, and `--go` door-unlock phase under its own `MCP livecheck daily` prefix
+  ([#23](https://github.com/J-MaFf/s2-netbox-mcp/issues/23),
+  [#24](https://github.com/J-MaFf/s2-netbox-mcp/pull/24)). Live-verified the same day: a real
+  14:15-14:17 window on portal `02OF01A`, unlock/relock confirmed in person, 16/16 steps PASS.
+
+### Fixed
+- Documented (README) that `npm run test:live:write[:daily] -- --go` silently drops `--go` on at
+  least one PowerShell/npm combination (`npm warn Unknown cli config "--go"`, flag never reaches
+  the script); `npx tsx scripts/live-check-write[-daily].ts --go` is the reliable invocation
+  ([#23](https://github.com/J-MaFf/s2-netbox-mcp/issues/23)).
 
 ## [0.1.1] — 2026-09-15
 

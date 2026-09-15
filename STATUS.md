@@ -91,9 +91,13 @@ with `NETBOX_ENABLE_DESTRUCTIVE` as well. `package.json` bumped to `0.2.0` (new 
 feature, per semver).
 
 521 unit tests pass (27 files), `npm run typecheck` and `npm run build` are clean. `npm run
-test:live` and `npm run test:live:write`/`npm run test:live:write:daily` are unchanged in their
-gating and have not yet been re-run live against the controller for this feature — see the
-completion note for what remains to be live-verified.
+test:live:write:daily -- --go` was run live the same day: a real 14:15-14:17 window on portal
+`02OF01A`, unlock and relock confirmed in person, 16/16 steps PASS, `cancel_daily_unlock_window`
+left the portal group on `Never` with no managed holiday/time spec remaining. One finding from
+that run: on this host's PowerShell, `npm run test:live:write:daily -- --go` silently drops the
+`--go` flag (`npm warn Unknown cli config "--go"`) — `npx tsx scripts/live-check-write-daily.ts
+--go` is the reliable invocation (now documented in README, and the same caveat applies to the
+continuous feature's `npm run test:live:write -- --go`).
 
 ### Components
 
@@ -135,6 +139,8 @@ completion note for what remains to be live-verified.
 | [#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13) | Live round-trips for people, credentials, access levels, threat levels, activity, UDF, partitions in `test:live:write` | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
 | [#17](https://github.com/J-MaFf/s2-netbox-mcp/issues/17) | README leaked maintainer's personal Windows path in the MCP config example | [#18](https://github.com/J-MaFf/s2-netbox-mcp/pull/18) |
 | [#19](https://github.com/J-MaFf/s2-netbox-mcp/issues/19) | Add LICENSE (MIT); redact local Windows username from archived specs | [#20](https://github.com/J-MaFf/s2-netbox-mcp/pull/20) |
+| [#21](https://github.com/J-MaFf/s2-netbox-mcp/issues/21) | Cut v0.1.1 (LICENSE + archived-spec path redaction) | [#22](https://github.com/J-MaFf/s2-netbox-mcp/pull/22) |
+| [#23](https://github.com/J-MaFf/s2-netbox-mcp/issues/23) | Daily recurring unlock window (`schedule_daily_unlock_window`/`cancel_daily_unlock_window`/`get_daily_unlock_window`); live door test passed | [#24](https://github.com/J-MaFf/s2-netbox-mcp/pull/24) |
 
 ### Open Issues
 
@@ -142,7 +148,8 @@ None.
 
 ## Natural Next Steps
 
-1. Tag and publish the `v0.1.0` GitHub release now that all work to date is merged to `main`.
+1. Tag and publish a `v0.2.0` GitHub release now that the daily-unlock-window work (`v0.1.1` ->
+   `0.2.0` in `package.json`) is merged and live-verified.
 2. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
 3. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.

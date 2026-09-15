@@ -635,6 +635,11 @@ npm run test:live:write -- --go                # ... plus the real 2-minute unlo
 npm run test:live:write -- --go --start 14:30  # pin the unlock time (1-60 min ahead)
 ```
 
+> **PowerShell:** on at least one PowerShell/npm combination this silently drops flags passed after
+> `--` (npm prints `npm warn Unknown cli config "--go"` and the flag never reaches the script —
+> observed live, 2026-09-15). If `--go` doesn't trigger phase (c), call the script directly instead:
+> `npx tsx scripts/live-check-write.ts --go`.
+
 This skips with one line and exit 0 — making no network call — unless
 `NETBOX_BASE_URL`, `NETBOX_USERNAME`, `NETBOX_PASSWORD`,
 `NETBOX_ENABLE_WRITES=true` **and** `NETBOX_LIVE_TEST_PORTALKEY` are all set.
@@ -751,6 +756,10 @@ routing still applies; the script prints which URL path it used.
 npm run test:live:write:daily         # CRUD round-trips only
 npm run test:live:write:daily -- --go # ... plus the real 2-minute daily unlock window
 ```
+
+> **PowerShell:** see the same-named caveat under "Live write smoke test" above — if `--go` is
+> silently dropped, use `npx tsx scripts/live-check-write-daily.ts --go` instead (verified live,
+> 2026-09-15, on portal `02OF01A`: unlock/relock confirmed in person, 16/16 steps PASS).
 
 A sibling script to `npm run test:live:write` above, covering
 `schedule_daily_unlock_window`/`cancel_daily_unlock_window`/
