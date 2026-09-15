@@ -822,9 +822,14 @@ window first), and `npm test` never runs it.
 - Confirmation prompts inside the server — the MCP host's permission model
   and the environment gates are the controls
 - Any GUI/dashboard beyond the MCP tool surface
-- Publishing/packaging this server, or a CI/CD pipeline
 
 See `specs/archive/s2-netbox-mcp-write.md` for the full requirements the write-tool
 surface was built against, and `specs/archive/s2-netbox-mcp.md` for the
 original read-only v1 spec (archived — all its acceptance criteria passed,
 including live verification).
+
+## Contributing
+
+Bug reports, feature requests, and PRs are welcome — see `CONTRIBUTING.md` for the
+workflow (issue first, branch naming, PR conventions) and the physical-safety note that
+applies to any change touching write/destructive tools.
