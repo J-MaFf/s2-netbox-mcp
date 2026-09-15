@@ -177,8 +177,14 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   auto-created singular group is tolerated. Settled by the first live `add_time_spec`.
 - `TriggerEvent` works on the 6.x main path (inferred from `ListEvents`). Settled only by a user
   who configures a harmless test event; until then the README says "unverified live".
-- The MCP host and the controller share a timezone (the host is on the same site). The composite
-  tools compare the window's `end` against the host clock only to reject already-elapsed windows.
+- ~~The MCP host and the controller share a timezone.~~ **Falsified live, 2026-09-15:** during the
+  first door test the controller's newest access records read `03:30` while the host read `08:05`
+  (about 4 h 35 min behind — a wrong controller clock, not a timezone), so a window scheduled for
+  host-time `08:03–08:05` never arrived in controller time and the door stayed locked, while the
+  configuration objects were exactly right. Window times are controller-local by definition; the
+  host clock is used only for the "already elapsed" check in R22, and the write live check now
+  measures the controller's clock and refuses to run the door phase on a skew above 2 minutes
+  (R30). The user is correcting the controller's time (Configuration → Time / NTP).
 
 ### Decisions taken by the user on 2026-09-14
 - Write surface: **all four areas** — unlock workflow (portal control, time specs, holidays, portal
@@ -514,6 +520,13 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   `NETBOX_ENABLE_WRITES=true`, and `NETBOX_LIVE_TEST_PORTALKEY` are all set; (b) otherwise, under
   a distinct prefix `MCP livecheck`, round-trips add → get → modify → get → delete for a time spec,
   a time spec group, a holiday, a reader group, and a portal group, asserting each read-back;
+  (b2) estimates the controller's current time as the `DTTM` of the newest `GetAccessHistory`
+  record (`MAXRECORDS` `1`), prints both clocks, and if it differs from the host clock by more than
+  2 minutes prints `[FAIL] controller clock skew: controller <HH:MM:SS> vs host <HH:MM:SS>` and
+  does not run phase (c) (exit non-zero). There is no "stale record" exemption — a large delta is
+  indistinguishable from a wrong clock, so any delta above 2 minutes fails closed; the failure
+  message tells the operator to badge any reader and re-run if the site has simply been quiet. Only
+  a controller with **no** access records at all prints a warning and continues;
   (c) then — only after the operator running the check has notified the user (push notification
   plus a chat message giving the exact unlock and relock clock times) and received a go-ahead,
   because the user observes the door in person — prints `HEADS-UP: scheduling a 2-minute unlock
