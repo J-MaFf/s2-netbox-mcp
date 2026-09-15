@@ -119,6 +119,27 @@ export function assertTrue(label: string, condition: boolean): void {
   if (!condition) throw new LiveAssertionError(label);
 }
 
+/**
+ * Resolves the first CARDFORMAT name out of GetCardFormats' `CARDFORMATS.CARDFORMAT`
+ * field, tolerant of every shape observed: a bare string (a single format), an
+ * array of strings (the live 6.2.0 shape, e.g. `["26 bit Wiegand", "..."]`),
+ * an object carrying a `NAME` field, or an array of such objects (#13).
+ * Returns `''` when no usable name is found.
+ */
+export function parseCardFormatName(raw: unknown): string {
+  const items = raw === undefined || raw === null ? [] : Array.isArray(raw) ? raw : [raw];
+  for (const item of items) {
+    if (typeof item === 'string') {
+      const trimmed = item.trim();
+      if (trimmed !== '') return trimmed;
+    } else if (item !== null && typeof item === 'object') {
+      const name = (item as Record<string, unknown>).NAME;
+      if (typeof name === 'string' && name.trim() !== '') return name.trim();
+    }
+  }
+  return '';
+}
+
 export function assertSameSet(label: string, actual: readonly string[], expected: readonly string[]): void {
   const left = [...new Set(actual)].sort();
   const right = [...new Set(expected)].sort();

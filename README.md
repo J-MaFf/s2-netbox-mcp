@@ -305,7 +305,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`, `READERKEYS`                   | write       |
 | `delete_reader_group`         | `DeleteReaderGroup`        | `READERGROUPKEY`                                 | destructive |
 | `add_access_level`            | `AddAccessLevel`           | `ACCESSLEVELNAME`, `TIMESPECGROUPKEY`             | write       |
-| `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`                                 | write       |
+| `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`, `TIMESPECGROUPKEY`             | write       |
 | `delete_access_level`         | `DeleteAccessLevel`        | `ACCESSLEVELKEY`                                 | destructive |
 | `add_access_level_group`      | `AddAccessLevelGroup`      | `NAME`                                           | write       |
 | `modify_access_level_group`   | `ModifyAccessLevelGroup`   | `ACCESSLEVELGROUPKEY`                            | write       |

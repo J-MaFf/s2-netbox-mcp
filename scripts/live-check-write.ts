@@ -28,6 +28,7 @@ import {
   computeTestWindow,
   estimateControllerClock,
   formatDurationHMS,
+  parseCardFormatName,
   parseLiveCheckWriteArgs,
   type ClockSkewResult,
 } from './liveCheckWriteHelpers.js';
@@ -100,7 +101,12 @@ const NAMES = {
   accessLevel: `${LIVE_PREFIX} accesslevel`,
   accessLevel2: `${LIVE_PREFIX} accesslevel2`,
   accessLevelGroup: `${LIVE_PREFIX} alg`,
-  threatLevel: `${LIVE_PREFIX} threatlevel`,
+  // Short, on purpose: the live 6.2.0 controller was observed to reject
+  // AddThreatLevel for the full "MCP livecheck threatlevel" name even though
+  // only the six default threat levels existed (ruling out the documented
+  // two-custom-level cap) — a length limit is a plausible cause, so this name
+  // is kept short while still carrying an "MCP" prefix (#13).
+  threatLevel: 'MCP LC TL',
   threatLevelGroup: `${LIVE_PREFIX} tlg`,
   udfItem: `${LIVE_PREFIX} item`,
 };
@@ -271,13 +277,16 @@ async function readAccessLevelGroup(client: NetboxClient, ACCESSLEVELGROUPKEY: s
   }
 }
 
-/** Resolves the first CARDFORMAT NAME from GetCardFormats, tolerant of the response's exact wrapping. */
+/** Resolves the first CARDFORMAT name from GetCardFormats, tolerant of the
+ * response's exact wrapping and of the live 6.2.0 shape where CARDFORMAT is
+ * a plain string (or array of plain strings) rather than an object carrying
+ * NAME (#13). */
 async function fetchFirstCardFormatName(client: NetboxClient): Promise<string> {
   const result = await client.call(NBAPI_COMMANDS.GET_CARD_FORMATS, {});
   if (result.notFound) return '';
   const details = asRecord(result.data);
-  const list = asRecordList(asRecord(details.CARDFORMATS).CARDFORMAT ?? []);
-  if (list.length > 0) return text(list[0].NAME);
+  const name = parseCardFormatName(asRecord(details.CARDFORMATS).CARDFORMAT);
+  if (name !== '') return name;
   return typeof details.NAME === 'string' ? text(details.NAME) : '';
 }
 
@@ -600,9 +609,32 @@ async function portalGroupRoundTrip(client: NetboxClient, portalKey: string, nev
   return allPassed;
 }
 
+/** Modifies or removes a credential, preferring CREDENTIALID-only
+ * identification and falling back to PERSONID + CARDFORMAT + ENCODEDNUM (both
+ * forms the doc allows) if the controller refuses the first. Logs which form
+ * worked (#13). */
+async function callCredentialCommand(
+  client: NetboxClient,
+  command: typeof NBAPI_COMMANDS.MODIFY_CREDENTIAL | typeof NBAPI_COMMANDS.REMOVE_CREDENTIAL,
+  personId: string,
+  credentialId: string,
+  cardFormat: string,
+  extraParams: Record<string, string> = {}
+): Promise<string> {
+  try {
+    await client.call(command, mergeParams({ PERSONID: personId, CREDENTIALID: credentialId, ...extraParams }));
+    return 'PERSONID + CREDENTIALID';
+  } catch (err) {
+    info(`${command} with PERSONID + CREDENTIALID was refused (${errorText(err)}); retrying with PERSONID + CARDFORMAT + ENCODEDNUM`);
+    await client.call(command, mergeParams({ PERSONID: personId, CARDFORMAT: cardFormat, ENCODEDNUM: TEST_CARD_NUMBER, ...extraParams }));
+    return 'PERSONID + CARDFORMAT + ENCODEDNUM';
+  }
+}
+
 async function personRoundTrip(client: NetboxClient): Promise<boolean> {
   let personId = '';
   let credentialId = '';
+  let cardFormat = '';
   let allPassed = true;
 
   const preExisting = await removeExistingLivecheckPersons(client);
@@ -639,7 +671,7 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
 
   allPassed =
     (await step('add_credential -> get_person (WANTCREDENTIALID) shows the card', async () => {
-      const cardFormat = await fetchFirstCardFormatName(client);
+      cardFormat = await fetchFirstCardFormatName(client);
       assertTrue('GetCardFormats returned at least one format', cardFormat !== '');
       const result = await client.call(NBAPI_COMMANDS.ADD_CREDENTIAL, {
         PERSONID: personId,
@@ -662,21 +694,23 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
 
   allPassed =
     (await step('modify_credential (DISABLED=1) -> get_person shows DISABLED', async () => {
-      await client.call(NBAPI_COMMANDS.MODIFY_CREDENTIAL, { PERSONID: personId, CREDENTIALID: credentialId, DISABLED: '1' });
+      const form = await callCredentialCommand(client, NBAPI_COMMANDS.MODIFY_CREDENTIAL, personId, credentialId, cardFormat, {
+        DISABLED: '1',
+      });
       const person = await readPerson(client, personId, true);
       const card = person?.CARDS.find((c) => c.CREDENTIALID === credentialId);
       assertTrue('GetPerson still lists the credential', card !== undefined);
       assertEqual('DISABLED', card!.DISABLED, '1');
-      return 'DISABLED=1';
+      return `DISABLED=1 (identified via ${form})`;
     })) && allPassed;
 
   allPassed =
     (await step('remove_credential -> get_person shows no card', async () => {
-      await client.call(NBAPI_COMMANDS.REMOVE_CREDENTIAL, { PERSONID: personId, CREDENTIALID: credentialId });
+      const form = await callCredentialCommand(client, NBAPI_COMMANDS.REMOVE_CREDENTIAL, personId, credentialId, cardFormat);
       const person = await readPerson(client, personId, true);
       const stillThere = person?.CARDS.some((c) => c.CREDENTIALID === credentialId) ?? false;
       assertTrue('the credential is gone from GetPerson', !stillThere);
-      return `CREDENTIALID ${credentialId} removed`;
+      return `CREDENTIALID ${credentialId} removed (identified via ${form})`;
     })) && allPassed;
 
   allPassed =
@@ -714,9 +748,12 @@ async function accessLevelRoundTrip(client: NetboxClient, neverKey: string, read
 
   allPassed =
     (await step('modify_access_level (description) -> get_access_level', async () => {
+      // The controller requires TIMESPECGROUPKEY on every ModifyAccessLevel
+      // call, despite the doc's example omitting it (#13) — reaffirm Never.
       await client.call(NBAPI_COMMANDS.MODIFY_ACCESS_LEVEL, {
         ACCESSLEVELKEY: levelKey,
         ACCESSLEVELDESCRIPTION: 'modified by npm run test:live:write',
+        TIMESPECGROUPKEY: neverKey,
       });
       const level = await readAccessLevel(client, levelKey);
       assertTrue(`GetAccessLevel ${levelKey} found it`, level !== undefined);
@@ -786,14 +823,41 @@ async function accessLevelRoundTrip(client: NetboxClient, neverKey: string, read
   return allPassed;
 }
 
+/** Steps that depend on add_threat_level having actually created the level;
+ * skipped (not failed) when it did not, so one controller-side rejection
+ * does not cascade into five more FAILs (#13). */
+const THREAT_LEVEL_DEPENDENT_STEPS = [
+  'add_threat_level_group (confirms the level exists)',
+  'modify_threat_level (COLOR=Green)',
+  'modify_threat_level_group (LEVELNAMES)',
+  'remove_threat_level_group',
+  'remove_threat_level -> a second remove_threat_level fails (proves it is gone)',
+];
+
 async function threatLevelRoundTrip(client: NetboxClient): Promise<boolean> {
   let allPassed = true;
+  let levelCreated = false;
 
   allPassed =
     (await step('add_threat_level (COLOR=Blue)', async () => {
-      await client.call(NBAPI_COMMANDS.ADD_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Blue' });
+      // SEQNUM is documented as optional, but the doc's own AddThreatLevel
+      // example sends SEQNUM 4 — sent here in case it is required in
+      // practice (#13).
+      await client.call(NBAPI_COMMANDS.ADD_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Blue', SEQNUM: '7' });
+      levelCreated = true;
       return `LEVELNAME "${NAMES.threatLevel}"`;
     })) && allPassed;
+
+  if (!levelCreated) {
+    const note =
+      'SKIPPED: add_threat_level failed above (see that step for the controller\'s message). The six-default-plus-two-custom cap was ' +
+      'ruled out (only the six defaults existed); a short LEVELNAME and an explicit SEQNUM were both tried without success.';
+    for (const name of THREAT_LEVEL_DEPENDENT_STEPS) {
+      results.push({ name, pass: true, summary: note });
+      log(`[PASS] ${name}: ${note}`);
+    }
+    return allPassed;
+  }
 
   allPassed =
     (await step('add_threat_level_group (confirms the level exists)', async () => {

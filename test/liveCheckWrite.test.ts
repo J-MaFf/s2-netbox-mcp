@@ -14,6 +14,7 @@ import {
   estimateControllerClock,
   formatClockHMS,
   formatDurationHMS,
+  parseCardFormatName,
   parseControllerDttm,
   parseLiveCheckWriteArgs,
 } from '../scripts/liveCheckWriteHelpers.js';
@@ -73,6 +74,32 @@ describe('live-check-write helpers (R30)', () => {
 
     it('clockOf renders HH:MM', () => {
       expect(clockOf(new Date(2026, 8, 14, 7, 5))).toBe('07:05');
+    });
+  });
+
+  describe('parseCardFormatName (#13: GetCardFormats CARDFORMATS.CARDFORMAT shape tolerance)', () => {
+    it('resolves the first name from an array of plain strings (the live 6.2.0 shape)', () => {
+      expect(parseCardFormatName(['26 bit Wiegand', '37 bit HID'])).toBe('26 bit Wiegand');
+    });
+
+    it('resolves a bare (single-format) string', () => {
+      expect(parseCardFormatName('26 bit Wiegand')).toBe('26 bit Wiegand');
+    });
+
+    it('resolves an object carrying NAME, and an array of such objects', () => {
+      expect(parseCardFormatName({ NAME: '26 bit Wiegand' })).toBe('26 bit Wiegand');
+      expect(parseCardFormatName([{ NAME: '26 bit Wiegand' }, { NAME: '37 bit HID' }])).toBe('26 bit Wiegand');
+    });
+
+    it('trims whitespace and skips blank entries to find the first usable name', () => {
+      expect(parseCardFormatName(['  ', '  26 bit Wiegand  '])).toBe('26 bit Wiegand');
+      expect(parseCardFormatName([{ NAME: '' }, { NAME: '37 bit HID' }])).toBe('37 bit HID');
+    });
+
+    it('returns "" for undefined, null, or an empty list', () => {
+      expect(parseCardFormatName(undefined)).toBe('');
+      expect(parseCardFormatName(null)).toBe('');
+      expect(parseCardFormatName([])).toBe('');
     });
   });
 
@@ -149,6 +176,37 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
   it('the threat level round-trip never calls SetThreatLevel, and proves removal via a second RemoveThreatLevel failing', () => {
     expect(script).not.toContain('NBAPI_COMMANDS.SET_THREAT_LEVEL');
     expect(script).toContain('a second RemoveThreatLevel for the same name fails');
+  });
+
+  it('modify_access_level sends TIMESPECGROUPKEY (the controller requires it on every ModifyAccessLevel call) (#13)', () => {
+    const modifyIndex = script.indexOf("step('modify_access_level (description)");
+    expect(modifyIndex).toBeGreaterThan(-1);
+    const nextStepIndex = script.indexOf("step('delete_access_level", modifyIndex);
+    const modifyBlock = script.slice(modifyIndex, nextStepIndex);
+    expect(modifyBlock).toContain('NBAPI_COMMANDS.MODIFY_ACCESS_LEVEL');
+    expect(modifyBlock).toContain('TIMESPECGROUPKEY: neverKey');
+  });
+
+  it('the threat level round-trip skips (not fails) its dependent steps when AddThreatLevel does not create the level, and never sends AddThreatLevelGroup for it (#13)', () => {
+    expect(script).toContain('if (!levelCreated)');
+    expect(script).toContain('THREAT_LEVEL_DEPENDENT_STEPS');
+    expect(script).toContain("results.push({ name, pass: true, summary: note })");
+    const skipCheckIndex = script.indexOf('if (!levelCreated)');
+    const addGroupCallIndex = script.indexOf('NBAPI_COMMANDS.ADD_THREAT_LEVEL_GROUP');
+    expect(skipCheckIndex).toBeGreaterThan(-1);
+    expect(addGroupCallIndex).toBeGreaterThan(skipCheckIndex);
+  });
+
+  it('add_threat_level sends a short LEVELNAME and an explicit SEQNUM (both tried after ruling out the two-custom-level cap) (#13)', () => {
+    expect(script).toContain("NBAPI_COMMANDS.ADD_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Blue', SEQNUM: '7' }");
+    const match = /threatLevel:\s*'([^']*)'/.exec(script);
+    expect(match).not.toBeNull();
+    expect((match?.[1] ?? '').length).toBeLessThanOrEqual(20);
+  });
+
+  it('modify_credential and remove_credential fall back from CREDENTIALID-only to PERSONID + CARDFORMAT + ENCODEDNUM (#13)', () => {
+    expect(script).toContain('callCredentialCommand');
+    expect(script).toContain('PERSONID + CARDFORMAT + ENCODEDNUM');
   });
 
   it('the UDF list round-trip records a SKIPPED pass when no UDF list is configured', () => {
