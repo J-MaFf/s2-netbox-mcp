@@ -305,7 +305,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`, `READERKEYS`                   | write       |
 | `delete_reader_group`         | `DeleteReaderGroup`        | `READERGROUPKEY`                                 | destructive |
 | `add_access_level`            | `AddAccessLevel`           | `ACCESSLEVELNAME`, `TIMESPECGROUPKEY`             | write       |
-| `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`                                 | write       |
+| `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`, `TIMESPECGROUPKEY`             | write       |
 | `delete_access_level`         | `DeleteAccessLevel`        | `ACCESSLEVELKEY`                                 | destructive |
 | `add_access_level_group`      | `AddAccessLevelGroup`      | `NAME`                                           | write       |
 | `modify_access_level_group`   | `ModifyAccessLevelGroup`   | `ACCESSLEVELGROUPKEY`                            | write       |
@@ -318,7 +318,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `remove_credential`           | `RemoveCredential`         | `PERSONID` (+ `CREDENTIALID` or `ENCODEDNUM`/`HOTSTAMP`) | destructive |
 | `set_threat_level`            | `SetThreatLevel`           | `LEVELNAME`                                      | write       |
 | `add_threat_level`            | `AddThreatLevel`           | `LEVELNAME`                                      | write       |
-| `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`                                      | write       |
+| `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`, `SEQNUM`                            | write       |
 | `remove_threat_level`         | `RemoveThreatLevel`        | `LEVELNAME`                                      | destructive |
 | `add_threat_level_group`      | `AddThreatLevelGroup`      | `LEVELGROUPNAME`                                 | write       |
 | `modify_threat_level_group`   | `ModifyThreatLevelGroup`   | `LEVELGROUPNAME`, `LEVELNAMES`                    | write       |
@@ -518,11 +518,39 @@ npm run test:live:write -- --go --start 14:30  # pin the unlock time (1-60 min a
 This skips with one line and exit 0 — making no network call — unless
 `NETBOX_BASE_URL`, `NETBOX_USERNAME`, `NETBOX_PASSWORD`,
 `NETBOX_ENABLE_WRITES=true` **and** `NETBOX_LIVE_TEST_PORTALKEY` are all set.
+Most of the round-trips below issue deletes/removes directly against the
+controller (independent of the MCP server's own `NETBOX_ENABLE_DESTRUCTIVE`
+gating, which this script bypasses by calling the NBAPI client directly), so
+**set `NETBOX_ENABLE_DESTRUCTIVE=true` before running it**.
+
 Otherwise it round-trips add → get → modify → get → delete for a time spec, a
 time spec group, a holiday, a reader group, and a portal group under the
 distinct prefix `MCP livecheck` (the portal group's unlock time spec group is
 `Never` and the holiday is in 2099, so nothing can unlock), asserting each
-read-back, and cleans up any `MCP livecheck` leftovers from an aborted run.
+read-back. It then round-trips a person (`AddPerson` → `GetPerson` →
+`ModifyPerson` → `GetPerson`) plus a credential on that person (`AddCredential`
+→ `GetPerson` with `WANTCREDENTIALID` → `ModifyCredential` with `DISABLED=1`
+→ read-back → `RemoveCredential` → read-back) → `RemovePerson`, accepting
+either `NOT FOUND` or `DELETED=TRUE` on the final `GetPerson` (never sends
+`PERSONPURGE`); an access level (`AddAccessLevel` with `TIMESPECGROUPKEY`
+`Never` → `GetAccessLevel` → `ModifyAccessLevel` → read-back →
+`DeleteAccessLevel` → read-back gone) plus an access level group built from a
+second temporary access level (`AddAccessLevelGroup` → `GetAccessLevelGroup`
+→ `ModifyAccessLevelGroup` → read-back → `DeleteAccessLevelGroup`, tolerating
+the same `FAIL`/`ERRMSG="NOT FOUND"` quirk documented for `GetTimeSpecGroup`
+against an empty collection); a threat level plus a threat level group
+(`AddThreatLevel` → `AddThreatLevelGroup` → `ModifyThreatLevel` →
+`ModifyThreatLevelGroup` → `RemoveThreatLevelGroup` → `RemoveThreatLevel`,
+proven gone by a second `RemoveThreatLevel` failing — there is no
+`GetThreatLevel`, and `SetThreatLevel` is never called); `InsertActivity`
+with a timestamped `USERACTIVITY` record; a UDF list item round-trip via
+`ModifyUDFListItems` (or a recorded `SKIPPED` pass if no UDF list is
+configured); and `GetPartitions` → `SwitchPartition` back to the session's
+own partition (`AddPartition` is never called). It cleans up any
+`MCP livecheck` leftovers — including persons, access levels/groups, and
+threat levels/groups — from an aborted run, both before and after the round
+trips.
+
 It then estimates the controller's clock from the newest `GetAccessHistory`
 record and refuses to run the door phase — regardless of `--go` — when that
 estimate disagrees with the host clock by more than 2 minutes; window times
@@ -539,11 +567,63 @@ Status`, polls `get_unlock_window` every 30 s until one minute after relock,
 then calls `cancel_unlock_window` and asserts the managed portal group is on
 `Never` with no managed holiday, time spec, or time spec group member left
 (leftBehind is tolerated but reported). It refuses that phase if a managed
-window already exists (so it never replaces a real one), never touches
-persons, credentials, access levels, threat levels, outputs, events,
-partitions, or UDF lists, never prints the password, exits non-zero on any
+window already exists (so it never replaces a real one); apart from the
+supervised single actions below, it never touches outputs, `TriggerEvent`, or
+portal lock/unlock actions, never prints the password, exits non-zero on any
 failed assertion (still cancelling the window first), and `npm test` never
 runs it.
+
+#### Supervised single actions
+
+```bash
+npm run test:live:write -- --action unlock_portal
+npm run test:live:write -- --action set_threat_level --value High
+```
+
+`--action <name> [--value <v>]` runs exactly **one** write against the
+designated portal (or its strike output) instead of the full flow above —
+skipping phases (b), (b2), and (c) entirely. It still requires
+`NETBOX_ENABLE_WRITES=true` and the credential variables (same skip line as
+above), but **not** `NETBOX_ENABLE_DESTRUCTIVE`, since no deletes happen. It
+refuses to run — exit 2, no network call — if `--action` is combined with
+`--go`, if the action name is unknown, or if `set_threat_level`'s required
+`--value` is missing. It prints the exact command and params sent (never
+credentials), the controller's `CODE`/`DETAILS` or `ERRMSG`, and an
+`OBSERVE: ...` line describing what to check at the door or on Monitor; a
+`FAIL` with `ERRMSG` `"Portal state not changed"` is reported as
+PASS-with-note rather than a failure. Exits 0 on success or already-in-state,
+1 otherwise, and unknown/invalid arguments exit 2.
+
+Every action is reversible:
+
+| Action | Effect | Reverse |
+| --- | --- | --- |
+| `unlock_portal` | `UnlockPortal` (Extended Unlock) | `lock_portal` |
+| `lock_portal` | `LockPortal` | — |
+| `momentary_unlock_portal` | `MomentaryUnlockPortal` (relocks itself) | — |
+| `dog_on_next_exit_portal` | `DogOnNextExitPortal` | `lock_portal` |
+| `activate_output` | `ActivateOutput` on the portal's strike output | `deactivate_output` |
+| `deactivate_output` | `DeactivateOutput` on the portal's strike output | — |
+| `set_portals_state_unlock` | the real `set_portals_state` (`setPortalsState`) tool, action `UNLOCK` | `set_portals_state_lock` |
+| `set_portals_state_lock` | `set_portals_state`, action `LOCK` | — |
+| `set_portals_state_momentary` | `set_portals_state`, action `MOMENTARY_UNLOCK` (relocks itself) | — |
+| `set_threat_level` | `SetThreatLevel LEVELNAME=<--value>` | `set_threat_level --value Default` |
+| `trigger_event_activate` | `TriggerEvent EVENTNAME=<--value> EVENTACTION=ACTIVATE PARTITIONID=1` | `trigger_event_deactivate` |
+| `trigger_event_deactivate` | `TriggerEvent EVENTNAME=<--value> EVENTACTION=DEACTIVATE PARTITIONID=1` | — |
+
+`activate_output`/`deactivate_output` resolve the strike output by finding
+the `GetOutputs` entry whose `NAME` starts with the designated portal's
+`NAME` (e.g. portal `"02OF01A"` → output `"02OF01A EL"`), failing clearly if
+none is found. `AddPartition` is never reachable through `--action`, same as
+the rest of this script.
+
+`trigger_event_activate`/`trigger_event_deactivate` require `--value
+<EVENTNAME>` — the name of a NetBox event that must already exist (events
+cannot be created via the NBAPI; create it first in the NetBox UI). This is
+the **only** live verification path for `trigger_event` — the full CRUD
+flow above never calls `TriggerEvent`. Both actions go through the same
+`NetboxClient.call` as every other command, so `NETBOX_EVENT_API_PATH`
+routing still applies; the script prints which URL path it used.
 
 ## Out of scope
 

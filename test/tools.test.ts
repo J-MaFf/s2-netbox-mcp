@@ -442,7 +442,7 @@ describe('registerAccessLevelTools', () => {
       expect(calls).toEqual([]);
     });
 
-    it('modify_access_level makes everything but ACCESSLEVELKEY optional', () => {
+    it('modify_access_level requires ACCESSLEVELKEY and TIMESPECGROUPKEY (the controller rejects ModifyAccessLevel without it); everything else optional', () => {
       const server = new FakeServer();
       const { client } = fakeClient();
       registerAccessLevelTools(server as unknown as McpServer, client, WRITES_ON);
@@ -450,6 +450,9 @@ describe('registerAccessLevelTools', () => {
       expect(Object.keys(reg.schema).sort()).toEqual(
         ['ACCESSLEVELKEY', 'ACCESSLEVELNAME', 'ACCESSLEVELDESCRIPTION', 'READERKEY', 'READERGROUPKEY', 'TIMESPECGROUPKEY', 'THREATLEVELGROUPKEY'].sort()
       );
+      expect((reg.schema.ACCESSLEVELKEY as { isOptional: () => boolean }).isOptional()).toBe(false);
+      expect((reg.schema.TIMESPECGROUPKEY as { isOptional: () => boolean }).isOptional()).toBe(false);
+      expect((reg.schema.ACCESSLEVELNAME as { isOptional: () => boolean }).isOptional()).toBe(true);
     });
 
     it('add_access_level_group requires NAME; DESCRIPTION/PARTITIONKEY/SYSTEMGROUP/ACCESSLEVELS optional', () => {

@@ -111,7 +111,9 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         ACCESSLEVELDESCRIPTION: z.string().optional().describe('Optional. Description of the access level.'),
         READERKEY: z.string().optional().describe('Optional. A single reader this access level applies to. Mutually exclusive with READERGROUPKEY.'),
         READERGROUPKEY: z.string().optional().describe('Optional. A reader group this access level applies to. Mutually exclusive with READERKEY.'),
-        TIMESPECGROUPKEY: z.string().optional().describe('Optional. TIMESPECGROUPKEY controlling when this access level is active.'),
+        TIMESPECGROUPKEY: z
+          .string()
+          .describe('Required. The controller rejects ModifyAccessLevel without it ("Time spec group id is a required parameter"), even though the NBAPI doc\'s own example omits it.'),
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this access level is scoped to.'),
       },
       async ({ READERKEY, READERGROUPKEY, ...rest }) => {

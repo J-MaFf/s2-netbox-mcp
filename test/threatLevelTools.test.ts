@@ -76,11 +76,13 @@ describe('registerThreatLevelTools (R18, write-only — no read command exists)'
     ]);
   });
 
-  it('modify_threat_level exposes LEVELNAME/SEQNUM/COLOR, same shape as add_threat_level', () => {
+  it('modify_threat_level exposes LEVELNAME/SEQNUM/COLOR, with SEQNUM required (unlike add_threat_level)', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
-    expect(Object.keys(byName(server, 'modify_threat_level').schema).sort()).toEqual(['LEVELNAME', 'SEQNUM', 'COLOR'].sort());
+    const schema = byName(server, 'modify_threat_level').schema as Record<string, { isOptional: () => boolean }>;
+    expect(Object.keys(schema).sort()).toEqual(['LEVELNAME', 'SEQNUM', 'COLOR'].sort());
+    expect(schema.SEQNUM.isOptional()).toBe(false);
   });
 
   it('modify_threat_level_group requires LEVELNAMES (not optional)', () => {
