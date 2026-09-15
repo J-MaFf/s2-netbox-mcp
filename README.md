@@ -171,7 +171,7 @@ Add this to your Claude Code MCP server configuration (e.g. via
   "mcpServers": {
     "s2-netbox-mcp": {
       "command": "node",
-      "args": ["C:\\Users\\jmaffiola\\Documents\\Scripts\\s2-netbox-mcp\\dist\\index.js"],
+      "args": ["/absolute/path/to/s2-netbox-mcp/dist/index.js"],
       "env": {
         "NETBOX_BASE_URL": "https://netbox.example.internal",
         "NETBOX_USERNAME": "svc-account",
