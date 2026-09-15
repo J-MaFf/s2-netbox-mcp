@@ -73,7 +73,7 @@ describe('cancel_unlock_window (R26)', () => {
         { HOLIDAYKEY: '104', NAME: 'P middle' },
         { HOLIDAYKEY: '106', NAME: 'P last' },
       ],
-      timeSpecGroup: { TIMESPECGROUPKEY: '101', NAME: 'P', emptied: true },
+      timeSpecGroup: { TIMESPECGROUPKEY: '101', NAME: 'P time specs', emptied: true },
       deletedTimeSpecs: [
         { TIMESPECKEY: '103', NAME: 'P first' },
         { TIMESPECKEY: '105', NAME: 'P middle' },
@@ -89,7 +89,7 @@ describe('cancel_unlock_window (R26)', () => {
     expect(fake.holidays).toEqual([]);
     expect(fake.timeSpecs.map((spec) => spec.NAME)).toEqual(['Always', 'Never']);
     expect(fake.timeSpecGroups.find((group) => group.TIMESPECGROUPKEY === '101')).toEqual(
-      expect.objectContaining({ NAME: 'P', TIMESPECKEYS: [] })
+      expect.objectContaining({ NAME: 'P time specs', TIMESPECKEYS: [] })
     );
   });
 
@@ -105,10 +105,10 @@ describe('cancel_unlock_window (R26)', () => {
     expect(json.cancelled).toBe(true);
     expect(json.unlockTimeSpecGroup).toEqual({ TIMESPECGROUPKEY: '2', NAME: 'Never' });
     expect(json.deletedHolidays).toHaveLength(3);
-    expect(json.timeSpecGroup).toEqual({ TIMESPECGROUPKEY: '101', NAME: 'P', emptied: false });
+    expect(json.timeSpecGroup).toEqual({ TIMESPECGROUPKEY: '101', NAME: 'P time specs', emptied: false });
     expect(json.deletedTimeSpecs).toEqual([]);
     expect(json.leftBehind).toEqual([
-      { type: 'timeSpecGroup', key: '101', NAME: 'P', error: 'NetBox NBAPI command failed: Cannot modify group' },
+      { type: 'timeSpecGroup', key: '101', NAME: 'P time specs', error: 'NetBox NBAPI command failed: Cannot modify group' },
       { type: 'timeSpec', key: '103', NAME: 'P first', error: 'NetBox NBAPI command failed: Delete Failed: May be referenced elsewhere' },
       { type: 'timeSpec', key: '105', NAME: 'P middle', error: 'NetBox NBAPI command failed: Delete Failed: May be referenced elsewhere' },
       { type: 'timeSpec', key: '107', NAME: 'P last', error: 'NetBox NBAPI command failed: Delete Failed: May be referenced elsewhere' },
@@ -135,6 +135,28 @@ describe('cancel_unlock_window (R26)', () => {
     expect(result.content[0].text).toContain('Nothing to cancel');
     expect(JSON.parse(result.content[0].text.slice('SUCCESS\n'.length))).toMatchObject({ cancelled: false, deletedHolidays: [], leftBehind: [] });
     expect(fake.writeCalls()).toEqual([]);
+  });
+
+  it('R26: cancels holidays/time specs left behind with no managed portal group (e.g. a run that failed after step 3 but before step 6)', async () => {
+    const fake = freshController();
+    const holidayKey = fake.seedHoliday({ NAME: 'P first', HOLIDAYGROUPS: '8', STARTDATE: '2026-10-02 00:00', ENDDATE: '2026-10-03 00:00' });
+    const specKey = fake.seedTimeSpec({ NAME: 'P first', HOLIDAYGROUPS: '8' });
+    const groupKey = fake.seedTimeSpecGroup({ NAME: 'P time specs', TIMESPECKEYS: [specKey] });
+
+    const result = await byName(tools(fake), 'cancel_unlock_window').handler({});
+
+    expect(result.isError).toBeUndefined();
+    const json = JSON.parse(result.content[0].text.slice('SUCCESS\n'.length));
+    expect(json.cancelled).toBe(true);
+    expect(json.portalGroup).toBeUndefined();
+    expect(json.deletedHolidays).toEqual([{ HOLIDAYKEY: holidayKey, NAME: 'P first' }]);
+    expect(json.deletedTimeSpecs).toEqual([{ TIMESPECKEY: specKey, NAME: 'P first' }]);
+    expect(json.timeSpecGroup).toEqual({ TIMESPECGROUPKEY: groupKey, NAME: 'P time specs', emptied: true });
+    expect(json.leftBehind).toEqual([]);
+    // No ModifyPortalGroup was issued: there was no managed portal group to point at Never.
+    expect(fake.commands()).not.toContain(C.MODIFY_PORTAL_GROUP);
+    expect(fake.holidays).toEqual([]);
+    expect(fake.timeSpecs.map((spec) => spec.NAME)).toEqual(['Always', 'Never']);
   });
 
   it('fails clearly, before any write, when no time spec group named "Never" exists', async () => {
@@ -196,10 +218,10 @@ describe('get_unlock_window (R26)', () => {
           { PORTALKEY: '2', NAME: '02OF01A' },
         ],
         UNLOCKTIMESPECGROUPKEY: '101',
-        unlockTimeSpecGroupName: 'P',
+        unlockTimeSpecGroupName: 'P time specs',
         pointsAtManagedTimeSpecGroup: true,
       },
-      timeSpecGroup: { TIMESPECGROUPKEY: '101', NAME: 'P', TIMESPECKEYS: ['103', '105', '107'] },
+      timeSpecGroup: { TIMESPECGROUPKEY: '101', NAME: 'P time specs', TIMESPECKEYS: ['103', '105', '107'] },
       window: { start: '2026-10-02 17:00', end: '2026-10-06 08:30' },
       activeNow: true,
       checkedAt: '2026-10-04 12:00',

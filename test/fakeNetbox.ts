@@ -17,6 +17,9 @@ import type { NbapiCallResult, NetboxClient } from '../src/netboxClient.js';
  *    `GetHolidays` returns `HOLIDAYS` as a comma-separated key string.
  *  - A one-item collection collapses to a bare object and an empty one to ''
  *    (what fast-xml-parser produces).
+ *  - `AddPortalGroup`/`AddTimeSpecGroup` reject a NAME already used by a
+ *    group of either type (`ERRMSG` "Duplicate Portal Group"/"Duplicate") —
+ *    portal groups and time spec groups share one name table.
  */
 
 export interface FakePortal {
@@ -369,8 +372,13 @@ export class FakeNetbox {
       }
 
       case NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP: {
+        const name = str(params.NAME);
+        // Live 6.2.0: portal groups and time spec groups share one name table.
+        if (this.timeSpecGroups.some((group) => group.NAME === name) || this.portalGroups.some((group) => group.NAME === name)) {
+          return fail('Duplicate');
+        }
         const key = this.allocateKey();
-        this.timeSpecGroups.push({ TIMESPECGROUPKEY: key, NAME: str(params.NAME), DESCRIPTION: str(params.DESCRIPTION), TIMESPECKEYS: [] });
+        this.timeSpecGroups.push({ TIMESPECGROUPKEY: key, NAME: name, DESCRIPTION: str(params.DESCRIPTION), TIMESPECKEYS: [] });
         return ok({ TIMESPECGROUPKEY: key });
       }
 
@@ -423,11 +431,17 @@ export class FakeNetbox {
       }
 
       case NBAPI_COMMANDS.ADD_PORTAL_GROUP: {
-        if (this.portalGroups.some((group) => group.NAME === str(params.NAME))) return fail('Duplicate');
+        const name = str(params.NAME);
+        // Live 6.2.0: portal groups and time spec groups share one name table
+        // (verified 2026-09-15: AddPortalGroup failed with "Duplicate Portal
+        // Group" against an already-created time spec group of the same name).
+        if (this.portalGroups.some((group) => group.NAME === name) || this.timeSpecGroups.some((group) => group.NAME === name)) {
+          return fail('Duplicate Portal Group');
+        }
         const key = this.allocateKey();
         this.portalGroups.push({
           PORTALGROUPKEY: key,
-          NAME: str(params.NAME),
+          NAME: name,
           DESCRIPTION: str(params.DESCRIPTION),
           PORTALKEYS: list((params.PORTALKEYS as Params | undefined)?.PORTALKEY),
           UNLOCKTIMESPECGROUPKEY: str(params.UNLOCKTIMESPECGROUPKEY),

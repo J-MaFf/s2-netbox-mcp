@@ -14,6 +14,7 @@ import {
   fetchTimeSpecGroups,
   fetchTimeSpecs,
   segmentKindOf,
+  timeSpecGroupName,
 } from '../src/unlockWindow/managed.js';
 import { cancelUnlockWindow, getUnlockWindow, scheduleUnlockWindow, type UnlockWindowSettings } from '../src/unlockWindow/executor.js';
 import {
@@ -473,7 +474,7 @@ async function unlockWindowPhase(
     });
   } finally {
     if (scheduled) {
-      await step('cancel_unlock_window -> portal group on Never, no managed holiday', async () => {
+      await step('cancel_unlock_window -> portal group on Never, no managed holiday/time spec/group member', async () => {
         const result = await cancelUnlockWindow(client, settings);
         assertTrue('cancelled', result.cancelled);
         const managed = (await fetchPortalGroups(client)).find((group) => group.NAME === settings.namePrefix);
@@ -482,7 +483,14 @@ async function unlockWindowPhase(
         assertEqual('UNLOCKTIMESPECGROUPKEY is Never', group?.UNLOCKTIMESPECGROUPKEY, neverKey);
         const leftoverHolidays = (await fetchHolidays(client)).filter((holiday) => segmentKindOf(holiday.NAME, settings.namePrefix) !== undefined);
         assertSameSet('managed holidays remaining', leftoverHolidays.map((holiday) => holiday.NAME), []);
-        return `portal group ${managed!.PORTALGROUPKEY} on Never (${neverKey}); ${result.deletedHolidays.length} holiday(s) deleted; leftBehind: ${result.leftBehind.length}`;
+        const leftoverSpecs = (await fetchTimeSpecs(client)).filter((spec) => segmentKindOf(spec.NAME, settings.namePrefix) !== undefined);
+        assertSameSet('managed time specs remaining', leftoverSpecs.map((spec) => spec.NAME), []);
+        const managedTsg = (await fetchTimeSpecGroups(client)).find((tsg) => tsg.NAME === timeSpecGroupName(settings.namePrefix));
+        assertSameSet('managed time spec group members remaining', managedTsg?.TIMESPECKEYS ?? [], []);
+        if (result.leftBehind.length > 0) {
+          info(`cancel_unlock_window reported leftBehind (tolerated): ${result.leftBehind.map((item) => `${item.type} "${item.NAME}": ${item.error}`).join('; ')}`);
+        }
+        return `portal group ${managed!.PORTALGROUPKEY} on Never (${neverKey}); ${result.deletedHolidays.length} holiday(s), ${result.deletedTimeSpecs.length} time spec(s) deleted; leftBehind: ${result.leftBehind.length}`;
       });
     }
   }

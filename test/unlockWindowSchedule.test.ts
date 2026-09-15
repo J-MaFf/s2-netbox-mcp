@@ -244,7 +244,7 @@ describe('schedule_unlock_window (R25): the eight-step apply order', () => {
     expect(fake.commands()).not.toContain(C.GET_TIME_SPEC_GROUP);
 
     const params = (command: string) => fake.calls.filter((call) => call.command === command).map((call) => call.params);
-    expect(params(C.ADD_TIME_SPEC_GROUP)).toEqual([{ NAME: 'P', DESCRIPTION: MANAGED_DESCRIPTION }]);
+    expect(params(C.ADD_TIME_SPEC_GROUP)).toEqual([{ NAME: 'P time specs', DESCRIPTION: MANAGED_DESCRIPTION }]);
     expect(params(C.ADD_HOLIDAY)).toEqual([
       { HOLIDAYNAME: 'P first', HOLIDAYGROUPS: '8', STARTDATE: '2026-10-02 00:00', ENDDATE: '2026-10-03 00:00' },
       { HOLIDAYNAME: 'P middle', HOLIDAYGROUPS: '7', STARTDATE: '2026-10-03 00:00', ENDDATE: '2026-10-06 00:00' },
@@ -342,15 +342,35 @@ describe('schedule_unlock_window (R25): the eight-step apply order', () => {
     expect(fake.portalGroups[0].PORTALKEYS).toEqual(['1', '2', '3']);
   });
 
-  it('a failing step returns isError naming the step and the controller message, and stops', async () => {
+  it('a failing step returns isError naming the step and the controller message, rolls back, and stops', async () => {
     const fake = freshController();
     fake.refuse(C.ADD_HOLIDAY, 'Duplicate', (params) => params.HOLIDAYNAME === 'P middle');
     const result = await scheduleTool(fake).handler({ ...WINDOW_A });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/Step 3 .*"P middle".* failed: NetBox NBAPI command failed: Duplicate/);
-    // Stopped: nothing after the failing AddHoliday.
-    expect(fake.commands().at(-1)).toBe(C.ADD_HOLIDAY);
+    // Apply stopped at the failing AddHoliday; the rollback then ran (Get +
+    // Delete for the "first" segment already written) but never reached step 6.
     expect(fake.commands()).not.toContain(C.ADD_PORTAL_GROUP);
+    expect(fake.holidays.map((holiday) => holiday.NAME)).toEqual([]);
+    expect(fake.timeSpecs.map((spec) => spec.NAME)).toEqual(['Always', 'Never']);
+  });
+
+  it('R25 failure handling: a step 6 failure (duplicate portal/time-spec-group name) rolls back the managed holidays and time specs before returning isError', async () => {
+    const fake = freshController();
+    fake.refuse(C.ADD_PORTAL_GROUP, 'Duplicate Portal Group');
+    const result = await scheduleTool(fake).handler({ ...WINDOW_A });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Step 6 .*failed: NetBox NBAPI command failed: Duplicate Portal Group/);
+    expect(result.content[0].text).toContain('Rolled back:');
+    // No managed holiday or time spec survives the rollback (the managed
+    // time spec group may remain, empty, or be gone — either is acceptable).
+    expect(fake.holidays.map((holiday) => holiday.NAME)).toEqual([]);
+    expect(fake.timeSpecs.map((spec) => spec.NAME)).toEqual(['Always', 'Never']);
+    const tsg = fake.timeSpecGroups.find((group) => group.NAME === 'P time specs');
+    if (tsg) expect(tsg.TIMESPECKEYS).toEqual([]);
+    // No portal group was left behind either (AddPortalGroup itself failed).
+    expect(fake.portalGroups.some((group) => group.NAME === 'P')).toBe(false);
   });
 
   it('a read-back mismatch (controller returns a different STARTTIME) is isError describing the field', async () => {

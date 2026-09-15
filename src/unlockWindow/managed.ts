@@ -8,13 +8,20 @@ import { SEGMENT_KINDS, segmentName, type SegmentKind } from './planner.js';
  * the unlock-window tools work with.
  *
  * Names are the identity of every managed object:
- *   - `<prefix>`          the managed time spec group and portal group
- *   - `<prefix> first`    the holiday + time spec of the `first` segment
- *   - `<prefix> middle`   ... `middle`
- *   - `<prefix> last`     ... `last`
+ *   - `<prefix>`             the managed portal group
+ *   - `<prefix> time specs`  the managed time spec group
+ *   - `<prefix> first`       the holiday + time spec of the `first` segment
+ *   - `<prefix> middle`      ... `middle`
+ *   - `<prefix> last`        ... `last`
  * Nothing here (or in executor.ts) ever modifies or deletes an object whose
  * NAME is not exactly one of those, and a user-created object that happens
  * to carry one of those names is treated as managed.
+ *
+ * The time spec group is never named exactly `<prefix>` (that name is the
+ * portal group's) because group names are unique across group types on this
+ * controller (live, 2026-09-15: adding a portal group under an already-used
+ * time spec group name failed with ERRMSG "Duplicate Portal Group") — see
+ * the spec Context.
  *
  * Read-back normalisation (live 6.2.0): weekday flags come back `TRUE`/`FALSE`
  * (the doc's input format is `1`/`0`); dates come back `YYYY-MM-DD HH:MM:SS`;
@@ -35,13 +42,21 @@ export const WEEKDAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY',
 export type Weekday = (typeof WEEKDAYS)[number];
 
 export interface ManagedNames {
-  group: string;
+  portalGroup: string;
+  timeSpecGroup: string;
   segments: Record<SegmentKind, string>;
+}
+
+/** The exact NAME of the managed time spec group (R25 step 2, R27): never
+ * the same as the portal group's name (see the module doc comment). */
+export function timeSpecGroupName(prefix: string): string {
+  return `${prefix} time specs`;
 }
 
 export function managedNames(prefix: string): ManagedNames {
   return {
-    group: prefix,
+    portalGroup: prefix,
+    timeSpecGroup: timeSpecGroupName(prefix),
     segments: { first: segmentName(prefix, 'first'), middle: segmentName(prefix, 'middle'), last: segmentName(prefix, 'last') },
   };
 }

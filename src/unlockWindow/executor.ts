@@ -29,6 +29,7 @@ import {
   fetchTimeSpecs,
   sameSet,
   segmentKindOf,
+  timeSpecGroupName,
   type HolidayRecord,
   type PortalRecord,
   type TimeSpecGroupRecord,
@@ -322,20 +323,47 @@ export async function scheduleUnlockWindow(
     );
   }
 
-  // Step 2: managed time spec group.
+  try {
+    return await applyUnlockWindow(client, prefix, plan, targets, holidays, timeSpecs, replacedPreviousWindow, sideEffects);
+  } catch (err) {
+    if (!(err instanceof UnlockWindowError)) throw err;
+    const removed = await rollbackManagedObjects(client, prefix);
+    throw new UnlockWindowError(`${err.message} Rolled back: ${removed}.`);
+  }
+}
+
+/** Steps 2-8 of R25: the part of schedule_unlock_window that writes. Split
+ * out so a failure anywhere in here can be caught once and rolled back
+ * (R25 failure handling) without duplicating the eight-step body. */
+async function applyUnlockWindow(
+  client: NetboxClient,
+  prefix: string,
+  plan: UnlockPlan,
+  targets: PortalRecord[],
+  holidays: HolidayRecord[],
+  timeSpecs: TimeSpecRecord[],
+  replacedPreviousWindow: boolean,
+  sideEffects: SideEffectReport
+): Promise<ScheduleUnlockWindowResult> {
+  const managedHolidays = holidays.filter((holiday) => segmentKindOf(holiday.NAME, prefix) !== undefined);
+  const managedSpecs = timeSpecs.filter((spec) => segmentKindOf(spec.NAME, prefix) !== undefined);
+
+  // Step 2: managed time spec group. Never named exactly `prefix` (that's
+  // the portal group's name) — group names are unique across group types.
+  const tsgName = timeSpecGroupName(prefix);
   let timeSpecGroupKey = '';
   await atStep('2 (managed time spec group)', async () => {
     const groups = await fetchTimeSpecGroups(client);
-    const existing = groups.find((group) => group.NAME === prefix);
+    const existing = groups.find((group) => group.NAME === tsgName);
     if (existing) {
       timeSpecGroupKey = existing.TIMESPECGROUPKEY;
       return;
     }
-    const result = await client.call(NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP, { NAME: prefix, DESCRIPTION: MANAGED_DESCRIPTION });
+    const result = await client.call(NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP, { NAME: tsgName, DESCRIPTION: MANAGED_DESCRIPTION });
     timeSpecGroupKey = await keyFromAdd(
       result.data,
       'TIMESPECGROUPKEY',
-      async () => (await fetchTimeSpecGroups(client)).find((group) => group.NAME === prefix)?.TIMESPECGROUPKEY,
+      async () => (await fetchTimeSpecGroups(client)).find((group) => group.NAME === tsgName)?.TIMESPECGROUPKEY,
       NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP
     );
   });
@@ -472,7 +500,7 @@ export async function scheduleUnlockWindow(
       mismatches.push(`time spec group ${timeSpecGroupKey} was not listed by GetTimeSpecGroups on read-back`);
     } else if (!sameSet(timeSpecGroup.TIMESPECKEYS, plannedSpecKeys)) {
       mismatches.push(
-        `time spec group "${prefix}" TIMESPECKEYS: expected [${plannedSpecKeys.join(',')}], got [${timeSpecGroup.TIMESPECKEYS.join(',')}]`
+        `time spec group "${tsgName}" TIMESPECKEYS: expected [${plannedSpecKeys.join(',')}], got [${timeSpecGroup.TIMESPECKEYS.join(',')}]`
       );
     }
 
@@ -527,6 +555,45 @@ export async function scheduleUnlockWindow(
   };
 }
 
+/** R25 failure handling: best-effort delete of every currently-managed
+ * holiday and time spec (never the portal group or the time spec group
+ * itself — those are left as-is, possibly empty), so no partial window can
+ * remain active after an apply step fails. Returns a one-line summary for
+ * the error text. Tolerates refusal of any individual delete (mirrors the
+ * R26 cleanup) rather than letting a rollback failure mask the original error. */
+async function rollbackManagedObjects(client: NetboxClient, prefix: string): Promise<string> {
+  const removedHolidays: string[] = [];
+  const removedSpecs: string[] = [];
+  const failed: string[] = [];
+
+  const holidays = (await fetchHolidays(client)).filter((holiday) => segmentKindOf(holiday.NAME, prefix) !== undefined);
+  for (const holiday of holidays) {
+    try {
+      await client.call(NBAPI_COMMANDS.DELETE_HOLIDAY, { HOLIDAYKEY: holiday.HOLIDAYKEY });
+      removedHolidays.push(holiday.NAME);
+    } catch (err) {
+      failed.push(`holiday "${holiday.NAME}" (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  const timeSpecs = (await fetchTimeSpecs(client)).filter((spec) => segmentKindOf(spec.NAME, prefix) !== undefined);
+  for (const spec of timeSpecs) {
+    try {
+      await client.call(NBAPI_COMMANDS.DELETE_TIME_SPEC, { TIMESPECKEY: spec.TIMESPECKEY });
+      removedSpecs.push(spec.NAME);
+    } catch (err) {
+      failed.push(`time spec "${spec.NAME}" (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  const parts: string[] = [];
+  if (removedHolidays.length > 0) parts.push(`${removedHolidays.length} holiday(s) [${removedHolidays.join(', ')}]`);
+  if (removedSpecs.length > 0) parts.push(`${removedSpecs.length} time spec(s) [${removedSpecs.join(', ')}]`);
+  if (parts.length === 0) parts.push('nothing (no managed holiday or time spec existed)');
+  if (failed.length > 0) parts.push(`could not remove: ${failed.join(', ')}`);
+  return parts.join('; ');
+}
+
 // ---------------------------------------------------------------------------
 // cancel_unlock_window (R26)
 // ---------------------------------------------------------------------------
@@ -564,41 +631,48 @@ export async function cancelUnlockWindow(client: NetboxClient, settings: UnlockW
       }).`
     );
   }
-  const managedGroup = timeSpecGroups.find((group) => group.NAME === prefix);
+  const managedGroup = timeSpecGroups.find((group) => group.NAME === timeSpecGroupName(prefix));
 
   const portalGroups = await atStep('1 (find the managed portal group)', () => fetchPortalGroups(client));
   const managedPortalGroupSummary = portalGroups.find((group) => group.NAME === prefix);
-  if (!managedPortalGroupSummary) {
+
+  // Step 2: if the managed portal group exists, point it at Never (re-sending its current membership).
+  let portalGroup: Awaited<ReturnType<typeof fetchPortalGroup>>;
+  if (managedPortalGroupSummary) {
+    portalGroup = await atStep('1 (read the managed portal group)', () => fetchPortalGroup(client, managedPortalGroupSummary.PORTALGROUPKEY));
+    if (!portalGroup) {
+      throw new UnlockWindowError(
+        `Managed portal group "${prefix}" (${managedPortalGroupSummary.PORTALGROUPKEY}) was listed but GetPortalGroup could not read it.`
+      );
+    }
+  }
+
+  const holidays = await atStep('1 (read holidays)', () => fetchHolidays(client));
+  const managedHolidays = holidays.filter((holiday) => segmentKindOf(holiday.NAME, prefix) !== undefined);
+  const timeSpecs = await atStep('1 (read time specs)', () => fetchTimeSpecs(client));
+  const managedSpecs = timeSpecs.filter((spec) => segmentKindOf(spec.NAME, prefix) !== undefined);
+
+  if (!portalGroup && !managedGroup && managedHolidays.length === 0 && managedSpecs.length === 0) {
     return {
       cancelled: false,
-      message: `Nothing to cancel: no managed portal group named "${prefix}" exists.`,
+      message: `Nothing to cancel: no managed object (portal group "${prefix}", time spec group "${timeSpecGroupName(prefix)}", holiday, or time spec) exists.`,
       deletedHolidays: [],
       deletedTimeSpecs: [],
       leftBehind: [],
     };
   }
 
-  const portalGroup = await atStep('1 (read the managed portal group)', () => fetchPortalGroup(client, managedPortalGroupSummary.PORTALGROUPKEY));
-  if (!portalGroup) {
-    throw new UnlockWindowError(
-      `Managed portal group "${prefix}" (${managedPortalGroupSummary.PORTALGROUPKEY}) was listed but GetPortalGroup could not read it.`
+  if (portalGroup) {
+    await atStep('2 (point the managed portal group at Never)', () =>
+      client.call(NBAPI_COMMANDS.MODIFY_PORTAL_GROUP, {
+        PORTALGROUPKEY: portalGroup!.PORTALGROUPKEY,
+        ...wrapList('PORTALKEYS', 'PORTALKEY', portalGroup!.PORTALS.map((portal) => portal.PORTALKEY)),
+        UNLOCKTIMESPECGROUPKEY: never.TIMESPECGROUPKEY,
+      })
     );
   }
-  const holidays = await atStep('1 (read holidays)', () => fetchHolidays(client));
-  const managedHolidays = holidays.filter((holiday) => segmentKindOf(holiday.NAME, prefix) !== undefined);
-  const timeSpecs = await atStep('1 (read time specs)', () => fetchTimeSpecs(client));
-  const managedSpecs = timeSpecs.filter((spec) => segmentKindOf(spec.NAME, prefix) !== undefined);
 
-  // Step 2: point the managed portal group at Never (re-sending its current membership).
-  await atStep('2 (point the managed portal group at Never)', () =>
-    client.call(NBAPI_COMMANDS.MODIFY_PORTAL_GROUP, {
-      PORTALGROUPKEY: portalGroup.PORTALGROUPKEY,
-      ...wrapList('PORTALKEYS', 'PORTALKEY', portalGroup.PORTALS.map((portal) => portal.PORTALKEY)),
-      UNLOCKTIMESPECGROUPKEY: never.TIMESPECGROUPKEY,
-    })
-  );
-
-  // Step 3: delete every managed holiday.
+  // Step 3: delete every managed holiday, whether or not the portal group exists.
   const deletedHolidays: CancelUnlockWindowResult['deletedHolidays'] = [];
   for (const holiday of managedHolidays) {
     await atStep(`3 (delete managed holiday "${holiday.NAME}")`, () =>
@@ -637,9 +711,12 @@ export async function cancelUnlockWindow(client: NetboxClient, settings: UnlockW
   return {
     cancelled: true,
     message:
-      `Managed portal group "${prefix}" now unlocks on "${NEVER_GROUP_NAME}" and ${deletedHolidays.length} managed holiday(s) were deleted` +
+      (portalGroup
+        ? `Managed portal group "${prefix}" now unlocks on "${NEVER_GROUP_NAME}" and `
+        : `No managed portal group "${prefix}" exists (nothing to point at Never) and `) +
+      `${deletedHolidays.length} managed holiday(s) were deleted` +
       (leftBehind.length > 0 ? `; ${leftBehind.length} managed object(s) could not be cleaned up (see leftBehind) but nothing can unlock.` : '.'),
-    portalGroup: { PORTALGROUPKEY: portalGroup.PORTALGROUPKEY, NAME: portalGroup.NAME, portals: portalGroup.PORTALS },
+    ...(portalGroup ? { portalGroup: { PORTALGROUPKEY: portalGroup.PORTALGROUPKEY, NAME: portalGroup.NAME, portals: portalGroup.PORTALS } } : {}),
     unlockTimeSpecGroup: { TIMESPECGROUPKEY: never.TIMESPECGROUPKEY, NAME: never.NAME },
     deletedHolidays,
     ...(timeSpecGroup ? { timeSpecGroup } : {}),
@@ -692,7 +769,7 @@ export async function getUnlockWindow(client: NetboxClient, settings: UnlockWind
   const portalGroup = managedSummary ? await fetchPortalGroup(client, managedSummary.PORTALGROUPKEY) : undefined;
 
   const timeSpecGroups = await fetchTimeSpecGroups(client);
-  const managedGroup: TimeSpecGroupRecord | undefined = timeSpecGroups.find((group) => group.NAME === prefix);
+  const managedGroup: TimeSpecGroupRecord | undefined = timeSpecGroups.find((group) => group.NAME === timeSpecGroupName(prefix));
 
   const timeSpecs = (await fetchTimeSpecs(client)).filter((spec) => segmentKindOf(spec.NAME, prefix) !== undefined);
   const holidays = (await fetchHolidays(client)).filter((holiday) => segmentKindOf(holiday.NAME, prefix) !== undefined);

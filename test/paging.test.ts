@@ -149,7 +149,8 @@ describe('src/unlockWindow/managed.ts: readers and normalisation', () => {
 
   it('managed names are exact: segmentKindOf matches only "<prefix> first|middle|last"; carriesManagedPrefix is prefix-based', () => {
     expect(managedNames('MCP Unlock Window')).toEqual({
-      group: 'MCP Unlock Window',
+      portalGroup: 'MCP Unlock Window',
+      timeSpecGroup: 'MCP Unlock Window time specs',
       segments: { first: 'MCP Unlock Window first', middle: 'MCP Unlock Window middle', last: 'MCP Unlock Window last' },
     });
     expect(segmentKindOf('P first', 'P')).toBe('first');

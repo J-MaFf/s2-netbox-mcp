@@ -72,7 +72,7 @@ npm start
 | `NETBOX_ENABLE_DESTRUCTIVE`     | No       | `false` | Set to `true`/`1`/`yes`, **together with** `NETBOX_ENABLE_WRITES`, to additionally register the 11 destructive tools (see **Write access** below). |
 | `NETBOX_EVENT_API_PATH`         | No       | tracks `NETBOX_API_PATH` | Request path used only for `trigger_event`. Unset/empty tracks whatever `NETBOX_API_PATH` resolves to; a non-empty override is used verbatim (leading `/` added if missing) — e.g. the doc's pre-6.x Event API path `/appd/nbapi`, if your controller serves it separately. |
 | `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | The holiday groups reserved for the managed unlock window, in `first,middle,last` segment order — see **Scheduled unlock windows** below. Must be 1-3 distinct integers in `1..8`, comma-separated; reserve groups nothing else on the controller uses. |
-| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Name prefix of every object the managed unlock window creates (`<prefix>`, `<prefix> first/middle/last`). 1-40 characters so the longest name fits the 64-character NAME limit. |
+| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Name prefix of every object the managed unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the per-segment holidays/time specs (`<prefix> first/middle/last`). 1-40 characters so the longest name (`<prefix> time specs`) fits the 64-character NAME limit. |
 | `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | The `PORTALKEY` of the one door you designate safe to physically unlock during `npm run test:live:write`. Read only by that script, never by the server itself. |
 
 If any of the three required variables is missing, the server prints a single
@@ -379,8 +379,10 @@ own holiday + time spec pair.
 
 **Managed objects and the single-window model.** Everything the tool creates
 is named with `NETBOX_UNLOCK_NAME_PREFIX` (default `MCP Unlock Window`): the
-time spec group and portal group are named exactly `<prefix>`, and the
-per-segment holidays and time specs `<prefix> first`, `<prefix> middle`,
+portal group is named exactly `<prefix>`, the time spec group `<prefix> time
+specs` (never `<prefix>` — group names are unique across group types on this
+controller, so a portal group and a time spec group cannot share a name), and
+the per-segment holidays and time specs `<prefix> first`, `<prefix> middle`,
 `<prefix> last`. Names are the identity. There is **one managed window at a
 time**: scheduling a new one rewrites those same objects (modifying what
 exists, adding what is missing, deleting leftover segments from the previous
@@ -392,6 +394,11 @@ order is fixed — resolve portals, managed time spec group, per-segment
 holiday + time spec, group membership, delete leftovers, managed portal group
 — and every step is read back and compared to the plan before the tool
 reports `verified: true`; any mismatch is a tool error describing the field.
+If any apply step fails, the tool rolls back by deleting every managed
+holiday and time spec written so far (mirroring `cancel_unlock_window`'s
+cleanup) before returning the error, so no partial window is left active;
+the error text names the failed step, the controller's message, and what the
+rollback removed.
 
 **Reserved holiday groups.** NetBox has exactly eight holiday groups (1–8),
 shared by every time spec on the controller. `NETBOX_UNLOCK_HOLIDAY_GROUPS`
@@ -415,15 +422,18 @@ be suppressed, the call is refused with nothing written unless
 without writing anything, whether or not you acknowledged. The built-in
 `Always` time spec ticks all eight groups and is never affected.
 
-**Cancelling.** `cancel_unlock_window` points the managed portal group at the
-built-in `Never` time spec group (re-sending its current portals), deletes the
-managed holidays, then empties the managed time spec group and deletes the
-managed time specs. The last two are best-effort: if the controller refuses
-them, the tool still succeeds and lists what was left under `leftBehind`,
-because once the portal group is on `Never` and no managed holiday exists,
-nothing can unlock. The managed portal group and time spec group are kept
-(pointing at `Never` / empty) and reused by the next window. If no managed
-portal group exists, the tool reports there was nothing to cancel.
+**Cancelling.** `cancel_unlock_window` first, **if** the managed portal group
+exists, points it at the built-in `Never` time spec group (re-sending its
+current portals); then, regardless of whether that portal group exists,
+deletes the managed holidays and empties the managed time spec group and
+deletes the managed time specs. The last two are best-effort: if the
+controller refuses them, the tool still succeeds and lists what was left
+under `leftBehind`, because once the portal group (if any) is on `Never` and
+no managed holiday exists, nothing can unlock. The managed portal group and
+time spec group are kept (pointing at `Never` / empty) and reused by the next
+window. The tool reports there was nothing to cancel only when **no** managed
+object of any kind — portal group, time spec group, holiday, or time spec —
+exists.
 `get_unlock_window` (always registered, read-only) shows the current managed
 state — the portal group and whether it points at the managed time spec
 group, that group's members (read from `GetTimeSpecGroups`, because
@@ -521,7 +531,8 @@ relock at now + 4 min, or at `--start HH:MM`), prints `OBSERVE: portal ...
 should unlock at HH:MM and relock at HH:MM — confirm on Monitor → Portal
 Status`, polls `get_unlock_window` every 30 s until one minute after relock,
 then calls `cancel_unlock_window` and asserts the managed portal group is on
-`Never` with no managed holiday left. It refuses that phase if a managed
+`Never` with no managed holiday, time spec, or time spec group member left
+(leftBehind is tolerated but reported). It refuses that phase if a managed
 window already exists (so it never replaces a real one), never touches
 persons, credentials, access levels, threat levels, outputs, events,
 partitions, or UDF lists, never prints the password, exits non-zero on any
