@@ -37,12 +37,25 @@ single-portal filter) exists on the real NBAPI.
 
 ## Setup
 
+Two ways to get the server:
+
+**Option A — npm (no clone needed):**
+
+```bash
+npm install -g s2-netbox-mcp
+```
+
+This installs the `s2-netbox-mcp` binary; point your MCP client's `command` at
+`s2-netbox-mcp` directly (no `node dist/index.js` needed).
+
+**Option B — clone and build:**
+
 ```bash
 npm install
 npm run build
 ```
 
-Copy `.env.example` to `.env` and fill in real values (or provide the same
+Either way, copy `.env.example` to `.env` and fill in real values (or provide the same
 variables directly in your shell / in the Claude Code MCP server config's
 `env` block — see below). **Never commit `.env`** — it's already gitignored.
 

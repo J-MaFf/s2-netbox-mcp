@@ -1,11 +1,40 @@
 {
   "name": "s2-netbox-mcp",
-  "version": "0.2.0",
-  "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as Claude-callable tools; read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
+  "version": "0.2.1",
+  "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as MCP tools usable from any MCP-compatible client (Claude, Gemini/Antigravity, etc.); read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
   "type": "module",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "main": "dist/index.js",
+  "bin": {
+    "s2-netbox-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/J-MaFf/s2-netbox-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/J-MaFf/s2-netbox-mcp/issues"
+  },
+  "homepage": "https://github.com/J-MaFf/s2-netbox-mcp#readme",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "lenels2",
+    "s2-netbox",
+    "netbox",
+    "nbapi",
+    "physical-security",
+    "access-control",
+    "security-automation"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
