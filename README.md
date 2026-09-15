@@ -20,9 +20,11 @@ this server registers only query/read NBAPI commands (`Login`, `Logout`,
 `ListEvents`, `GetAccessHistory`) and is incapable of adding, modifying,
 deleting, locking/unlocking, activating/deactivating, or triggering anything
 on the controller. Write/control tools exist in the codebase but are not
-registered unless you explicitly opt in — see **Write access** below. Note
-there is no `GetPortal` (singular) command; only `GetPortals` (plural,
-paginated, no single-portal filter) exists on the real NBAPI.
+registered unless you explicitly opt in — see **Write access** below. The
+read-only surface includes two composites, `find_portals` and
+`get_unlock_window`, which only issue read commands. Note there is no
+`GetPortal` (singular) command; only `GetPortals` (plural, paginated, no
+single-portal filter) exists on the real NBAPI.
 
 ## Requirements
 
@@ -69,9 +71,9 @@ npm start
 | `NETBOX_ENABLE_WRITES`          | No       | `false` | Set to `true`/`1`/`yes` to register the write tools (see **Write access** below). Unset (or any other value) leaves the server strictly read-only. |
 | `NETBOX_ENABLE_DESTRUCTIVE`     | No       | `false` | Set to `true`/`1`/`yes`, **together with** `NETBOX_ENABLE_WRITES`, to additionally register the 11 destructive tools (see **Write access** below). |
 | `NETBOX_EVENT_API_PATH`         | No       | tracks `NETBOX_API_PATH` | Request path used only for `trigger_event`. Unset/empty tracks whatever `NETBOX_API_PATH` resolves to; a non-empty override is used verbatim (leading `/` added if missing) — e.g. the doc's pre-6.x Event API path `/appd/nbapi`, if your controller serves it separately. |
-| `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | Reserved for the managed unlock-window feature (not yet implemented in this build). Must be 1-3 distinct integers in `1..8`, comma-separated. |
-| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Reserved for the managed unlock-window feature (not yet implemented in this build). 1-40 characters. |
-| `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | Reserved for the (not yet implemented) live write smoke test; read only by that script, never by the server itself. |
+| `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | The holiday groups reserved for the managed unlock window, in `first,middle,last` segment order — see **Scheduled unlock windows** below. Must be 1-3 distinct integers in `1..8`, comma-separated; reserve groups nothing else on the controller uses. |
+| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Name prefix of every object the managed unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the per-segment holidays/time specs (`<prefix> first/middle/last`). 1-40 characters so the longest name (`<prefix> time specs`) fits the 64-character NAME limit. |
+| `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | The `PORTALKEY` of the one door you designate safe to physically unlock during `npm run test:live:write`. Read only by that script, never by the server itself. |
 
 If any of the three required variables is missing, the server prints a single
 actionable line to stderr and exits with a non-zero status — it never prints
@@ -82,11 +84,17 @@ a stack trace on startup misconfiguration.
 Write/control tools exist in this server but are **not registered** unless
 you explicitly opt in:
 
-- **`NETBOX_ENABLE_WRITES=true`** registers the 45 write tools listed in the
-  "Write tools" table below — creating, modifying, locking/unlocking,
-  activating, and triggering. Left unset (the default), the server's tool
+- **`NETBOX_ENABLE_WRITES=true`** registers the write tools listed in the
+  "Write tools" table below — the 45 pass-through tools (creating, modifying,
+  locking/unlocking, activating, and triggering) plus the three composite
+  write tools `set_portals_state`, `schedule_unlock_window`, and
+  `cancel_unlock_window`. Left unset (the default), the server's tool
   surface is exactly the read tools below — byte-for-byte the same read-only
   posture as before this variable existed.
+- The two unlock-window composites delete **only** the holidays and time
+  specs they themselves own (named `<prefix> first|middle|last` — see
+  **Scheduled unlock windows**), and do so without `NETBOX_ENABLE_DESTRUCTIVE`
+  because those objects are server-owned; they never delete anything else.
 - **`NETBOX_ENABLE_DESTRUCTIVE=true`**, set **in addition to**
   `NETBOX_ENABLE_WRITES`, registers the 11 **destructive** tools (each
   description is `DESTRUCTIVE:`-prefixed): `delete_access_level`,
@@ -221,6 +229,7 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 | `get_elevators`               | `GetElevators`           | — (optional `STARTFROMKEY`)   |
 | `get_floors`                 | `GetFloors`              | — (optional `STARTFROMKEY`)   |
 | `ping_app`                   | `PingApp`                | —                             |
+| `get_unlock_window`          | `GetPortalGroups` + `GetPortalGroup` + `GetTimeSpecGroups` + `GetTimeSpecs` + `GetHolidays` + `GetHoliday` (composite) | — |
 
 There is deliberately no `get_portal` (singular) tool — no such NBAPI command
 exists; only `GetPortals` (plural) does. `get_card_access_details` and
@@ -233,10 +242,24 @@ that NBAPI command's response fields — no reshaping. Each tool's input
 schema declares exactly the documented PARAMS fields for its command — no
 invented, renamed, or passthrough fields. All NBAPI parameter names above
 are copied verbatim from the NBAPI Command Reference (see
-`specs/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
+`specs/archive/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
 — none are invented or guessed.
 
-`find_portals` is the one composite tool, for finding a door when you only know
+Five tools are composites — they combine several NBAPI commands and reshape
+the result instead of passing one command through: `find_portals` and
+`get_unlock_window` (read-only, always registered), and `set_portals_state`,
+`schedule_unlock_window`, and `cancel_unlock_window` (write, registered only
+with `NETBOX_ENABLE_WRITES`). Every composite reads list commands fully
+paginated (following `NEXTKEY` until `-1`) and issues only commands from the
+closed allowlist. `set_portals_state` locks, unlocks (Extended Unlock until
+locked again), or momentarily unlocks many portals in one call — the given
+`portalKeys` or every portal — issuing one command per portal sequentially and
+never stopping on a single failure; its result partitions the portals into
+`succeeded`, `alreadyInState` (the controller's "Portal state not changed"),
+and `failed`, and is an error only when `failed` is non-empty. The three
+unlock-window tools are described under **Scheduled unlock windows** below.
+
+`find_portals` is for finding a door when you only know
 where it is. Portal names are site codes (`01OF05A`), and the only
 human-readable location text on the controller is each reader's `DESCRIPTION`.
 `GetPortals` doesn't return it, and neither command takes a filter. So
@@ -279,7 +302,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `modify_portal_group`         | `ModifyPortalGroup`        | `PORTALGROUPKEY`, `PORTALKEYS`                   | write       |
 | `delete_portal_group`         | `DeletePortalGroup`        | `PORTALGROUPKEY`                                 | destructive |
 | `add_reader_group`            | `AddReaderGroup`           | `NAME`, `READERKEYS`                             | write       |
-| `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`                                 | write       |
+| `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`, `READERKEYS`                   | write       |
 | `delete_reader_group`         | `DeleteReaderGroup`        | `READERGROUPKEY`                                 | destructive |
 | `add_access_level`            | `AddAccessLevel`           | `ACCESSLEVELNAME`, `TIMESPECGROUPKEY`             | write       |
 | `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`                                 | write       |
@@ -305,6 +328,14 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `add_partition`               | `AddPartition`             | `NAME`, `TIMEZONE`                                | write       |
 | `switch_partition`            | `SwitchPartition`          | `PARTITIONKEY`                                   | write       |
 | `modify_udf_list_items`       | `ModifyUDFListItems`       | `UDFLISTKEY`, `LISTITEMS`                         | write       |
+| `set_portals_state`           | `LockPortal` / `UnlockPortal` / `MomentaryUnlockPortal` per portal, after `GetPortals` (composite) | `action` (`portalKeys` optional; omitted = every portal) | write |
+| `schedule_unlock_window`      | `AddHoliday`/`ModifyHoliday`, `AddTimeSpec`/`ModifyTimeSpec`, `AddTimeSpecGroup`/`ModifyTimeSpecGroup`, `AddPortalGroup`/`ModifyPortalGroup`, plus `DeleteTimeSpec`/`DeleteHoliday` of leftover managed segments, plus reads (composite) | `start`, `end` (`portalKeys`, `acknowledgeSideEffects`, `dryRun` optional) | write |
+| `cancel_unlock_window`        | `ModifyPortalGroup`, `DeleteHoliday`, `ModifyTimeSpecGroup`, `DeleteTimeSpec` — managed objects only — plus reads (composite) | — | write |
+
+`modify_portal_group` and `modify_reader_group` always replace the group's
+membership with the `PORTALKEYS`/`READERKEYS` you send — on this controller
+(6.2.0, verified live) an omitted or unparsed list empties the group instead
+of leaving it unchanged, so both tools require the complete membership.
 
 `trigger_event` is **unverified live on 6.x**; `NETBOX_EVENT_API_PATH` is
 available to override the request path if your controller serves the Event
@@ -327,6 +358,113 @@ carry this caution in their tool descriptions. Separately, `modify_person`'s
 additive (adds/removes individual levels without touching the rest). Mixing
 the two syntaxes in one call is rejected client-side before any command is
 sent.
+
+## Scheduled unlock windows
+
+"Unlock these doors from *start* to *end*" is one call —
+`schedule_unlock_window` — and the **controller itself enforces the
+schedule**: no process has to stay alive to relock the doors, so the MCP host
+can go away the moment the call returns.
+
+**How it works (the same objects an operator creates by hand).** The window is
+realised as a *Holiday* covering the dates, a *Time Spec* with **no weekdays**
+and only one holiday group ticked, and a *Portal Group* whose *Unlock Time
+Spec* is that time spec's group. A time spec with no weekdays and holiday
+group *G* ticked is active only on dates covered by a holiday in group *G*, so
+the portals unlock exactly on the window's dates and clock range. A window
+that spans midnight is split into up to three segments — `first` (start time →
+23:59 on the start date), `middle` (00:00 → 23:59 on every date strictly
+between, if any) and `last` (00:00 → end time on the end date) — each with its
+own holiday + time spec pair.
+
+**Managed objects and the single-window model.** Everything the tool creates
+is named with `NETBOX_UNLOCK_NAME_PREFIX` (default `MCP Unlock Window`): the
+portal group is named exactly `<prefix>`, the time spec group `<prefix> time
+specs` (never `<prefix>` — group names are unique across group types on this
+controller, so a portal group and a time spec group cannot share a name), and
+the per-segment holidays and time specs `<prefix> first`, `<prefix> middle`,
+`<prefix> last`. Names are the identity. There is **one managed window at a
+time**: scheduling a new one rewrites those same objects (modifying what
+exists, adding what is missing, deleting leftover segments from the previous
+window), and calling it twice with the same arguments is idempotent (only
+Modify/Get commands, same keys). The composite tools never modify or delete
+any object whose name is not exactly one of those; a user-created object
+that happens to carry one of those names is treated as managed. The apply
+order is fixed — resolve portals, managed time spec group, per-segment
+holiday + time spec, group membership, delete leftovers, managed portal group
+— and every step is read back and compared to the plan before the tool
+reports `verified: true`; any mismatch is a tool error describing the field.
+If any apply step fails, the tool rolls back by deleting every managed
+holiday and time spec written so far (mirroring `cancel_unlock_window`'s
+cleanup) before returning the error, so no partial window is left active;
+the error text names the failed step, the controller's message, and what the
+rollback removed.
+
+**Reserved holiday groups.** NetBox has exactly eight holiday groups (1–8),
+shared by every time spec on the controller. `NETBOX_UNLOCK_HOLIDAY_GROUPS`
+(default `8,7,6`) reserves one group per segment kind (`first`, `middle`,
+`last`, in that order). Reserve groups nothing else on the controller uses.
+With fewer than three groups configured, only windows needing that many
+segments can be scheduled (one group = same-day windows only); the tool never
+doubles up a group, because two segments sharing one would each unlock on the
+other's dates.
+
+**The side-effect check and `acknowledgeSideEffects`.** A holiday in group
+*G* suppresses, on its dates, every time spec that does **not** tick *G* — an
+access level whose time spec ticks only groups 1–3, say, would lose access
+during a window that uses group 8. Before writing anything,
+`schedule_unlock_window` reads every time spec and holiday and reports
+`suppressedTimeSpecs` (time specs other than `Never` and its own that lack a
+group the plan uses) and `overlappingHolidays` (non-managed holidays whose
+dates intersect the window — reported, never touched). If any time spec would
+be suppressed, the call is refused with nothing written unless
+`acknowledgeSideEffects=true`. `dryRun=true` returns the plan and the report
+without writing anything, whether or not you acknowledged. The built-in
+`Always` time spec ticks all eight groups and is never affected.
+
+**Cancelling.** `cancel_unlock_window` first, **if** the managed portal group
+exists, points it at the built-in `Never` time spec group (re-sending its
+current portals); then, regardless of whether that portal group exists,
+deletes the managed holidays and empties the managed time spec group and
+deletes the managed time specs. The last two are best-effort: if the
+controller refuses them, the tool still succeeds and lists what was left
+under `leftBehind`, because once the portal group (if any) is on `Never` and
+no managed holiday exists, nothing can unlock. The managed portal group and
+time spec group are kept (pointing at `Never` / empty) and reused by the next
+window. The tool reports there was nothing to cancel only when **no** managed
+object of any kind — portal group, time spec group, holiday, or time spec —
+exists.
+`get_unlock_window` (always registered, read-only) shows the current managed
+state — the portal group and whether it points at the managed time spec
+group, that group's members (read from `GetTimeSpecGroups`, because
+`GetTimeSpecGroup` returns `FAIL`/`NOT FOUND` on the verified 6.2.0
+controller), the managed time specs and holidays — plus the window derived
+from them and `activeNow` on the host clock.
+
+**Limits and caveats.**
+
+- A window must end in the future and be at most **31 days** long. Holidays
+  are capped at 30 per partition, so a window whose segments would push past
+  that is refused. `portalKeys` are keys only (use `get_portals` or
+  `find_portals` to map names); an unknown key is refused before anything is
+  written.
+- End of day on the NBAPI is `23:59` (the built-in `Always` uses it), and
+  `ENDTIME` is **inclusive through the end of that minute**, so there is no
+  midnight gap between segments of a multi-day window. A window's door
+  relocks up to **59 seconds after** the stated `end` minute (observed live:
+  a window ending `08:27` relocked at `08:27:59` controller time). An `end`
+  of `00:00` means "up to 23:59 of the previous day".
+- Times are the **controller's local time**. The MCP host is assumed to share
+  the controller's timezone; the host clock is used only to reject windows
+  that have already elapsed and to compute `activeNow`.
+- The physical unlock is **not observable through the NBAPI**: no read command
+  exposes portal state, and `GetEventHistory` carries no Unlock/Relock
+  activity. The tool verifies its work by reading the configuration objects
+  back and comparing them to the plan; confirm the door itself on
+  **Monitor → Portal Status** or in person.
+- `set_portals_state` is the immediate alternative: its `UNLOCK` is an
+  *Extended Unlock* that lasts until `LOCK`, with nothing scheduling the
+  relock.
 
 Session handling, retry-on-expired-session, and error mapping are all
 automatic and match the NBAPI documentation:
@@ -369,6 +507,44 @@ the value of `NETBOX_PASSWORD`, under any circumstance, and it never issues
 a write/control command regardless of `NETBOX_ENABLE_WRITES`. `npm test`
 never runs this script and never requires `.env` to exist.
 
+### Live write smoke test (optional, opt-in twice)
+
+```bash
+npm run test:live:write                        # CRUD round-trips only
+npm run test:live:write -- --go                # ... plus the real 2-minute unlock window
+npm run test:live:write -- --go --start 14:30  # pin the unlock time (1-60 min ahead)
+```
+
+This skips with one line and exit 0 — making no network call — unless
+`NETBOX_BASE_URL`, `NETBOX_USERNAME`, `NETBOX_PASSWORD`,
+`NETBOX_ENABLE_WRITES=true` **and** `NETBOX_LIVE_TEST_PORTALKEY` are all set.
+Otherwise it round-trips add → get → modify → get → delete for a time spec, a
+time spec group, a holiday, a reader group, and a portal group under the
+distinct prefix `MCP livecheck` (the portal group's unlock time spec group is
+`Never` and the holiday is in 2099, so nothing can unlock), asserting each
+read-back, and cleans up any `MCP livecheck` leftovers from an aborted run.
+It then estimates the controller's clock from the newest `GetAccessHistory`
+record and refuses to run the door phase — regardless of `--go` — when that
+estimate disagrees with the host clock by more than 2 minutes; window times
+passed to `schedule_unlock_window` are always controller-local, not host-local.
+
+With `--go` — pass it **only after** notifying the user (push notification
+plus a chat message giving the exact unlock and relock clock times) and
+receiving a go-ahead, because they observe the door — it prints a
+`HEADS-UP` line, schedules a real 2-minute unlock of the designated portal
+through the real `schedule_unlock_window` executor (unlock at now + 2 min and
+relock at now + 4 min, or at `--start HH:MM`), prints `OBSERVE: portal ...
+should unlock at HH:MM and relock at HH:MM — confirm on Monitor → Portal
+Status`, polls `get_unlock_window` every 30 s until one minute after relock,
+then calls `cancel_unlock_window` and asserts the managed portal group is on
+`Never` with no managed holiday, time spec, or time spec group member left
+(leftBehind is tolerated but reported). It refuses that phase if a managed
+window already exists (so it never replaces a real one), never touches
+persons, credentials, access levels, threat levels, outputs, events,
+partitions, or UDF lists, never prints the password, exits non-zero on any
+failed assertion (still cancelling the window first), and `npm test` never
+runs it.
+
 ## Out of scope
 
 - Photo ID handling (`GetPicture` and photo upload)
@@ -378,15 +554,21 @@ never runs this script and never requires `.env` to exist.
 - The deprecated NBAPI commands (`EditPerson`, `EditThreatLevel`,
   `EditThreatLevelGroup`, `GetAccessDataLog`, `GetAccessCardDetails`,
   `LoginUserName`, `LoginUserPassword`)
-- A composite "unlock all doors for a time window" tool and its supporting
-  `set_portals_state` bulk portal-state tool — not yet implemented in this
-  build (planned; see `specs/s2-netbox-mcp-write.md`)
-- A live write smoke test (`npm run test:live:write`) — not yet implemented
-  in this build
+- Multiple concurrent managed unlock windows, per-window naming, or any
+  persistence on the MCP host (there is one managed window; names are its
+  identity)
+- Resolving portals by **name** in the composite tools (keys only —
+  `get_portals`/`find_portals` map names)
+- Automatically deleting the managed portal group or time spec group on
+  cancel (they stay, pointing at `Never` / empty, and are reused)
+- Any scheduler on the host (Task Scheduler, in-process timers) — the
+  controller is the only scheduler
+- Confirmation prompts inside the server — the MCP host's permission model
+  and the environment gates are the controls
 - Any GUI/dashboard beyond the MCP tool surface
 - Publishing/packaging this server, or a CI/CD pipeline
 
-See `specs/s2-netbox-mcp-write.md` for the full requirements the write-tool
+See `specs/archive/s2-netbox-mcp-write.md` for the full requirements the write-tool
 surface was built against, and `specs/archive/s2-netbox-mcp.md` for the
 original read-only v1 spec (archived — all its acceptance criteria passed,
 including live verification).

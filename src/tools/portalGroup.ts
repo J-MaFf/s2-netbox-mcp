@@ -9,10 +9,12 @@ import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, type ToolGateF
  * write tools (AddPortalGroup, ModifyPortalGroup, DeletePortalGroup). Field
  * names are copied verbatim from the spec's Command reference.
  *
- * `add_portal_group`'s PORTALKEYS wraps into `<PORTALKEYS><PORTALKEY>...`,
- * but `modify_portal_group`'s PORTALKEYS sends **repeated top-level**
- * `<PORTALKEY>` sibling elements (no `<PORTALKEYS>` wrapper) — per the doc's
- * own ModifyPortalGroup example (R13/R5).
+ * `add_portal_group`'s and `modify_portal_group`'s PORTALKEYS both wrap into
+ * `<PORTALKEYS><PORTALKEY>...</PORTALKEY>...</PORTALKEYS>`. The doc's
+ * ModifyPortalGroup example uses repeated top-level `<PORTALKEY>` siblings,
+ * but that shape is not parsed by this controller and leaves the group
+ * empty (live, 2026-09-15) — so modify uses the same wrapped shape as add
+ * (R13).
  */
 export function registerPortalGroupTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
@@ -51,7 +53,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
 
     server.tool(
       'modify_portal_group',
-      'WRITE: Modifies an existing portal group (wraps NBAPI ModifyPortalGroup). PORTALKEYS is the complete desired membership.',
+      'WRITE: Modifies an existing portal group (wraps NBAPI ModifyPortalGroup). PORTALKEYS is the complete desired membership — an omitted or unparsed list empties the group on this controller, so always send the complete membership.',
       {
         PORTALGROUPKEY: z.string().describe('Required. The PORTALGROUPKEY of the portal group to modify.'),
         PORTALKEYS: z.array(z.string()).describe('Required. Complete replacement list of member PORTALKEY values.'),
@@ -68,7 +70,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
             PORTALGROUPKEY,
             NAME,
             DESCRIPTION,
-            PORTALKEY: PORTALKEYS,
+            ...wrapList('PORTALKEYS', 'PORTALKEY', PORTALKEYS),
             UNLOCKTIMESPECGROUPKEY,
             THREATLEVELGROUPKEY,
           }),

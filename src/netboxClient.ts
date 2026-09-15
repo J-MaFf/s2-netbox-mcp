@@ -94,8 +94,17 @@ export function interpretResponse(parsed: unknown): InterpretedResponse {
 
   // SUCCESS, or an undocumented/absent CODE: treat as a successful
   // pass-through of whatever fields the controller returned inside DETAILS.
+  // A few documented examples (AddTimeSpecGroup's TIMESPECGROUPKEY) show the
+  // returned key directly under <RESPONSE> rather than inside <DETAILS>, so
+  // any other RESPONSE-level child elements are merged in too — DETAILS wins
+  // on a name clash, and the `command`/`num` attributes are never data.
   const details = asRecord(response.DETAILS);
-  return { kind: 'success', data: details };
+  const responseLevel: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(response)) {
+    if (key === 'CODE' || key === 'DETAILS' || key === 'APIERROR' || key.startsWith('@_')) continue;
+    responseLevel[key] = value;
+  }
+  return { kind: 'success', data: { ...responseLevel, ...details } };
 }
 
 /**

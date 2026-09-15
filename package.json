@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:live": "tsx scripts/live-check.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:live:write": "tsx scripts/live-check-write.ts"
   },
   "engines": {
     "node": ">=18.17"

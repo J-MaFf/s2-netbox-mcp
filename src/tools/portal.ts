@@ -12,6 +12,7 @@ import {
   type ToolGateFlags,
 } from '../toolHelpers.js';
 import { findPortals } from '../portalSearch.js';
+import { PORTAL_STATE_ACTIONS, setPortalsState } from '../portalState.js';
 
 /**
  * Portal/reader/output tools: GetPortals, GetReader, GetReaders, GetOutputs
@@ -147,6 +148,40 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       { OUTPUTKEY: z.string().describe('Required. The OUTPUTKEY of the output to deactivate.') },
       async ({ OUTPUTKEY }) =>
         runNbapiTool(client, NBAPI_COMMANDS.DEACTIVATE_OUTPUT, { OUTPUTKEY }, formatWriteSuccess)
+    );
+
+    // Composite (R10): one LockPortal/UnlockPortal/MomentaryUnlockPortal per
+    // portal, sequentially, never aborting on a single failure. UNLOCK is an
+    // Extended Unlock that lasts until LOCK — for a timed window that the
+    // controller enforces itself, use schedule_unlock_window instead.
+    server.tool(
+      'set_portals_state',
+      'WRITE: Locks, unlocks (Extended Unlock until locked again), or momentarily unlocks many portals in one call — ' +
+        'the given PORTALKEYs, or every portal from a fully paginated GetPortals when portalKeys is omitted. Issues ' +
+        'LockPortal/UnlockPortal/MomentaryUnlockPortal per portal sequentially and never stops on a single failure; ' +
+        'the result partitions portals into succeeded, alreadyInState ("Portal state not changed") and failed, and is an ' +
+        'error only when failed is non-empty. For a scheduled, self-relocking window use schedule_unlock_window.',
+      {
+        action: z.enum(PORTAL_STATE_ACTIONS).describe('Required. LOCK, UNLOCK (Extended Unlock), or MOMENTARY_UNLOCK.'),
+        portalKeys: z
+          .array(z.string())
+          .optional()
+          .describe('Optional. PORTALKEY values to act on; omitted = every portal returned by GetPortals.'),
+      },
+      async ({ action, portalKeys }): Promise<ToolTextResult> => {
+        try {
+          const result = await setPortalsState(client, action, portalKeys);
+          if (result.failed.length > 0) {
+            return {
+              content: [{ type: 'text', text: `${result.failed.length} of ${result.requested} portal(s) failed\n${formatAsJson(result)}` }],
+              isError: true,
+            };
+          }
+          return { content: [{ type: 'text', text: formatWriteSuccess(result) }] };
+        } catch (err) {
+          return toolErrorResult(err);
+        }
+      }
     );
   }
 }

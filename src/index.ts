@@ -17,17 +17,21 @@ import { registerReaderGroupTools } from './tools/readerGroup.js';
 import { registerThreatLevelTools } from './tools/threatLevel.js';
 import { registerPartitionTools } from './tools/partition.js';
 import { registerMiscTools } from './tools/misc.js';
+import { registerUnlockWindowTools } from './tools/unlockWindow.js';
 
 /**
  * MCP server entrypoint. Registers every NetBox NBAPI tool on a stdio
  * transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
  *
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
- * only the read-only tool surface (16 v0.2.0 tools + the 18 R8 read tools =
- * 34 tools) is registered — byte-for-byte the same read-only posture as
- * before this stage, plus the new read tools. With NETBOX_ENABLE_WRITES
- * truthy, the 45 R9/R11-R20 write tools are also registered, except the 11
- * destructive tools, which additionally require NETBOX_ENABLE_DESTRUCTIVE.
+ * only the read-only tool surface (16 v0.2.0 tools + the 18 R8 read tools +
+ * the read-only composite `get_unlock_window` = 35 tools) is registered —
+ * byte-for-byte the same read-only posture as before, plus the new read
+ * tools. With NETBOX_ENABLE_WRITES truthy, the 45 R9/R11-R20 write tools and
+ * the three composite write tools (`set_portals_state`,
+ * `schedule_unlock_window`, `cancel_unlock_window`) are also registered,
+ * except the 11 destructive tools, which additionally require
+ * NETBOX_ENABLE_DESTRUCTIVE.
  */
 
 let config;
@@ -71,6 +75,10 @@ registerReaderGroupTools(server, client, gate);
 registerThreatLevelTools(server, client, gate);
 registerPartitionTools(server, client, gate);
 registerMiscTools(server, client);
+registerUnlockWindowTools(server, client, gate, {
+  holidayGroups: config.unlockHolidayGroups,
+  namePrefix: config.unlockNamePrefix,
+});
 
 registerShutdownHandlers(client);
 

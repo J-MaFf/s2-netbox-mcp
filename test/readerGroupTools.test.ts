@@ -46,7 +46,7 @@ describe('R14: reader group write tools', () => {
     ]);
   });
 
-  it('modify_reader_group makes READERKEYS optional and wraps it the same way', async () => {
+  it('modify_reader_group requires READERKEYS and wraps it the same way as add', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerReaderGroupTools(server as unknown as McpServer, client, WRITES_ON);

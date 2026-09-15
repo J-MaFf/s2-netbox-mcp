@@ -97,14 +97,14 @@ function resolveUnlockHolidayGroups(raw: string | undefined): [number, number, n
 
 /**
  * Validates NETBOX_UNLOCK_NAME_PREFIX per R7: 1-40 characters, so
- * `<prefix> middle` (the longest managed-object NAME this prefix produces)
- * still fits the NBAPI's 64-character NAME limit.
+ * `<prefix> time specs` (the longest managed-object NAME this prefix
+ * produces) still fits the NBAPI's 64-character NAME limit.
  */
 function resolveUnlockNamePrefix(raw: string | undefined): string {
   const value = raw && raw.trim() !== '' ? raw : DEFAULT_UNLOCK_NAME_PREFIX;
   if (value.length < 1 || value.length > 40) {
     throw new NetboxConfigError(
-      'NETBOX_UNLOCK_NAME_PREFIX must be 1-40 characters (so "<prefix> middle" fits the 64-character NAME limit).'
+      'NETBOX_UNLOCK_NAME_PREFIX must be 1-40 characters (so "<prefix> time specs" fits the 64-character NAME limit).'
     );
   }
   return value;

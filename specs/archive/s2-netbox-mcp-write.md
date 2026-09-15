@@ -1,5 +1,18 @@
 # Spec: S2 NetBox MCP Server — Write Tools and Managed Unlock Windows
 
+> **COMPLETED, 2026-09-15.** All 23 acceptance criteria + C-final PASS. Built via
+> #8/[PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) (stage 1: gating, 80-command
+> allowlist, nested XML, event path, 18 read + 45 write tools) and
+> #9/[PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stage 2: `set_portals_state`,
+> managed unlock windows, write live check). C20 was closed by the user standing at portal
+> `02OF01A`: `npm run test:live:write -- --go` scheduled a 08:25–08:27 window, the strike released
+> at 08:25 and re-engaged at the end of the 08:27 minute, and the script's cancel left no managed
+> holiday or time spec behind (19/19). Three live findings amended this spec during the run and
+> are recorded in Context: group names are unique across group types, Modify replaces group
+> membership with the parsed list, and the controller clock was 4 h 35 min wrong (fixed by the
+> user; the live check now measures skew). Archived as a historical record; see `CHANGELOG.md` /
+> `STATUS.md` for current state.
+
 ## Goal
 Extend the existing read-only S2 NetBox MCP server with the NBAPI's write/control commands as
 environment-gated tools, and add a composite "unlock window" capability so that "unlock all doors
@@ -120,6 +133,28 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   *Monitor → Portal Status* (R30).
 - `ListEvents` on this controller returns events whose actions include "Unlock Door" — triggering
   one would physically unlock a door, so no event may be used as a live-test target.
+- **Group membership on Modify (live write check, 2026-09-15):** `AddPortalGroup` with
+  `<PORTALKEYS><PORTALKEY>56</PORTALKEY></PORTALKEYS>` and `AddReaderGroup` with
+  `<READERKEYS><READERKEY>187</READERKEY></READERKEYS>` both create the group **with** the member
+  (read back verified). But `ModifyReaderGroup` sent with only `DESCRIPTION` **cleared** the
+  membership (read-back `[]`): on this firmware an omitted list means "no members", not "leave
+  unchanged". And `ModifyPortalGroup` sent with the doc's repeated top-level `<PORTALKEY>` siblings
+  (p. 165 example) also left membership empty — that shape is not parsed. Consequences: every
+  Modify of a portal or reader group must send the **complete** membership, and `ModifyPortalGroup`
+  uses the same wrapped `<PORTALKEYS><PORTALKEY>…` shape as `AddPortalGroup` (R13, R14, R25 step 6,
+  R26). Other live confirmations from the same run: `AddTimeSpec` also creates a same-named singular
+  time spec group; `AddTimeSpecGroup` returns `TIMESPECGROUPKEY`; `ModifyTimeSpecGroup` with an
+  empty `TIMESPECKEYS` list empties the group.
+- **Group names are unique across group types (live, 2026-09-15):** with a time spec group named
+  `MCP Unlock Window` already created (R25 step 2), `AddPortalGroup` with the same `NAME` failed
+  with `ERRMSG="Duplicate Portal Group"` — portal groups and time spec groups share one name table
+  (the doc's error lists for both commands mention the same `S2Group` insert). The first `--go`
+  run therefore stopped at step 6 with a managed holiday (group 8, dated that day), a managed time
+  spec, and the managed time spec group left behind and no portal group; the `finally` cancel found
+  no managed portal group and removed nothing, and the operator had to delete the leftovers by hand.
+  Consequences: the managed time spec group is named `<prefix> time specs` (R25 step 2, R27), and
+  cancel/rollback removes managed holidays and time specs whether or not the managed portal group
+  exists (R25 failure handling, R26).
 - **Designated live-test portal (chosen by the user, 2026-09-14):** `02OF01A` ("STAIRWELL TO
   OFFICE"), `PORTALKEY` `56`, reader `187` (`02OF01A READER`, OSDP), strike output `189`
   (`02OF01A EL`); it belongs to **no** portal group, so the managed test group creates no overlap.
@@ -129,8 +164,12 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
 - Holiday date range: `STARTDATE` is inclusive at 00:00 and `ENDDATE` is **exclusive** — the doc's
   one-day Christmas example is `2016-12-25 00:00` → `2016-12-26 00:00` (printed p. 49) and the
   live 10-day GRAND OPENING is `09-11 00:00` → `09-21 00:00`.
-- End of day is `ENDTIME` `23:59` (the built-in *Always* uses it). A multi-day window therefore has
-  a possible relock of up to 60 s at each midnight between segments; accepted and documented.
+- End of day is `ENDTIME` `23:59` (the built-in *Always* uses it). **Live, 2026-09-15:** `ENDTIME`
+  is inclusive through the end of its minute — a window ending `08:27` relocked at `08:27:59`
+  controller time — so a multi-day window has **no** relock gap at midnight (`23:59` covers through
+  `23:59:59`, and the next segment starts at `00:00`). The earlier "up to 60 s gap" caveat is
+  withdrawn; the user-facing consequence is that the door relocks up to 59 s after the stated
+  `end` minute.
 - A time spec with no weekdays and holiday group *G* ticked is active only on dates covered by a
   holiday in group *G* (live: GRAND OPENING, user-confirmed working).
 - A holiday in group *G* suppresses, on its dates, time specs that do **not** tick *G* (S2 training
@@ -155,8 +194,14 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   auto-created singular group is tolerated. Settled by the first live `add_time_spec`.
 - `TriggerEvent` works on the 6.x main path (inferred from `ListEvents`). Settled only by a user
   who configures a harmless test event; until then the README says "unverified live".
-- The MCP host and the controller share a timezone (the host is on the same site). The composite
-  tools compare the window's `end` against the host clock only to reject already-elapsed windows.
+- ~~The MCP host and the controller share a timezone.~~ **Falsified live, 2026-09-15:** during the
+  first door test the controller's newest access records read `03:30` while the host read `08:05`
+  (about 4 h 35 min behind — a wrong controller clock, not a timezone), so a window scheduled for
+  host-time `08:03–08:05` never arrived in controller time and the door stayed locked, while the
+  configuration objects were exactly right. Window times are controller-local by definition; the
+  host clock is used only for the "already elapsed" check in R22, and the write live check now
+  measures the controller's clock and refuses to run the door phase on a skew above 2 minutes
+  (R30). The user is correcting the controller's time (Configuration → Time / NTP).
 
 ### Decisions taken by the user on 2026-09-14
 - Write surface: **all four areas** — unlock workflow (portal control, time specs, holidays, portal
@@ -314,13 +359,18 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   are controller-local. [verify: schema tests; description text contains "exclusive"]
 - R13. Portal groups: `add_portal_group` (`NAME` req; `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`,
   `THREATLEVELGROUPKEY` opt; `PORTALKEYS` string[] req → wire `<PORTALKEYS><PORTALKEY>…`),
-  `modify_portal_group` (`PORTALGROUPKEY` req; `PORTALKEYS` string[] req → wire **repeated
-  top-level** `<PORTALKEY>` siblings per the doc example; `NAME`, `DESCRIPTION`,
-  `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY` opt), `delete_portal_group` (`PORTALGROUPKEY`).
-  [verify: schema + wire-shape tests, including the top-level-sibling shape]
+  `modify_portal_group` (`PORTALGROUPKEY` req; `PORTALKEYS` string[] req → wire
+  `<PORTALKEYS><PORTALKEY>…</PORTALKEY>…</PORTALKEYS>`, the same wrapped shape as `add_portal_group`
+  — the doc's repeated top-level `<PORTALKEY>` example is **not parsed** by this controller and
+  leaves the group empty (live, 2026-09-15); `NAME`, `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`,
+  `THREATLEVELGROUPKEY` opt; the description states that `PORTALKEYS` is the complete membership
+  because an omitted or unparsed list empties the group), `delete_portal_group` (`PORTALGROUPKEY`).
+  [verify: schema + wire-shape tests, including the wrapped shape on modify]
 - R14. Reader groups: `add_reader_group` (`NAME` req; `DESCRIPTION` opt; `READERKEYS` string[] req →
-  `<READERKEYS><READERKEY>…`), `modify_reader_group` (`READERGROUPKEY` req; `NAME`, `DESCRIPTION`,
-  `READERKEYS` string[] opt), `delete_reader_group` (`READERGROUPKEY`). [verify: as above]
+  `<READERKEYS><READERKEY>…`), `modify_reader_group` (`READERGROUPKEY` and `READERKEYS` string[]
+  **req** — omitting the list clears the group's membership on this controller (live, 2026-09-15),
+  so the tool requires the complete membership and its description says so; `NAME`, `DESCRIPTION`
+  opt), `delete_reader_group` (`READERGROUPKEY`). [verify: as above]
 - R15. Access levels: `add_access_level` (`ACCESSLEVELNAME`, `TIMESPECGROUPKEY` req;
   `ACCESSLEVELDESCRIPTION`, `READERKEY`, `READERGROUPKEY`, `THREATLEVELGROUPKEY` opt; client-side
   error if both `READERKEY` and `READERGROUPKEY` are given), `modify_access_level` (`ACCESSLEVELKEY`
@@ -381,8 +431,9 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   boolean, default false), `dryRun` (optional boolean, default false). It returns `isError` with a
   one-sentence reason and issues **no write** when: the format is wrong; `end` ≤ `start`; `end` is
   not later than the host's current time; the window is longer than 31 days; `portalKeys` contains
-  a key not returned by `GetPortals`; or adding the planned holidays would exceed 30 (count taken
-  from `GetHolidays`). [verify: handler tests for each rejection assert zero write commands]
+  a key not returned by `GetPortals`; adding the planned holidays would exceed 30 (count taken
+  from `GetHolidays`); or the plan needs a segment kind for which no holiday group is configured
+  (R23). [verify: handler tests for each rejection assert zero write commands]
 - R23. Planning is a pure function of (`start`, `end`, reserved groups `[g1,g2,g3]`, prefix) with
   these rules, where an `end` time of `00:00` is first normalised to `23:59` of the previous date:
   same date → one segment `first` = [`start` time, `end` time] on that date; otherwise `first` =
@@ -392,6 +443,10 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   date of the segment at `00:00`, `ENDDATE` = the day **after** the last date of the segment at
   `00:00` (exclusive); time spec `NAME` = `<prefix> <kind>`, `STARTTIME`/`ENDTIME` as above, all
   seven weekday flags `0`, `HOLIDAYGROUPS` = `g1` for `first`, `g2` for `middle`, `g3` for `last`.
+  When `NETBOX_UNLOCK_HOLIDAY_GROUPS` configures fewer than three groups, a plan that needs a
+  segment kind with no configured group is rejected (`isError`, no write) rather than sharing a
+  group between segments — one group permits same-day windows only, two permit windows without a
+  `middle` segment — because two segments sharing a group would each unlock on the other's dates.
   Required outputs (groups `8,7,6`, prefix `P`):
   - `2026-10-03 09:00` → `2026-10-03 17:00`: one segment first, holiday `2026-10-03 00:00`→`2026-10-04 00:00`, spec `09:00`–`17:00`, group 8.
   - `2026-10-03 18:00` → `2026-10-04 00:00`: identical to a same-day window ending `23:59` (one segment, spec `18:00`–`23:59`).
@@ -408,11 +463,15 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   groups) and writes nothing. If `dryRun` is `true`, the tool returns the plan and the report and
   writes nothing, regardless of acknowledgement. [verify: fake-client tests with a spec lacking a
   group (blocked, then allowed with the flag) and with `dryRun`]
-- R25. Apply order (each step's NBAPI calls in this sequence; a failure at any step returns
-  `isError` naming the step and the controller's message, and stops):
+- R25. Apply order (each step's NBAPI calls in this sequence; a failure at any step stops the
+  apply, runs the R26 cleanup of managed holidays and time specs — so no partial window can remain
+  active — and returns `isError` naming the failed step, the controller's message, and what the
+  cleanup removed):
   1. Resolve targets: paginate `GetPortals`; validate `portalKeys`.
-  2. Managed time spec group: find by exact `NAME` = prefix in paginated `GetTimeSpecGroups`; if
-     absent `AddTimeSpecGroup(NAME=prefix, DESCRIPTION="Managed by s2-netbox-mcp; do not edit")`.
+  2. Managed time spec group: find by exact `NAME` = `<prefix> time specs` in paginated
+     `GetTimeSpecGroups`; if absent `AddTimeSpecGroup(NAME="<prefix> time specs",
+     DESCRIPTION="Managed by s2-netbox-mcp; do not edit")`. (It must not share the portal group's
+     name — group names are unique across group types on this controller, see Context.)
   3. Managed holidays and time specs: for each planned segment, if a holiday / time spec with that
      exact `NAME` exists, `ModifyHoliday` / `ModifyTimeSpec` it to the planned values, else
      `AddHoliday` / `AddTimeSpec`.
@@ -423,7 +482,8 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   6. Managed portal group: find by exact `NAME` = prefix in paginated `GetPortalGroups`; if absent
      `AddPortalGroup(NAME=prefix, DESCRIPTION as above, UNLOCKTIMESPECGROUPKEY=managed TSG,
      PORTALKEYS=targets)`; else `ModifyPortalGroup(PORTALGROUPKEY, PORTALKEYS=targets,
-     UNLOCKTIMESPECGROUPKEY=managed TSG)`.
+     UNLOCKTIMESPECGROUPKEY=managed TSG)` — both with the wrapped `<PORTALKEYS><PORTALKEY>…`
+     shape (see the Context finding on membership).
   7. Read back (`GetPortalGroup`; the managed group's entry in paginated `GetTimeSpecGroups`
      filtered by `TIMESPECGROUPKEY` — not `GetTimeSpecGroup`, which fails on this controller;
      `GetTimeSpec` and `GetHoliday` per segment) and compare to the plan, normalising
@@ -437,14 +497,15 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   second run with a shorter window (modifies + delete of the leftover segment) and asserts the
   exact order]
 - R26. `cancel_unlock_window` (write): resolves the *Never* time spec group by exact `NAME`
-  `Never` (fails clearly if absent), sets the managed portal group's `UNLOCKTIMESPECGROUPKEY` to it
-  via `ModifyPortalGroup` (re-sending its current `PORTALKEYS` from `GetPortalGroup`), then deletes
-  every managed holiday (`<prefix> first|middle|last`), then attempts
-  `ModifyTimeSpecGroup(managed, TIMESPECKEYS=[])` followed by `DeleteTimeSpec` for each managed
-  time spec — if the controller refuses to empty the group or delete a spec, the tool still
-  returns success (the portal group already points at *Never* and no managed holiday exists, so
-  nothing can unlock) and lists what was left behind under `leftBehind`. If no managed portal group
-  exists it returns a normal result saying there was nothing to cancel. `get_unlock_window` (read,
+  `Never` (fails clearly if absent); **if** the managed portal group exists, sets its
+  `UNLOCKTIMESPECGROUPKEY` to *Never* via `ModifyPortalGroup` (re-sending its current `PORTALKEYS`
+  from `GetPortalGroup`); then — whether or not that portal group exists — deletes every managed
+  holiday (`<prefix> first|middle|last`), then attempts `ModifyTimeSpecGroup(managed TSG,
+  TIMESPECKEYS=[])` followed by `DeleteTimeSpec` for each managed time spec — if the controller
+  refuses to empty the group or delete a spec, the tool still returns success (the portal group,
+  if any, points at *Never* and no managed holiday exists, so nothing can unlock) and lists what
+  was left behind under `leftBehind`. Only when no managed object of any kind (portal group,
+  holiday, time spec) exists does it return a normal result saying there was nothing to cancel. `get_unlock_window` (read,
   always registered) returns the managed portal group (key, portals, unlock TSG key and whether it
   is the managed TSG), the managed time spec group's members (from paginated `GetTimeSpecGroups`,
   see the controller quirk in Context), the managed time specs and holidays, the derived window (earliest holiday
@@ -453,7 +514,8 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   cancel order, the tolerated-refusal path, the nothing-to-cancel path, and `get_unlock_window`
   on a populated and an empty controller]
 - R27. The composite tools never `Modify`/`Delete` a holiday, time spec, time spec group, or portal
-  group whose `NAME` is not exactly the prefix or `<prefix> first|middle|last`; a user-created
+  group whose `NAME` is not exactly the prefix, `<prefix> time specs`, or
+  `<prefix> first|middle|last`; a user-created
   object with one of those names is treated as managed (names are the identity). [verify: code
   review of the executor; test that a non-prefixed holiday overlapping the window is reported, not
   touched]
@@ -475,6 +537,13 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   `NETBOX_ENABLE_WRITES=true`, and `NETBOX_LIVE_TEST_PORTALKEY` are all set; (b) otherwise, under
   a distinct prefix `MCP livecheck`, round-trips add → get → modify → get → delete for a time spec,
   a time spec group, a holiday, a reader group, and a portal group, asserting each read-back;
+  (b2) estimates the controller's current time as the `DTTM` of the newest `GetAccessHistory`
+  record (`MAXRECORDS` `1`), prints both clocks, and if it differs from the host clock by more than
+  2 minutes prints `[FAIL] controller clock skew: controller <HH:MM:SS> vs host <HH:MM:SS>` and
+  does not run phase (c) (exit non-zero). There is no "stale record" exemption — a large delta is
+  indistinguishable from a wrong clock, so any delta above 2 minutes fails closed; the failure
+  message tells the operator to badge any reader and re-run if the site has simply been quiet. Only
+  a controller with **no** access records at all prints a warning and continues;
   (c) then — only after the operator running the check has notified the user (push notification
   plus a chat message giving the exact unlock and relock clock times) and received a go-ahead,
   because the user observes the door in person — prints `HEADS-UP: scheduling a 2-minute unlock
@@ -543,8 +612,10 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
 - "Fully paginated" means following `NEXTKEY` with the stop rules of `src/portalSearch.ts` (`-1`,
   missing or repeated key, 100-page cap); reuse or generalise that helper rather than writing a
   second loop.
-- Managed object names: `<prefix>` for the time spec group and portal group; `<prefix> first`,
-  `<prefix> middle`, `<prefix> last` for holidays and time specs; all ≤ 64 characters.
+- Managed object names: `<prefix>` for the portal group; `<prefix> time specs` for the time spec
+  group (never the same name as the portal group — group names are unique across group types);
+  `<prefix> first`, `<prefix> middle`, `<prefix> last` for holidays and time specs; all ≤ 64
+  characters (so the prefix is capped at 40).
 - Live write checks run only via `npm run test:live:write`, never from `npm test`.
 
 ## Acceptance rubric
@@ -575,7 +646,7 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   `isError` only when `failed` is non-empty, and the all-portals path paginates `GetPortals`.
 - C11 (R21): PASS iff no tool schema contains a field name absent from the Command reference for
   its command.
-- C12 (R22): PASS iff each of the six rejection cases returns `isError` with zero write commands.
+- C12 (R22): PASS iff each of the seven rejection cases returns `isError` with zero write commands.
 - C13 (R23): PASS iff the four required plans are produced exactly.
 - C14 (R24): PASS iff a time spec lacking a used group blocks the call without writes, the flag
   unblocks it, `dryRun` never writes, and overlapping holidays are reported.
@@ -636,12 +707,12 @@ Holidays
 
 Portal groups / reader groups
 - **AddPortalGroup** (p. 56) — PARAMS `NAME` (≤ 64), `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY` opt, `PORTALKEYS` → `<PORTALKEYS><PORTALKEY>k</PORTALKEY>…</PORTALKEYS>`. Response `PORTALGROUPKEY`. FAIL includes "Duplicate".
-- **ModifyPortalGroup** (p. 165) — PARAMS `PORTALGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `PORTALKEY` (required; the example sends repeated top-level `<PORTALKEY>` siblings), `UNLOCKTIMESPECGROUPKEY` opt, `THREATLEVELGROUPKEY` opt. Response: none.
+- **ModifyPortalGroup** (p. 165) — PARAMS `PORTALGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, membership (the doc says `PORTALKEY` required and its example sends repeated top-level `<PORTALKEY>` siblings — **live 6.2.0: that shape is ignored and the group ends up empty; send `<PORTALKEYS><PORTALKEY>…</PORTALKEYS>` exactly as AddPortalGroup does**), `UNLOCKTIMESPECGROUPKEY` opt, `THREATLEVELGROUPKEY` opt. Response: none. Membership is replaced by whatever list is parsed — always send the complete list.
 - **DeletePortalGroup** (p. 69) — PARAMS `PORTALGROUPKEY`. Response `PORTALGROUPKEY`.
 - **GetPortalGroup** (p. 114) — PARAMS `PORTALGROUPKEY`. Response `PORTALGROUP` {`PORTALGROUPKEY`, `NAME`, `DESCRIPTION`, `PORTALS`/`PORTAL`[{`PORTALKEY`, `NAME`}], `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY`}.
 - **GetPortalGroups** (p. 116) — PARAMS `STARTFROMKEY` opt. Response `PORTALGROUPS`/`PORTALGROUP`[…], `NEXTKEY`.
 - **AddReaderGroup** (p. 58) — PARAMS `NAME`, `DESCRIPTION`, `READERKEYS` → `<READERKEYS><READERKEY>k</READERKEY>…</READERKEYS>`. Response `READERGROUPKEY`.
-- **ModifyReaderGroup** (p. 167) — PARAMS `READERGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `READERKEYS` opt. Response: none.
+- **ModifyReaderGroup** (p. 167) — PARAMS `READERGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `READERKEYS` (doc: opt; **live 6.2.0: omitting it clears the membership**, so always send the complete list). Response: none.
 - **DeleteReaderGroup** (p. 70) — PARAMS `READERGROUPKEY`. Response `READERGROUPKEY`. FAIL includes "Cannot Delete: May be referenced by an Access Level".
 - **GetReaderGroup** (p. 124) — PARAMS `READERGROUPKEY`. Response `READERGROUP` {`READERGROUPKEY`, `NAME`, `DESCRIPTION`, `READERS`/`READER`[{`READERKEY`, `NAME`}]}.
 - **GetReaderGroups** (p. 126) — PARAMS `STARTFROMKEY` opt. Response `READERGROUPS`/`READERGROUP`[…], `NEXTKEY`.

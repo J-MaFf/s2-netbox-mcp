@@ -116,6 +116,20 @@ describe('parseResponseXml + interpretResponse', () => {
     }
   });
 
+  it('merges RESPONSE-level fields (the doc\'s AddTimeSpecGroup shape) into the data, with DETAILS winning and attributes excluded', () => {
+    const direct = interpretResponse(
+      parseResponseXml('<NETBOX><RESPONSE command="AddTimeSpecGroup" num="3"><CODE>SUCCESS</CODE><TIMESPECGROUPKEY>9</TIMESPECGROUPKEY></RESPONSE></NETBOX>')
+    );
+    expect(direct).toEqual({ kind: 'success', data: { TIMESPECGROUPKEY: '9' } });
+
+    const both = interpretResponse(
+      parseResponseXml(
+        '<NETBOX><RESPONSE command="X"><CODE>SUCCESS</CODE><EXTRA>1</EXTRA><KEY>outer</KEY><DETAILS><KEY>inner</KEY></DETAILS></RESPONSE></NETBOX>'
+      )
+    );
+    expect(both).toEqual({ kind: 'success', data: { EXTRA: '1', KEY: 'inner' } });
+  });
+
   it('interprets an APIERROR response nested inside <RESPONSE> (inside <NETBOX>), with no CODE/DETAILS', () => {
     const parsed = parseResponseXml('<NETBOX><RESPONSE><APIERROR>5</APIERROR></RESPONSE></NETBOX>');
     const result = interpretResponse(parsed);
