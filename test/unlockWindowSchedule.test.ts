@@ -60,8 +60,14 @@ describe('schedule_unlock_window registration', () => {
   });
 });
 
-describe('schedule_unlock_window (R22): the six rejections issue no write', () => {
-  const cases: Array<{ name: string; args: Record<string, unknown>; setup?: (fake: FakeNetbox) => void; reason: RegExp }> = [
+describe('schedule_unlock_window (R22): the seven rejections issue no write', () => {
+  const cases: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    setup?: (fake: FakeNetbox) => void;
+    settings?: UnlockWindowSettings;
+    reason: RegExp;
+  }> = [
     { name: 'wrong format', args: { start: '2026/10/02 17:00', end: WINDOW_A.end }, reason: /YYYY-MM-DD HH:MM/ },
     { name: 'end <= start', args: { start: '2026-10-02 17:00', end: '2026-10-02 17:00' }, reason: /must be later than start/ },
     { name: 'end not later than now', args: { start: '2026-09-14 09:00', end: '2026-09-14 11:00' }, reason: /not later than the current time/ },
@@ -75,13 +81,24 @@ describe('schedule_unlock_window (R22): the six rejections issue no write', () =
       },
       reason: /exceed the controller's limit of 30/,
     },
+    {
+      name: 'a segment kind with no configured holiday group',
+      // Only one reserved group configured, but a window spanning two
+      // calendar dates needs a `first` and a `last` segment (R23) — the
+      // `last` segment's reserved group (#2) is not configured, so the
+      // plan is rejected before any NBAPI call is made (mirrors the pure
+      // planner case in test/unlockWindowPlanner.test.ts).
+      args: { start: '2026-10-03 18:00', end: '2026-10-04 09:00' },
+      settings: { holidayGroups: [8], namePrefix: 'P', now: () => NOW },
+      reason: /"last" segment.*NETBOX_UNLOCK_HOLIDAY_GROUPS/,
+    },
   ];
 
   for (const testCase of cases) {
     it(`rejects ${testCase.name} with isError and zero write commands`, async () => {
       const fake = freshController();
       testCase.setup?.(fake);
-      const result = await scheduleTool(fake).handler(testCase.args);
+      const result = await scheduleTool(fake, testCase.settings ?? SETTINGS).handler(testCase.args);
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toMatch(testCase.reason);
       expect(fake.writeCalls()).toEqual([]);
