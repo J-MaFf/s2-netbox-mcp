@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-09-15
+
 ### Added
 - `.github/workflows/publish.yml`: publishes to npm via [Trusted Publishing](https://docs.npmjs.com/trusted-publishers)
   (OIDC from GitHub Actions) on every `v*` tag push -- no long-lived npm token, no
@@ -16,6 +18,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`, and
   `.github/PULL_REQUEST_TEMPLATE.md` for outside contributors
   ([#28](https://github.com/J-MaFf/s2-netbox-mcp/issues/28)).
+- `server.json` and `package.json`'s `mcpName` field, listing the server on the
+  [official MCP Registry](https://registry.modelcontextprotocol.io) as
+  `io.github.J-MaFf/s2-netbox-mcp` ([#29](https://github.com/J-MaFf/s2-netbox-mcp/issues/29)).
 
 ### Fixed
 - README's "Out of scope" list no longer claims "Publishing/packaging this server, or a
