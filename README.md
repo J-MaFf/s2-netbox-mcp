@@ -313,9 +313,9 @@ descriptions. The result also lists `portalsWithoutDescriptions`: portals none
 of whose readers has a description, which can only be found by name. It issues
 no commands beyond those two.
 
-### Write tools (registered only with `NETBOX_ENABLE_WRITES`)
+### Write tools and Destructive tools
 
-`Tier` is `write` (needs only `NETBOX_ENABLE_WRITES`) or `destructive` (needs
+`write` (needs only `NETBOX_ENABLE_WRITES`) and `destructive` (needs
 `NETBOX_ENABLE_WRITES` **and** `NETBOX_ENABLE_DESTRUCTIVE`). Every write
 tool's input schema declares exactly the documented PARAMS fields for its
 command, matching required/optional as documented — see the "Write access"
