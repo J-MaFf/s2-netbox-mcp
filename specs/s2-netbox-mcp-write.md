@@ -132,6 +132,16 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   R26). Other live confirmations from the same run: `AddTimeSpec` also creates a same-named singular
   time spec group; `AddTimeSpecGroup` returns `TIMESPECGROUPKEY`; `ModifyTimeSpecGroup` with an
   empty `TIMESPECKEYS` list empties the group.
+- **Group names are unique across group types (live, 2026-09-15):** with a time spec group named
+  `MCP Unlock Window` already created (R25 step 2), `AddPortalGroup` with the same `NAME` failed
+  with `ERRMSG="Duplicate Portal Group"` — portal groups and time spec groups share one name table
+  (the doc's error lists for both commands mention the same `S2Group` insert). The first `--go`
+  run therefore stopped at step 6 with a managed holiday (group 8, dated that day), a managed time
+  spec, and the managed time spec group left behind and no portal group; the `finally` cancel found
+  no managed portal group and removed nothing, and the operator had to delete the leftovers by hand.
+  Consequences: the managed time spec group is named `<prefix> time specs` (R25 step 2, R27), and
+  cancel/rollback removes managed holidays and time specs whether or not the managed portal group
+  exists (R25 failure handling, R26).
 - **Designated live-test portal (chosen by the user, 2026-09-14):** `02OF01A` ("STAIRWELL TO
   OFFICE"), `PORTALKEY` `56`, reader `187` (`02OF01A READER`, OSDP), strike output `189`
   (`02OF01A EL`); it belongs to **no** portal group, so the managed test group creates no overlap.
@@ -430,11 +440,15 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   groups) and writes nothing. If `dryRun` is `true`, the tool returns the plan and the report and
   writes nothing, regardless of acknowledgement. [verify: fake-client tests with a spec lacking a
   group (blocked, then allowed with the flag) and with `dryRun`]
-- R25. Apply order (each step's NBAPI calls in this sequence; a failure at any step returns
-  `isError` naming the step and the controller's message, and stops):
+- R25. Apply order (each step's NBAPI calls in this sequence; a failure at any step stops the
+  apply, runs the R26 cleanup of managed holidays and time specs — so no partial window can remain
+  active — and returns `isError` naming the failed step, the controller's message, and what the
+  cleanup removed):
   1. Resolve targets: paginate `GetPortals`; validate `portalKeys`.
-  2. Managed time spec group: find by exact `NAME` = prefix in paginated `GetTimeSpecGroups`; if
-     absent `AddTimeSpecGroup(NAME=prefix, DESCRIPTION="Managed by s2-netbox-mcp; do not edit")`.
+  2. Managed time spec group: find by exact `NAME` = `<prefix> time specs` in paginated
+     `GetTimeSpecGroups`; if absent `AddTimeSpecGroup(NAME="<prefix> time specs",
+     DESCRIPTION="Managed by s2-netbox-mcp; do not edit")`. (It must not share the portal group's
+     name — group names are unique across group types on this controller, see Context.)
   3. Managed holidays and time specs: for each planned segment, if a holiday / time spec with that
      exact `NAME` exists, `ModifyHoliday` / `ModifyTimeSpec` it to the planned values, else
      `AddHoliday` / `AddTimeSpec`.
@@ -460,14 +474,15 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   second run with a shorter window (modifies + delete of the leftover segment) and asserts the
   exact order]
 - R26. `cancel_unlock_window` (write): resolves the *Never* time spec group by exact `NAME`
-  `Never` (fails clearly if absent), sets the managed portal group's `UNLOCKTIMESPECGROUPKEY` to it
-  via `ModifyPortalGroup` (re-sending its current `PORTALKEYS` from `GetPortalGroup`), then deletes
-  every managed holiday (`<prefix> first|middle|last`), then attempts
-  `ModifyTimeSpecGroup(managed, TIMESPECKEYS=[])` followed by `DeleteTimeSpec` for each managed
-  time spec — if the controller refuses to empty the group or delete a spec, the tool still
-  returns success (the portal group already points at *Never* and no managed holiday exists, so
-  nothing can unlock) and lists what was left behind under `leftBehind`. If no managed portal group
-  exists it returns a normal result saying there was nothing to cancel. `get_unlock_window` (read,
+  `Never` (fails clearly if absent); **if** the managed portal group exists, sets its
+  `UNLOCKTIMESPECGROUPKEY` to *Never* via `ModifyPortalGroup` (re-sending its current `PORTALKEYS`
+  from `GetPortalGroup`); then — whether or not that portal group exists — deletes every managed
+  holiday (`<prefix> first|middle|last`), then attempts `ModifyTimeSpecGroup(managed TSG,
+  TIMESPECKEYS=[])` followed by `DeleteTimeSpec` for each managed time spec — if the controller
+  refuses to empty the group or delete a spec, the tool still returns success (the portal group,
+  if any, points at *Never* and no managed holiday exists, so nothing can unlock) and lists what
+  was left behind under `leftBehind`. Only when no managed object of any kind (portal group,
+  holiday, time spec) exists does it return a normal result saying there was nothing to cancel. `get_unlock_window` (read,
   always registered) returns the managed portal group (key, portals, unlock TSG key and whether it
   is the managed TSG), the managed time spec group's members (from paginated `GetTimeSpecGroups`,
   see the controller quirk in Context), the managed time specs and holidays, the derived window (earliest holiday
@@ -476,7 +491,8 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   cancel order, the tolerated-refusal path, the nothing-to-cancel path, and `get_unlock_window`
   on a populated and an empty controller]
 - R27. The composite tools never `Modify`/`Delete` a holiday, time spec, time spec group, or portal
-  group whose `NAME` is not exactly the prefix or `<prefix> first|middle|last`; a user-created
+  group whose `NAME` is not exactly the prefix, `<prefix> time specs`, or
+  `<prefix> first|middle|last`; a user-created
   object with one of those names is treated as managed (names are the identity). [verify: code
   review of the executor; test that a non-prefixed holiday overlapping the window is reported, not
   touched]
@@ -566,8 +582,10 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
 - "Fully paginated" means following `NEXTKEY` with the stop rules of `src/portalSearch.ts` (`-1`,
   missing or repeated key, 100-page cap); reuse or generalise that helper rather than writing a
   second loop.
-- Managed object names: `<prefix>` for the time spec group and portal group; `<prefix> first`,
-  `<prefix> middle`, `<prefix> last` for holidays and time specs; all ≤ 64 characters.
+- Managed object names: `<prefix>` for the portal group; `<prefix> time specs` for the time spec
+  group (never the same name as the portal group — group names are unique across group types);
+  `<prefix> first`, `<prefix> middle`, `<prefix> last` for holidays and time specs; all ≤ 64
+  characters (so the prefix is capped at 40).
 - Live write checks run only via `npm run test:live:write`, never from `npm test`.
 
 ## Acceptance rubric
