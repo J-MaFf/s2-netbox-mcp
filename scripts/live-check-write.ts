@@ -111,8 +111,13 @@ const NAMES = {
   udfItem: `${LIVE_PREFIX} item`,
 };
 
-/** Fixed, unlikely-to-collide test card number used for the credential round-trip (#13). */
-const TEST_CARD_NUMBER = '98765431';
+/** Fixed test card number used for the credential round-trip (#13). Kept small
+ * on purpose: the live controller's first CARDFORMAT is "26 bit Wiegand",
+ * whose card number field is only 16 bits wide (max 65535), so a larger
+ * 8-digit number overflows it ("Encoded number ... is too large for selected
+ * format"). This value fits every common Wiegand format's card-number field,
+ * not just 26-bit. */
+const TEST_CARD_NUMBER = '65431';
 /** Fixed CUSTOMKEY used for the UDF list item round-trip (#13). */
 const UDF_ITEM_CUSTOMKEY = '_mcp_livecheck';
 
@@ -870,7 +875,11 @@ async function threatLevelRoundTrip(client: NetboxClient): Promise<boolean> {
 
   allPassed =
     (await step('modify_threat_level (COLOR=Green)', async () => {
-      await client.call(NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Green' });
+      // The doc lists LEVELNAME, SEQNUM, and COLOR without marking any of
+      // them optional, and the live controller bears this out: it rejected
+      // ModifyThreatLevel without SEQNUM even though AddThreatLevel above
+      // succeeded, so SEQNUM is resent here with the same value (#13).
+      await client.call(NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, SEQNUM: '7', COLOR: 'Green' });
       return 'COLOR=Green';
     })) && allPassed;
 

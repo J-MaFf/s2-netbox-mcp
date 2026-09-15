@@ -209,6 +209,17 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
     expect(script).toContain('PERSONID + CARDFORMAT + ENCODEDNUM');
   });
 
+  it('uses a card number that fits the 16-bit field of the live 26-bit Wiegand format (#13)', () => {
+    expect(script).toContain("const TEST_CARD_NUMBER = '65431'");
+    expect(script).not.toContain('98765431');
+  });
+
+  it('modify_threat_level sends SEQNUM along with COLOR, since the controller rejects the call without it (#13)', () => {
+    expect(script).toContain(
+      "NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, SEQNUM: '7', COLOR: 'Green' }"
+    );
+  });
+
   it('the UDF list round-trip records a SKIPPED pass when no UDF list is configured', () => {
     expect(script).toContain('SKIPPED: no UDF list is configured on this controller');
   });

@@ -318,7 +318,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `remove_credential`           | `RemoveCredential`         | `PERSONID` (+ `CREDENTIALID` or `ENCODEDNUM`/`HOTSTAMP`) | destructive |
 | `set_threat_level`            | `SetThreatLevel`           | `LEVELNAME`                                      | write       |
 | `add_threat_level`            | `AddThreatLevel`           | `LEVELNAME`                                      | write       |
-| `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`                                      | write       |
+| `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`, `SEQNUM`                            | write       |
 | `remove_threat_level`         | `RemoveThreatLevel`        | `LEVELNAME`                                      | destructive |
 | `add_threat_level_group`      | `AddThreatLevelGroup`      | `LEVELGROUPNAME`                                 | write       |
 | `modify_threat_level_group`   | `ModifyThreatLevelGroup`   | `LEVELGROUPNAME`, `LEVELNAMES`                    | write       |

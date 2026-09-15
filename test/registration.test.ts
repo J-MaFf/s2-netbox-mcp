@@ -231,7 +231,7 @@ describe('R3/C3: every write tool description is prefixed and every write succes
     delete_reader_group: { READERGROUPKEY: '1' },
     set_threat_level: { LEVELNAME: 'High' },
     add_threat_level: { LEVELNAME: 'High' },
-    modify_threat_level: { LEVELNAME: 'High' },
+    modify_threat_level: { LEVELNAME: 'High', SEQNUM: '1' },
     remove_threat_level: { LEVELNAME: 'High' },
     add_threat_level_group: { LEVELGROUPNAME: 'G' },
     modify_threat_level_group: { LEVELGROUPNAME: 'G', LEVELNAMES: ['High'] },
