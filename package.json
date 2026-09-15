@@ -4,6 +4,7 @@
   "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as Claude-callable tools; read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
