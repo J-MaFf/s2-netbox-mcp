@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.J-MaFf/s2-netbox-mcp",
+  "description": "MCP server for LenelS2 S2 NetBox access control via the NBAPI. Read-only by default.",
+  "repository": {
+    "url": "https://github.com/J-MaFf/s2-netbox-mcp",
+    "source": "github"
+  },
+  "version": "0.2.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "s2-netbox-mcp",
+      "version": "0.2.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Base URL of the S2 NetBox controller's web interface, e.g. https://netbox.example.internal (no trailing slash or path)",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "name": "NETBOX_BASE_URL"
+        },
+        {
+          "description": "NBAPI session-login username",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "name": "NETBOX_USERNAME"
+        },
+        {
+          "description": "NBAPI session-login password",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "NETBOX_PASSWORD"
+        },
+        {
+          "description": "Set to true/1/yes to register the write tools (lock/unlock, add/modify/delete). Unset keeps the server strictly read-only.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "NETBOX_ENABLE_WRITES"
+        },
+        {
+          "description": "Set to true/1/yes together with NETBOX_ENABLE_WRITES to additionally register the 11 destructive (delete/remove) tools",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "NETBOX_ENABLE_DESTRUCTIVE"
+        }
+      ]
+    }
+  ]
+}
