@@ -6,7 +6,9 @@ import { findPortals } from '../src/portalSearch.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
- * Opt-in live-controller smoke test (satisfies acceptance criterion C11).
+ * Opt-in live-controller smoke test (satisfies acceptance criterion C19/R29).
+ * Covers all 34 read tools (16 pre-existing + the 18 added in this stage)
+ * and issues no write/control command.
  *
  * `npm test` never runs this file and never requires a `.env` to exist.
  * This script is invoked separately via `npm run test:live`, and only
@@ -68,6 +70,43 @@ interface CheckResult {
   pass: boolean;
   summary: string;
   data?: unknown;
+}
+
+/**
+ * Chains a singular `GetXxx` check off a previously-fetched `GetXxxs` list
+ * response: discovers a real key via findFirstMatchingId and calls the
+ * singular command with it. If no key can be found (an empty collection),
+ * returns a SKIPPED pass rather than guessing a key that might not exist.
+ */
+async function chainedSingleCheck(
+  client: NetboxClient,
+  name: string,
+  command: NbapiCommandName,
+  keyParam: string,
+  listData: unknown,
+  options: { acceptEmptyCollectionFail?: boolean } = {}
+): Promise<CheckResult> {
+  const key = findFirstMatchingId(listData, new RegExp(`^${keyParam}$`, 'i'));
+  if (!key) {
+    return { name, pass: true, summary: `SKIPPED (no ${keyParam} found in the list response to test against)` };
+  }
+  return runCheck(client, name, command, { [keyParam]: key }, options);
+}
+
+/**
+ * GetHolidays' response is documented as a list of HOLIDAYKEY records, but
+ * the live NetBox 6.2.0 controller returns HOLIDAYS as a bare
+ * comma-separated key string instead (e.g. "1") — see spec Context "Live
+ * facts". Handles both shapes and returns the first key, if any.
+ */
+function holidayKeyFromHolidaysData(data: unknown): string | undefined {
+  if (data === null || typeof data !== 'object') return undefined;
+  const holidays = (data as Record<string, unknown>).HOLIDAYS;
+  if (typeof holidays === 'string' && holidays.trim() !== '') {
+    const first = holidays.split(',')[0]?.trim();
+    return first || undefined;
+  }
+  return findFirstMatchingId(data, /^HOLIDAYKEY$/i);
 }
 
 async function runCheck(
@@ -221,6 +260,85 @@ async function main(): Promise<number> {
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
   results.push(await runCheck(client, 'get_access_history', NBAPI_COMMANDS.GET_ACCESS_HISTORY, {}));
+
+  // --- R29: the 18 additional read tools added in this stage ---------------
+
+  const timeSpecs = await runCheck(client, 'get_time_specs', NBAPI_COMMANDS.GET_TIME_SPECS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(timeSpecs);
+  results.push(await chainedSingleCheck(client, 'get_time_spec', NBAPI_COMMANDS.GET_TIME_SPEC, 'TIMESPECKEY', timeSpecs.data));
+
+  const timeSpecGroups = await runCheck(client, 'get_time_spec_groups', NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(timeSpecGroups);
+  results.push(
+    // Live-observed quirk on this 6.2.0 controller: GetTimeSpecGroup returns
+    // CODE=FAIL/ERRMSG="NOT FOUND" for every key, including keys that
+    // GetTimeSpecGroups just listed (1/Always, 2/Never, 28/GRAND OPENING) —
+    // the same class of quirk already accepted for GetAccessLevelGroup above.
+    await chainedSingleCheck(
+      client,
+      'get_time_spec_group',
+      NBAPI_COMMANDS.GET_TIME_SPEC_GROUP,
+      'TIMESPECGROUPKEY',
+      timeSpecGroups.data,
+      { acceptEmptyCollectionFail: true }
+    )
+  );
+
+  // GetHolidays' response is documented as HOLIDAYKEY records, but the live
+  // controller returns HOLIDAYS as a bare comma-separated key string instead
+  // (see spec Context "Live facts") — handled by holidayKeyFromHolidaysData.
+  const holidays = await runCheck(client, 'get_holidays', NBAPI_COMMANDS.GET_HOLIDAYS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(holidays);
+  const holidayKey = holidayKeyFromHolidaysData(holidays.data);
+  results.push(
+    holidayKey
+      ? await runCheck(client, 'get_holiday', NBAPI_COMMANDS.GET_HOLIDAY, { HOLIDAYKEY: holidayKey })
+      : { name: 'get_holiday', pass: true, summary: 'SKIPPED (no HOLIDAYKEY found in get_holidays results to test against)' }
+  );
+
+  const portalGroups = await runCheck(client, 'get_portal_groups', NBAPI_COMMANDS.GET_PORTAL_GROUPS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(portalGroups);
+  results.push(
+    await chainedSingleCheck(client, 'get_portal_group', NBAPI_COMMANDS.GET_PORTAL_GROUP, 'PORTALGROUPKEY', portalGroups.data)
+  );
+
+  const readerGroups = await runCheck(client, 'get_reader_groups', NBAPI_COMMANDS.GET_READER_GROUPS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(readerGroups);
+  results.push(
+    await chainedSingleCheck(client, 'get_reader_group', NBAPI_COMMANDS.GET_READER_GROUP, 'READERGROUPKEY', readerGroups.data)
+  );
+
+  results.push(await runCheck(client, 'get_outputs', NBAPI_COMMANDS.GET_OUTPUTS, {}));
+  results.push(
+    await runCheck(client, 'get_access_level_names', NBAPI_COMMANDS.GET_ACCESS_LEVEL_NAMES, {}, {
+      acceptEmptyCollectionFail: true,
+    })
+  );
+  results.push(await runCheck(client, 'get_partitions', NBAPI_COMMANDS.GET_PARTITIONS, {}));
+
+  const udfLists = await runCheck(client, 'get_udf_lists', NBAPI_COMMANDS.GET_UDF_LISTS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(udfLists);
+  results.push(
+    await chainedSingleCheck(client, 'get_udf_list_items', NBAPI_COMMANDS.GET_UDF_LIST_ITEMS, 'UDFLISTKEY', udfLists.data)
+  );
+
+  results.push(
+    await runCheck(client, 'get_elevators', NBAPI_COMMANDS.GET_ELEVATORS, {}, { acceptEmptyCollectionFail: true })
+  );
+  results.push(await runCheck(client, 'get_floors', NBAPI_COMMANDS.GET_FLOORS, {}, { acceptEmptyCollectionFail: true }));
+  results.push(await runCheck(client, 'ping_app', NBAPI_COMMANDS.PING_APP, {}));
 
   await client.logout();
 

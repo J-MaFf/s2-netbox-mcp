@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfigFromEnv, NetboxConfigError, DEFAULT_NETBOX_API_PATH } from '../src/config.js';
+import {
+  loadConfigFromEnv,
+  NetboxConfigError,
+  DEFAULT_NETBOX_API_PATH,
+  DEFAULT_UNLOCK_HOLIDAY_GROUPS,
+  DEFAULT_UNLOCK_NAME_PREFIX,
+} from '../src/config.js';
 
 const FULL_ENV = {
   NETBOX_BASE_URL: 'https://netbox.example.internal',
@@ -16,6 +22,12 @@ describe('loadConfigFromEnv (R3)', () => {
       password: 'super-secret-password',
       allowInsecureTls: false,
       apiPath: '/nbws/goforms/nbapi',
+      eventApiPath: '/nbws/goforms/nbapi',
+      enableWrites: false,
+      enableDestructive: false,
+      unlockHolidayGroups: [8, 7, 6],
+      unlockNamePrefix: 'MCP Unlock Window',
+      liveTestPortalKey: undefined,
     });
   });
 
@@ -87,5 +99,119 @@ describe('loadConfigFromEnv apiPath resolution (R20 / C14)', () => {
 
   it('adds a missing leading slash to a NETBOX_API_PATH override', () => {
     expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_API_PATH: 'goforms/nbapi' }).apiPath).toBe('/goforms/nbapi');
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_ENABLE_WRITES / NETBOX_ENABLE_DESTRUCTIVE (R7)', () => {
+  it('default both to false', () => {
+    const config = loadConfigFromEnv(FULL_ENV);
+    expect(config.enableWrites).toBe(false);
+    expect(config.enableDestructive).toBe(false);
+  });
+
+  it('only a truthy value (1/true/yes, case-insensitive) enables each flag', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_WRITES: 'true' }).enableWrites).toBe(true);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_WRITES: '1' }).enableWrites).toBe(true);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_WRITES: 'YES' }).enableWrites).toBe(true);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_WRITES: 'false' }).enableWrites).toBe(false);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_WRITES: 'nope' }).enableWrites).toBe(false);
+
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_DESTRUCTIVE: 'true' }).enableDestructive).toBe(true);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_ENABLE_DESTRUCTIVE: 'no' }).enableDestructive).toBe(false);
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_EVENT_API_PATH (R6/R7)', () => {
+  it('defaults to the resolved NETBOX_API_PATH when unset', () => {
+    expect(loadConfigFromEnv(FULL_ENV).eventApiPath).toBe('/nbws/goforms/nbapi');
+  });
+
+  it('defaults to the resolved NETBOX_API_PATH when set to an empty string', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_EVENT_API_PATH: '' }).eventApiPath).toBe('/nbws/goforms/nbapi');
+  });
+
+  it('tracks a custom NETBOX_API_PATH when NETBOX_EVENT_API_PATH is unset', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_API_PATH: '/goforms/nbapi' }).eventApiPath).toBe('/goforms/nbapi');
+  });
+
+  it('honours a non-empty NETBOX_EVENT_API_PATH override verbatim, independent of NETBOX_API_PATH', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_EVENT_API_PATH: '/appd/nbapi' }).eventApiPath).toBe('/appd/nbapi');
+  });
+
+  it('adds a missing leading slash to a NETBOX_EVENT_API_PATH override', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_EVENT_API_PATH: 'appd/nbapi' }).eventApiPath).toBe('/appd/nbapi');
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_UNLOCK_HOLIDAY_GROUPS (R7)', () => {
+  it('defaults to 8,7,6', () => {
+    expect(DEFAULT_UNLOCK_HOLIDAY_GROUPS).toBe('8,7,6');
+    expect(loadConfigFromEnv(FULL_ENV).unlockHolidayGroups).toEqual([8, 7, 6]);
+  });
+
+  it('accepts 1-3 distinct integers in 1..8', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '1' }).unlockHolidayGroups).toEqual([1]);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '1,2' }).unlockHolidayGroups).toEqual([1, 2]);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '8, 7, 6' }).unlockHolidayGroups).toEqual([8, 7, 6]);
+  });
+
+  it('treats an empty override as unset (falls back to the default, not rejected)', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '' }).unlockHolidayGroups).toEqual([8, 7, 6]);
+  });
+
+  it.each(['0', '9', '1,1', '1,2,3,4', 'a,b', '1,', ','])(
+    'rejects an invalid value (%s) with a one-line NetboxConfigError naming the variable and the rule',
+    (raw) => {
+      let thrown: unknown;
+      try {
+        loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: raw });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(NetboxConfigError);
+      const err = thrown as NetboxConfigError;
+      expect(err.message.split('\n')).toHaveLength(1);
+      expect(err.message).toContain('NETBOX_UNLOCK_HOLIDAY_GROUPS');
+    }
+  );
+});
+
+describe('loadConfigFromEnv NETBOX_UNLOCK_NAME_PREFIX (R7)', () => {
+  it('defaults to "MCP Unlock Window"', () => {
+    expect(DEFAULT_UNLOCK_NAME_PREFIX).toBe('MCP Unlock Window');
+    expect(loadConfigFromEnv(FULL_ENV).unlockNamePrefix).toBe('MCP Unlock Window');
+  });
+
+  it('accepts a 1-40 character override', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_NAME_PREFIX: 'X' }).unlockNamePrefix).toBe('X');
+    const fortyChars = 'A'.repeat(40);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_NAME_PREFIX: fortyChars }).unlockNamePrefix).toBe(fortyChars);
+  });
+
+  it('treats an empty override as unset (default)', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_NAME_PREFIX: '' }).unlockNamePrefix).toBe('MCP Unlock Window');
+  });
+
+  it('rejects an over-long (41+ character) override with a one-line NetboxConfigError naming the variable', () => {
+    let thrown: unknown;
+    try {
+      loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_NAME_PREFIX: 'A'.repeat(41) });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NetboxConfigError);
+    const err = thrown as NetboxConfigError;
+    expect(err.message.split('\n')).toHaveLength(1);
+    expect(err.message).toContain('NETBOX_UNLOCK_NAME_PREFIX');
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_LIVE_TEST_PORTALKEY (R7)', () => {
+  it('defaults to undefined', () => {
+    expect(loadConfigFromEnv(FULL_ENV).liveTestPortalKey).toBeUndefined();
+  });
+
+  it('passes through a configured value verbatim', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_LIVE_TEST_PORTALKEY: '56' }).liveTestPortalKey).toBe('56');
   });
 });

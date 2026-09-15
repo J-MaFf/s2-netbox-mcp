@@ -4,16 +4,30 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfigFromEnv, NetboxConfigError } from './config.js';
 import { NetboxClient } from './netboxClient.js';
 import { NBAPI_COMMANDS } from './commands.js';
-import { runNbapiTool } from './toolHelpers.js';
+import { runNbapiTool, type ToolGateFlags } from './toolHelpers.js';
 import { registerShutdownHandlers } from './shutdown.js';
 import { registerPersonTools } from './tools/person.js';
 import { registerAccessLevelTools } from './tools/accessLevel.js';
 import { registerPortalTools } from './tools/portal.js';
 import { registerEventsTools } from './tools/events.js';
+import { registerTimeSpecTools } from './tools/timeSpec.js';
+import { registerHolidayTools } from './tools/holiday.js';
+import { registerPortalGroupTools } from './tools/portalGroup.js';
+import { registerReaderGroupTools } from './tools/readerGroup.js';
+import { registerThreatLevelTools } from './tools/threatLevel.js';
+import { registerPartitionTools } from './tools/partition.js';
+import { registerMiscTools } from './tools/misc.js';
 
 /**
- * MCP server entrypoint. Registers all 16 read-only NetBox NBAPI tools on a
- * stdio transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
+ * MCP server entrypoint. Registers every NetBox NBAPI tool on a stdio
+ * transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
+ *
+ * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
+ * only the read-only tool surface (16 v0.2.0 tools + the 18 R8 read tools =
+ * 34 tools) is registered — byte-for-byte the same read-only posture as
+ * before this stage, plus the new read tools. With NETBOX_ENABLE_WRITES
+ * truthy, the 45 R9/R11-R20 write tools are also registered, except the 11
+ * destructive tools, which additionally require NETBOX_ENABLE_DESTRUCTIVE.
  */
 
 let config;
@@ -29,11 +43,16 @@ try {
 }
 
 const client = new NetboxClient(config);
-const server = new McpServer({ name: 's2-netbox-mcp', version: '0.1.0' });
+const server = new McpServer({ name: 's2-netbox-mcp', version: '0.3.0' });
 
-// check_connection wraps GetAPIVersion. It doesn't fit any one of the four
-// tool-category modules (person/accessLevel/portal/events), so it is
-// registered directly here alongside the rest of entrypoint wiring.
+const gate: ToolGateFlags = {
+  writesEnabled: config.enableWrites,
+  destructiveEnabled: config.enableDestructive,
+};
+
+// check_connection wraps GetAPIVersion. It doesn't fit any one of the
+// tool-category modules, so it is registered directly here alongside the
+// rest of entrypoint wiring. Always registered (read-only).
 server.tool(
   'check_connection',
   'Confirms the server can authenticate to the configured S2 NetBox controller and returns the NBAPI version string (wraps GetAPIVersion). No parameters required.',
@@ -41,10 +60,17 @@ server.tool(
   async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
 );
 
-registerPersonTools(server, client);
-registerAccessLevelTools(server, client);
-registerPortalTools(server, client);
-registerEventsTools(server, client);
+registerPersonTools(server, client, gate);
+registerAccessLevelTools(server, client, gate);
+registerPortalTools(server, client, gate);
+registerEventsTools(server, client, gate);
+registerTimeSpecTools(server, client, gate);
+registerHolidayTools(server, client, gate);
+registerPortalGroupTools(server, client, gate);
+registerReaderGroupTools(server, client, gate);
+registerThreatLevelTools(server, client, gate);
+registerPartitionTools(server, client, gate);
+registerMiscTools(server, client);
 
 registerShutdownHandlers(client);
 

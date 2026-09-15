@@ -1,0 +1,250 @@
+import { describe, expect, it } from 'vitest';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerPersonTools } from '../src/tools/person.js';
+import { registerAccessLevelTools } from '../src/tools/accessLevel.js';
+import { registerPortalTools } from '../src/tools/portal.js';
+import { registerEventsTools } from '../src/tools/events.js';
+import { registerTimeSpecTools } from '../src/tools/timeSpec.js';
+import { registerHolidayTools } from '../src/tools/holiday.js';
+import { registerPortalGroupTools } from '../src/tools/portalGroup.js';
+import { registerReaderGroupTools } from '../src/tools/readerGroup.js';
+import { registerThreatLevelTools } from '../src/tools/threatLevel.js';
+import { registerPartitionTools } from '../src/tools/partition.js';
+import { registerMiscTools } from '../src/tools/misc.js';
+import { runNbapiTool, type ToolGateFlags } from '../src/toolHelpers.js';
+import { NBAPI_COMMANDS } from '../src/commands.js';
+import { FakeServer, fakeClient } from './testUtils.js';
+
+/**
+ * Mirrors src/index.ts's registration sequence exactly (check_connection +
+ * every registerXxxTools call), against a FakeServer, so this test exercises
+ * the *whole server's* registered tool surface for a given gate — the R1/R2
+ * acceptance criterion (C1/C2) is about the server as a whole, not any one
+ * module in isolation.
+ */
+function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
+  const { client } = fakeClient();
+  server.tool(
+    'check_connection',
+    'Confirms the server can authenticate to the configured S2 NetBox controller and returns the NBAPI version string (wraps GetAPIVersion). No parameters required.',
+    {},
+    async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
+  );
+  registerPersonTools(server as unknown as McpServer, client, gate);
+  registerAccessLevelTools(server as unknown as McpServer, client, gate);
+  registerPortalTools(server as unknown as McpServer, client, gate);
+  registerEventsTools(server as unknown as McpServer, client, gate);
+  registerTimeSpecTools(server as unknown as McpServer, client, gate);
+  registerHolidayTools(server as unknown as McpServer, client, gate);
+  registerPortalGroupTools(server as unknown as McpServer, client, gate);
+  registerReaderGroupTools(server as unknown as McpServer, client, gate);
+  registerThreatLevelTools(server as unknown as McpServer, client, gate);
+  registerPartitionTools(server as unknown as McpServer, client, gate);
+  registerMiscTools(server as unknown as McpServer, client);
+}
+
+const READ_TOOLS = [
+  'check_connection',
+  'get_person',
+  'search_person_data',
+  'get_card_access_details',
+  'get_card_formats',
+  'get_access_level',
+  'get_access_levels',
+  'get_access_level_group',
+  'get_access_level_groups',
+  'get_access_level_names',
+  'get_portals',
+  'get_reader',
+  'get_readers',
+  'find_portals',
+  'get_outputs',
+  'get_event_history',
+  'list_events',
+  'get_access_history',
+  'get_time_spec',
+  'get_time_specs',
+  'get_time_spec_group',
+  'get_time_spec_groups',
+  'get_holiday',
+  'get_holidays',
+  'get_portal_group',
+  'get_portal_groups',
+  'get_reader_group',
+  'get_reader_groups',
+  'get_partitions',
+  'get_udf_lists',
+  'get_udf_list_items',
+  'get_elevators',
+  'get_floors',
+  'ping_app',
+];
+
+const NON_DESTRUCTIVE_WRITE_TOOLS = [
+  'add_person',
+  'modify_person',
+  'add_credential',
+  'modify_credential',
+  'add_access_level',
+  'modify_access_level',
+  'add_access_level_group',
+  'modify_access_level_group',
+  'lock_portal',
+  'unlock_portal',
+  'momentary_unlock_portal',
+  'dog_on_next_exit_portal',
+  'activate_output',
+  'deactivate_output',
+  'trigger_event',
+  'insert_activity',
+  'add_time_spec',
+  'modify_time_spec',
+  'add_time_spec_group',
+  'modify_time_spec_group',
+  'add_holiday',
+  'modify_holiday',
+  'add_portal_group',
+  'modify_portal_group',
+  'add_reader_group',
+  'modify_reader_group',
+  'set_threat_level',
+  'add_threat_level',
+  'modify_threat_level',
+  'add_threat_level_group',
+  'modify_threat_level_group',
+  'add_partition',
+  'switch_partition',
+  'modify_udf_list_items',
+];
+
+// The 11 destructive tools (R2), named exactly as the spec lists them.
+const DESTRUCTIVE_TOOLS = [
+  'delete_access_level',
+  'delete_access_level_group',
+  'delete_holiday',
+  'delete_portal_group',
+  'delete_reader_group',
+  'delete_time_spec',
+  'delete_time_spec_group',
+  'remove_credential',
+  'remove_person',
+  'remove_threat_level',
+  'remove_threat_level_group',
+];
+
+describe('R1/C1: registration matrix', () => {
+  it('registers exactly the 34 read tools (16 v0.2.0 + 18 R8) when NETBOX_ENABLE_WRITES is off', () => {
+    const server = new FakeServer();
+    registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
+    expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
+    expect(server.registrations).toHaveLength(34);
+  });
+
+  it('destructiveEnabled alone (writesEnabled false) registers no write tool at all', () => {
+    const server = new FakeServer();
+    registerWholeServer(server, { writesEnabled: false, destructiveEnabled: true });
+    expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
+  });
+
+  it('registers the 34 read tools + 34 non-destructive write tools when writes are on and destructive is off', () => {
+    const server = new FakeServer();
+    registerWholeServer(server, { writesEnabled: true, destructiveEnabled: false });
+    const names = server.registrations.map((r) => r.name).sort();
+    expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS].sort());
+    expect(names).toHaveLength(68);
+    for (const destructive of DESTRUCTIVE_TOOLS) {
+      expect(names).not.toContain(destructive);
+    }
+  });
+
+  it('registers all 79 tools (34 read + 34 write + 11 destructive) when both flags are on', () => {
+    const server = new FakeServer();
+    registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
+    const names = server.registrations.map((r) => r.name).sort();
+    expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
+    expect(names).toHaveLength(79);
+  });
+});
+
+describe('R3/C3: every write tool description is prefixed and every write success text contains SUCCESS', () => {
+  // Minimal valid arguments per write tool, chosen to satisfy every
+  // client-side guard (R9-R20) so the handler reaches runNbapiTool/
+  // formatWriteSuccess rather than returning a guard error.
+  const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
+    add_person: { LASTNAME: 'Smith' },
+    modify_person: { PERSONID: '1' },
+    remove_person: { PERSONID: '1' },
+    add_credential: { PERSONID: '1', CARDFORMAT: 'Standard26', ENCODEDNUM: '0012345' },
+    modify_credential: { PERSONID: '1' },
+    remove_credential: { PERSONID: '1', CREDENTIALID: '9' },
+    add_access_level: { ACCESSLEVELNAME: 'A', TIMESPECGROUPKEY: '1' },
+    modify_access_level: { ACCESSLEVELKEY: '1' },
+    delete_access_level: { ACCESSLEVELKEY: '1' },
+    add_access_level_group: { NAME: 'G' },
+    modify_access_level_group: { ACCESSLEVELGROUPKEY: '1' },
+    delete_access_level_group: { ACCESSLEVELGROUPKEY: '1' },
+    lock_portal: { PORTALKEY: '1' },
+    unlock_portal: { PORTALKEY: '1' },
+    momentary_unlock_portal: { PORTALKEY: '1' },
+    dog_on_next_exit_portal: { PORTALKEY: '1' },
+    activate_output: { OUTPUTKEY: '1' },
+    deactivate_output: { OUTPUTKEY: '1' },
+    trigger_event: { EVENTNAME: 'E', EVENTACTION: 'ACTIVATE' },
+    insert_activity: { ACTIVITYTYPE: 'USERACTIVITY' },
+    add_time_spec: { NAME: 'T' },
+    modify_time_spec: { TIMESPECKEY: '1' },
+    add_time_spec_group: { NAME: 'G' },
+    modify_time_spec_group: { TIMESPECGROUPKEY: '1' },
+    delete_time_spec: { TIMESPECKEY: '1' },
+    delete_time_spec_group: { TIMESPECGROUPKEY: '1' },
+    add_holiday: { HOLIDAYNAME: 'H', STARTDATE: '2026-01-01', ENDDATE: '2026-01-02' },
+    modify_holiday: { HOLIDAYKEY: '1' },
+    delete_holiday: { HOLIDAYKEY: '1' },
+    add_portal_group: { NAME: 'G', PORTALKEYS: ['1'] },
+    modify_portal_group: { PORTALGROUPKEY: '1', PORTALKEYS: ['1'] },
+    delete_portal_group: { PORTALGROUPKEY: '1' },
+    add_reader_group: { NAME: 'G', READERKEYS: ['1'] },
+    modify_reader_group: { READERGROUPKEY: '1' },
+    delete_reader_group: { READERGROUPKEY: '1' },
+    set_threat_level: { LEVELNAME: 'High' },
+    add_threat_level: { LEVELNAME: 'High' },
+    modify_threat_level: { LEVELNAME: 'High' },
+    remove_threat_level: { LEVELNAME: 'High' },
+    add_threat_level_group: { LEVELGROUPNAME: 'G' },
+    modify_threat_level_group: { LEVELGROUPNAME: 'G', LEVELNAMES: ['High'] },
+    remove_threat_level_group: { LEVELGROUPNAME: 'G' },
+    add_partition: { NAME: 'P', TIMEZONE: 'UTC' },
+    switch_partition: { PARTITIONKEY: '1' },
+    modify_udf_list_items: { UDFLISTKEY: '1', LISTITEMS: [{ ITEMNAME: 'X', DELETE: '0' }] },
+  };
+
+  it('covers every write and destructive tool name with a sample-args entry', () => {
+    expect(Object.keys(SAMPLE_ARGS).sort()).toEqual([...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
+  });
+
+  const server = new FakeServer();
+  registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
+
+  for (const reg of server.registrations) {
+    if (DESTRUCTIVE_TOOLS.includes(reg.name)) {
+      it(`${reg.name}: description starts with "DESTRUCTIVE:" and success text contains SUCCESS`, async () => {
+        expect(reg.description.startsWith('DESTRUCTIVE:')).toBe(true);
+        const result = await reg.handler(SAMPLE_ARGS[reg.name]);
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0].text).toContain('SUCCESS');
+      });
+    } else if (NON_DESTRUCTIVE_WRITE_TOOLS.includes(reg.name)) {
+      it(`${reg.name}: description starts with "WRITE:" and success text contains SUCCESS`, async () => {
+        expect(reg.description.startsWith('WRITE:')).toBe(true);
+        const result = await reg.handler(SAMPLE_ARGS[reg.name]);
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0].text).toContain('SUCCESS');
+      });
+    } else {
+      it(`${reg.name}: read tool description does not use the WRITE:/DESTRUCTIVE: prefixes`, () => {
+        expect(reg.description.startsWith('WRITE:')).toBe(false);
+        expect(reg.description.startsWith('DESTRUCTIVE:')).toBe(false);
+      });
+    }
+  }
+});

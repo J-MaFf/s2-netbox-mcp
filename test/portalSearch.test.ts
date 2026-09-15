@@ -164,7 +164,7 @@ describe('find_portals tool', () => {
         if (name === 'find_portals') registered = { schema, handler };
       },
     };
-    registerPortalTools(server as unknown as McpServer, client);
+    registerPortalTools(server as unknown as McpServer, client, { writesEnabled: false, destructiveEnabled: false });
     if (!registered) throw new Error('find_portals not registered');
     return registered;
   }

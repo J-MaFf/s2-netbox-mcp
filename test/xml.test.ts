@@ -45,6 +45,65 @@ describe('buildRequestXml (R2)', () => {
   });
 });
 
+describe('buildParamsXml nested PARAMS (R5)', () => {
+  it('wraps an array of scalars under a wrapper key: PORTALKEYS -> <PORTALKEYS><PORTALKEY>...', () => {
+    const xml = buildParamsXml({ PORTALKEYS: { PORTALKEY: ['30', '32'] } });
+    expect(xml).toBe('<PORTALKEYS><PORTALKEY>30</PORTALKEY><PORTALKEY>32</PORTALKEY></PORTALKEYS>');
+  });
+
+  it('serialises a top-level array as repeated sibling elements (no wrapper): modify_portal_group’s PORTALKEY', () => {
+    const xml = buildParamsXml({ PORTALGROUPKEY: '56', PORTALKEY: ['1', '2'] });
+    expect(xml).toBe('<PORTALGROUPKEY>56</PORTALGROUPKEY><PORTALKEY>1</PORTALKEY><PORTALKEY>2</PORTALKEY>');
+  });
+
+  it('wraps an array of bare-name strings: ACCESSLEVELS -> <ACCESSLEVELS><ACCESSLEVEL>...', () => {
+    const xml = buildParamsXml({ ACCESSLEVELS: { ACCESSLEVEL: ['A', 'B'] } });
+    expect(xml).toBe('<ACCESSLEVELS><ACCESSLEVEL>A</ACCESSLEVEL><ACCESSLEVEL>B</ACCESSLEVEL></ACCESSLEVELS>');
+  });
+
+  it('wraps an array of objects (block syntax): ACCESSLEVELS -> <ACCESSLEVELS><ACCESSLEVEL><ACCESSLEVELNAME>...', () => {
+    const xml = buildParamsXml({ ACCESSLEVELS: { ACCESSLEVEL: [{ ACCESSLEVELNAME: 'A', DELETE: '1' }] } });
+    expect(xml).toBe('<ACCESSLEVELS><ACCESSLEVEL><ACCESSLEVELNAME>A</ACCESSLEVELNAME><DELETE>1</DELETE></ACCESSLEVEL></ACCESSLEVELS>');
+  });
+
+  it('serialises VEHICLES -> <VEHICLES><VEHICLE>... preserving object key order', () => {
+    const xml = buildParamsXml({ VEHICLES: { VEHICLE: [{ VEHICLEMAKE: 'Honda', VEHICLELICNUM: '123 PGA' }] } });
+    expect(xml).toBe('<VEHICLES><VEHICLE><VEHICLEMAKE>Honda</VEHICLEMAKE><VEHICLELICNUM>123 PGA</VEHICLELICNUM></VEHICLE></VEHICLES>');
+  });
+
+  it('serialises two LISTITEM blocks in the given order, each with its own key order', () => {
+    const xml = buildParamsXml({
+      LISTITEMS: {
+        LISTITEM: [
+          { ITEMKEY: '1', DELETE: '1' },
+          { DELETE: '0', ITEMNAME: 'X', CUSTOMKEY: '_3' },
+        ],
+      },
+    });
+    expect(xml).toBe(
+      '<LISTITEMS>' +
+        '<LISTITEM><ITEMKEY>1</ITEMKEY><DELETE>1</DELETE></LISTITEM>' +
+        '<LISTITEM><DELETE>0</DELETE><ITEMNAME>X</ITEMNAME><CUSTOMKEY>_3</CUSTOMKEY></LISTITEM>' +
+        '</LISTITEMS>'
+    );
+  });
+
+  it('escapes XML special characters in a nested value', () => {
+    const xml = buildParamsXml({ VEHICLES: { VEHICLE: [{ VEHICLEMAKE: `O'Reilly & <Co>` }] } });
+    expect(xml).toBe('<VEHICLES><VEHICLE><VEHICLEMAKE>O&apos;Reilly &amp; &lt;Co&gt;</VEHICLEMAKE></VEHICLE></VEHICLES>');
+  });
+
+  it('drops undefined array items as well as undefined top-level values', () => {
+    const xml = buildParamsXml({ PORTALKEY: ['1', undefined, '2'] });
+    expect(xml).toBe('<PORTALKEY>1</PORTALKEY><PORTALKEY>2</PORTALKEY>');
+  });
+
+  it('nests to arbitrary depth', () => {
+    const xml = buildParamsXml({ A: { B: { C: '1' } } });
+    expect(xml).toBe('<A><B><C>1</C></B></A>');
+  });
+});
+
 describe('parseResponseXml + interpretResponse', () => {
   it('interprets a SUCCESS response, unwrapping <DETAILS> as the data (not the <RESPONSE> element itself)', () => {
     const parsed = parseResponseXml(

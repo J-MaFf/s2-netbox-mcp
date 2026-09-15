@@ -2,17 +2,19 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams } from '../toolHelpers.js';
+import { runNbapiTool, mergeParams, formatWriteSuccess, clientGuardError, type ToolGateFlags } from '../toolHelpers.js';
 
 /**
- * Event/history tools: GetEventHistory, ListEvents, GetAccessHistory. Each is
- * a thin pass-through of that NBAPI command's documented PARAMS and response
- * fields. Field names below are copied verbatim from the spec's "Command
- * reference (verified against the primary source)" section — neither
- * GetEventHistory nor GetAccessHistory has STARTTIME/ENDTIME/PERSONID
- * parameters.
+ * Event/history/activity tools: the existing three read tools
+ * (GetEventHistory, ListEvents, GetAccessHistory) plus the R19 write tools
+ * (TriggerEvent, InsertActivity). Field names below are copied verbatim from
+ * the spec's Command reference — neither GetEventHistory nor
+ * GetAccessHistory has STARTTIME/ENDTIME/PERSONID parameters.
+ *
+ * trigger_event is routed to NETBOX_EVENT_API_PATH automatically by
+ * NetboxClient (R6) — this module never references a request path itself.
  */
-export function registerEventsTools(server: McpServer, client: NetboxClient): void {
+export function registerEventsTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
     'get_event_history',
     'Returns historical NetBox events for an optional event name/date range (wraps NBAPI GetEventHistory).',
@@ -49,4 +51,50 @@ export function registerEventsTools(server: McpServer, client: NetboxClient): vo
     },
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(args))
   );
+
+  if (gate.writesEnabled) {
+    server.tool(
+      'trigger_event',
+      'WRITE: Triggers (activates/deactivates) a defined NetBox event (wraps NBAPI TriggerEvent). ' +
+        'Unverified live on 6.x; NETBOX_EVENT_API_PATH override available (defaults to the main NBAPI path; ' +
+        'override if your controller serves the Event API separately, e.g. /appd/nbapi).',
+      {
+        EVENTNAME: z.string().describe('Required. Name of the defined event to trigger.'),
+        EVENTACTION: z.enum(['ACTIVATE', 'DEACTIVATE']).describe('Required. Whether to activate or deactivate the event.'),
+        PARTITIONID: z.string().optional().describe('Optional. Partition the event belongs to (defaults to Master).'),
+      },
+      async (args) => runNbapiTool(client, NBAPI_COMMANDS.TRIGGER_EVENT, mergeParams(args), formatWriteSuccess)
+    );
+
+    server.tool(
+      'insert_activity',
+      'WRITE: Inserts a manual activity/log record (wraps NBAPI InsertActivity).',
+      {
+        ACTIVITYTYPE: z.enum(['ACCESSGRANTED', 'ACCESSDENIED', 'USERACTIVITY']).describe('Required. The type of activity to record.'),
+        DETAILS: z
+          .enum(['DISABLED', 'EXPIRED', 'LOCATION', 'PIN', 'TIME', 'UNKNOWN'])
+          .optional()
+          .describe('Optional. Reason/detail code for the activity.'),
+        PORTALKEY: z.string().optional().describe('Optional. Portal the activity applies to. Mutually exclusive with ELEVATORKEY.'),
+        ELEVATORKEY: z.string().optional().describe('Optional. Elevator the activity applies to. Mutually exclusive with PORTALKEY.'),
+        FLOORKEY: z.string().optional().describe('Optional. Floor the activity applies to (used with ELEVATORKEY).'),
+        READERKEY: z.string().optional().describe('Optional. Reader the activity applies to.'),
+        PERSONID: z.string().optional().describe('Optional. Person the activity applies to.'),
+        CARDFORMAT: z.string().optional().describe('Optional. Card format of ENCODEDNUM.'),
+        ENCODEDNUM: z.string().optional().describe('Optional. Encoded card number involved in the activity.'),
+        ACTIVITYTEXT: z.string().optional().describe('Optional. Free-text description of the activity (max 255 characters).'),
+      },
+      async ({ PORTALKEY, ELEVATORKEY, ...rest }) => {
+        if (PORTALKEY && ELEVATORKEY) {
+          return clientGuardError('insert_activity accepts PORTALKEY or ELEVATORKEY, not both, in the same call.');
+        }
+        return runNbapiTool(
+          client,
+          NBAPI_COMMANDS.INSERT_ACTIVITY,
+          mergeParams({ ...rest, PORTALKEY, ELEVATORKEY }),
+          formatWriteSuccess
+        );
+      }
+    );
+  }
 }

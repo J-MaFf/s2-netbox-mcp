@@ -1,4 +1,46 @@
-import type { FetchLike } from '../src/netboxClient.js';
+import type { FetchLike, NetboxClient } from '../src/netboxClient.js';
+
+// ---------------------------------------------------------------------------
+// Shared FakeServer / fake-client helpers for tool registration tests
+// (R1-R3, R8-R21). Every test/tools*.test.ts and test/registration.test.ts
+// file uses this instead of hand-rolling its own copy.
+// ---------------------------------------------------------------------------
+
+export interface ToolRegistration {
+  name: string;
+  description: string;
+  schema: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
+}
+
+/** A minimal stand-in for McpServer that just records every server.tool(...) call. */
+export class FakeServer {
+  registrations: ToolRegistration[] = [];
+  tool(name: string, description: string, schema: Record<string, unknown>, handler: ToolRegistration['handler']): void {
+    this.registrations.push({ name, description, schema, handler });
+  }
+}
+
+export function byName(server: FakeServer, name: string): ToolRegistration {
+  const reg = server.registrations.find((r) => r.name === name);
+  if (!reg) throw new Error(`tool not registered: ${name}`);
+  return reg;
+}
+
+/** A fake NetboxClient whose .call() always resolves to the given result
+ * (default: an empty SUCCESS) and records every invocation. */
+export function fakeClient(
+  result: { notFound: boolean; data: unknown } = { notFound: false, data: {} }
+): { client: NetboxClient; calls: Array<{ command: string; params: unknown }> } {
+  const calls: Array<{ command: string; params: unknown }> = [];
+  const client = {
+    call: async (command: string, params: unknown) => {
+      calls.push({ command, params });
+      return result;
+    },
+  } as unknown as NetboxClient;
+  return { client, calls };
+}
 
 export interface MockCall {
   url: string;
