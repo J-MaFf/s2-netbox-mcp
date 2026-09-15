@@ -93,21 +93,87 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
   const readScript = readFileSync(`${ROOT}scripts/live-check.ts`, 'utf8');
   const pkg = JSON.parse(readFileSync(`${ROOT}package.json`, 'utf8')) as { scripts: Record<string, string> };
 
-  it('never references a person, credential, access level, threat level, output, event, partition, UDF, or portal-action command', () => {
+  it('never references an output, TriggerEvent, SetThreatLevel, AddPartition, or a portal-action command (#13)', () => {
     const forbidden = [
-      'ADD_PERSON', 'MODIFY_PERSON', 'REMOVE_PERSON',
-      'ADD_CREDENTIAL', 'MODIFY_CREDENTIAL', 'REMOVE_CREDENTIAL',
-      'ADD_ACCESS_LEVEL', 'MODIFY_ACCESS_LEVEL', 'DELETE_ACCESS_LEVEL',
-      'ADD_ACCESS_LEVEL_GROUP', 'MODIFY_ACCESS_LEVEL_GROUP', 'DELETE_ACCESS_LEVEL_GROUP',
-      'SET_THREAT_LEVEL', 'ADD_THREAT_LEVEL', 'MODIFY_THREAT_LEVEL', 'REMOVE_THREAT_LEVEL',
-      'ADD_THREAT_LEVEL_GROUP', 'MODIFY_THREAT_LEVEL_GROUP', 'REMOVE_THREAT_LEVEL_GROUP',
       'ACTIVATE_OUTPUT', 'DEACTIVATE_OUTPUT',
-      'TRIGGER_EVENT', 'INSERT_ACTIVITY',
-      'ADD_PARTITION', 'SWITCH_PARTITION', 'MODIFY_UDF_LIST_ITEMS',
+      'TRIGGER_EVENT',
+      'SET_THREAT_LEVEL',
+      'ADD_PARTITION',
       'LOCK_PORTAL', 'UNLOCK_PORTAL', 'MOMENTARY_UNLOCK_PORTAL', 'DOG_ON_NEXT_EXIT_PORTAL',
     ];
     const offenders = forbidden.filter((constant) => script.includes(`NBAPI_COMMANDS.${constant}`));
     expect(offenders).toEqual([]);
+  });
+
+  it('never sends PERSONPURGE, and never marks a person DELETED directly (#13)', () => {
+    expect(script).not.toContain('PERSONPURGE');
+    expect(script).not.toMatch(/DELETED:\s*['"]TRUE['"]/);
+  });
+
+  it('round-trips person/credential, access level/group, and threat level/group objects, plus InsertActivity, a UDF list item, and SwitchPartition (#13)', () => {
+    const required = [
+      'ADD_PERSON', 'MODIFY_PERSON', 'REMOVE_PERSON',
+      'ADD_CREDENTIAL', 'MODIFY_CREDENTIAL', 'REMOVE_CREDENTIAL',
+      'ADD_ACCESS_LEVEL', 'MODIFY_ACCESS_LEVEL', 'DELETE_ACCESS_LEVEL',
+      'ADD_ACCESS_LEVEL_GROUP', 'MODIFY_ACCESS_LEVEL_GROUP', 'DELETE_ACCESS_LEVEL_GROUP',
+      'ADD_THREAT_LEVEL', 'MODIFY_THREAT_LEVEL', 'REMOVE_THREAT_LEVEL',
+      'ADD_THREAT_LEVEL_GROUP', 'MODIFY_THREAT_LEVEL_GROUP', 'REMOVE_THREAT_LEVEL_GROUP',
+      'INSERT_ACTIVITY', 'MODIFY_UDF_LIST_ITEMS', 'SWITCH_PARTITION',
+    ];
+    const missing = required.filter((constant) => !script.includes(`NBAPI_COMMANDS.${constant}`));
+    expect(missing).toEqual([]);
+  });
+
+  it('the person round-trip runs create -> read -> modify -> read -> delete in order, using only the returned PERSONID/CREDENTIALID', () => {
+    const order = [
+      "step('add_person -> get_person'",
+      "step('modify_person (MIDDLENAME/NOTES) -> get_person'",
+      "step('add_credential -> get_person (WANTCREDENTIALID) shows the card'",
+      "step('modify_credential (DISABLED=1) -> get_person shows DISABLED'",
+      "step('remove_credential -> get_person shows no card'",
+      "step('remove_person -> get_person (NOT FOUND or DELETED=TRUE)'",
+    ];
+    const indices = order.map((needle) => script.indexOf(needle));
+    expect(indices.every((index) => index > -1)).toBe(true);
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+  });
+
+  it('the access level round-trip creates a second temporary access level to populate the group, and cleans it up', () => {
+    expect(script).toContain(`NAMES.accessLevel2`);
+    const groupDeleteIndex = script.indexOf("step('delete_access_level_group");
+    const tempCleanupIndex = script.indexOf("step('delete_access_level (temp, cleanup)");
+    expect(groupDeleteIndex).toBeGreaterThan(-1);
+    expect(tempCleanupIndex).toBeGreaterThan(groupDeleteIndex);
+  });
+
+  it('the threat level round-trip never calls SetThreatLevel, and proves removal via a second RemoveThreatLevel failing', () => {
+    expect(script).not.toContain('NBAPI_COMMANDS.SET_THREAT_LEVEL');
+    expect(script).toContain('a second RemoveThreatLevel for the same name fails');
+  });
+
+  it('the UDF list round-trip records a SKIPPED pass when no UDF list is configured', () => {
+    expect(script).toContain('SKIPPED: no UDF list is configured on this controller');
+  });
+
+  it('the new round-trips run in phase (b), before the controller clock check', () => {
+    const personIndex = script.indexOf('await personRoundTrip(client)');
+    const accessLevelIndex = script.indexOf('await accessLevelRoundTrip(client');
+    const threatLevelIndex = script.indexOf('await threatLevelRoundTrip(client)');
+    const udfIndex = script.indexOf('await udfListRoundTrip(client)');
+    const clockCheckIndex = script.indexOf('await controllerClockCheck(client)');
+    expect(personIndex).toBeGreaterThan(-1);
+    expect(accessLevelIndex).toBeGreaterThan(personIndex);
+    expect(threatLevelIndex).toBeGreaterThan(accessLevelIndex);
+    expect(udfIndex).toBeGreaterThan(threatLevelIndex);
+    expect(clockCheckIndex).toBeGreaterThan(udfIndex);
+  });
+
+  it('final leftover cleanup also removes prefixed persons, access levels/groups, and threat levels/groups', () => {
+    expect(script).toContain('removeExistingLivecheckPersons');
+    expect(script).toContain('NBAPI_COMMANDS.DELETE_ACCESS_LEVEL_GROUP');
+    expect(script).toContain('NBAPI_COMMANDS.DELETE_ACCESS_LEVEL,');
+    expect(script).toContain('NBAPI_COMMANDS.REMOVE_THREAT_LEVEL_GROUP');
+    expect(script).toContain('NBAPI_COMMANDS.REMOVE_THREAT_LEVEL,');
   });
 
   it('the read-only live check (R29) references no write command constant at all', () => {

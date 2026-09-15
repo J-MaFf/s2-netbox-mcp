@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { loadConfigFromEnv, NetboxConfigError } from '../src/config.js';
 import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
-import { wrapList } from '../src/toolHelpers.js';
+import { wrapList, mergeParams } from '../src/toolHelpers.js';
 import { asRecord, asRecordList, fetchAllPages, isBareNotFoundFail, text } from '../src/paging.js';
 import {
   NEVER_GROUP_NAME,
@@ -33,16 +33,22 @@ import {
 } from './liveCheckWriteHelpers.js';
 
 /**
- * Opt-in live WRITE smoke test (R30 / C20) — `npm run test:live:write`.
+ * Opt-in live WRITE smoke test (R30 / C20 / #13) — `npm run test:live:write`.
  *
  * (a) Skips with one line and exit 0, making no network call, unless
  *     NETBOX_BASE_URL, NETBOX_USERNAME, NETBOX_PASSWORD, NETBOX_ENABLE_WRITES=true
  *     and NETBOX_LIVE_TEST_PORTALKEY are all set.
  * (b) Under the distinct prefix "MCP livecheck", round-trips
  *     add -> get -> modify -> get -> delete for a time spec, a time spec
- *     group, a holiday, a reader group and a portal group, asserting every
- *     read-back. The portal group's unlock time spec group is *Never*, and the
- *     holiday is in 2099, so nothing here can unlock a door.
+ *     group, a holiday, a reader group, a portal group, a person (plus a
+ *     credential on that person), an access level (plus an access level
+ *     group), and a threat level (plus a threat level group), asserting
+ *     every read-back, then confirms InsertActivity, a UDF list item
+ *     round-trip (or SKIPPED if no UDF list exists), and SwitchPartition
+ *     back to the session's own partition. The portal group's unlock time
+ *     spec group is *Never*, and the holiday is in 2099, so nothing here can
+ *     unlock a door. SetThreatLevel, AddPartition, permanently purging a
+ *     person, and TriggerEvent are never used (#13).
  * (c) ONLY with `--go` — which the operator passes after notifying the user
  *     (push notification plus a chat message with the exact unlock and relock
  *     clock times) and receiving a go-ahead, because the user observes the
@@ -52,8 +58,9 @@ import {
  *     is on *Never* and no managed holiday remains. `--start HH:MM` pins the
  *     unlock time (1-60 min ahead) so the exact times can be communicated
  *     before the go-ahead; otherwise unlock = now + 2 min, relock = + 4 min.
- * (d) Never touches persons, credentials, access levels, threat levels,
- *     outputs, events, partitions or UDF lists (unit tests cover those).
+ * (d) Never touches outputs or portal lock/unlock actions directly, never
+ *     calls SetThreatLevel, AddPartition, TriggerEvent, or permanently purges
+ *     a person record (unit tests cover those).
  * (e) Never prints NETBOX_PASSWORD (every line goes through redact()).
  * (f) Exits non-zero on any assertion failure; once (c) has begun, always
  *     attempts cancel_unlock_window before exiting.
@@ -89,7 +96,19 @@ const NAMES = {
   holiday: `${LIVE_PREFIX} holiday`,
   readerGroup: `${LIVE_PREFIX} readergroup`,
   portalGroup: `${LIVE_PREFIX} portalgroup`,
+  person: `${LIVE_PREFIX} person`,
+  accessLevel: `${LIVE_PREFIX} accesslevel`,
+  accessLevel2: `${LIVE_PREFIX} accesslevel2`,
+  accessLevelGroup: `${LIVE_PREFIX} alg`,
+  threatLevel: `${LIVE_PREFIX} threatlevel`,
+  threatLevelGroup: `${LIVE_PREFIX} tlg`,
+  udfItem: `${LIVE_PREFIX} item`,
 };
+
+/** Fixed, unlikely-to-collide test card number used for the credential round-trip (#13). */
+const TEST_CARD_NUMBER = '98765431';
+/** Fixed CUSTOMKEY used for the UDF list item round-trip (#13). */
+const UDF_ITEM_CUSTOMKEY = '_mcp_livecheck';
 
 interface StepResult {
   name: string;
@@ -144,6 +163,124 @@ async function readReaderGroup(client: NetboxClient, READERGROUPKEY: string) {
   }
 }
 
+/** Reads a person by PERSONID (GetPerson), tolerant of the response's exact
+ * wrapping. `wantCredentialId: true` requests CREDENTIALID on returned cards
+ * (per #13's AddCredential -> GetPerson(WANTCREDENTIALID) round-trip). */
+async function readPerson(client: NetboxClient, PERSONID: string, wantCredentialId = false) {
+  try {
+    const result = await client.call(
+      NBAPI_COMMANDS.GET_PERSON,
+      mergeParams({ PERSONID, WANTCREDENTIALID: wantCredentialId ? '1' : undefined })
+    );
+    if (result.notFound) return undefined;
+    const details = asRecord(result.data);
+    const raw = 'PERSON' in details ? asRecord(details.PERSON) : details;
+    const cardsContainer = asRecord(raw.CARDS ?? raw.ACCESSCARDS ?? raw.CREDENTIALS);
+    const cards = asRecordList(cardsContainer.CARD ?? cardsContainer.ACCESSCARD ?? cardsContainer.CREDENTIAL ?? []);
+    return {
+      PERSONID: text(raw.PERSONID) || PERSONID,
+      LASTNAME: text(raw.LASTNAME),
+      MIDDLENAME: text(raw.MIDDLENAME),
+      NOTES: text(raw.NOTES),
+      DELETED: /^\s*TRUE\s*$/i.test(text(raw.DELETED)),
+      CARDS: cards.map((card) => ({
+        CREDENTIALID: text(card.CREDENTIALID),
+        ENCODEDNUM: text(card.ENCODEDNUM),
+        HOTSTAMP: text(card.HOTSTAMP),
+        CARDFORMAT: text(card.CARDFORMAT),
+        DISABLED: text(card.DISABLED),
+      })),
+    };
+  } catch (err) {
+    if (isBareNotFoundFail(err)) return undefined;
+    throw err;
+  }
+}
+
+/** Extracts PERSONID values from a SearchPersonData response, tolerant of exact wrapping. */
+function extractSearchedPersonIds(data: unknown): string[] {
+  const details = asRecord(data);
+  const container = 'PERSONS' in details ? asRecord(details.PERSONS) : details;
+  const list = asRecordList(container.PERSON ?? details.PERSON ?? []);
+  return list.map((person) => text(person.PERSONID)).filter((id) => id !== '');
+}
+
+/** Removes any person whose LASTNAME is the "MCP livecheck person" prefix
+ * name (SearchPersonData -> RemovePerson), best-effort. Used both to clear a
+ * previous aborted run before add_person and in final leftover cleanup. */
+async function removeExistingLivecheckPersons(client: NetboxClient): Promise<string[]> {
+  const removed: string[] = [];
+  try {
+    const result = await client.call(NBAPI_COMMANDS.SEARCH_PERSON_DATA, { LASTNAME: NAMES.person });
+    if (result.notFound) return removed;
+    for (const personId of extractSearchedPersonIds(result.data)) {
+      try {
+        await client.call(NBAPI_COMMANDS.REMOVE_PERSON, { PERSONID: personId });
+        removed.push(`person ${personId}`);
+      } catch (err) {
+        info(`cleanup could not remove person ${personId}: ${errorText(err)}`);
+      }
+    }
+  } catch (err) {
+    if (!isBareNotFoundFail(err)) info(`SearchPersonData for leftover persons failed: ${errorText(err)}`);
+  }
+  return removed;
+}
+
+/** Reads an access level by ACCESSLEVELKEY (GetAccessLevel), tolerant of the response's exact wrapping. */
+async function readAccessLevel(client: NetboxClient, ACCESSLEVELKEY: string) {
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY });
+    if (result.notFound) return undefined;
+    const details = asRecord(result.data);
+    const raw = 'ACCESSLEVEL' in details ? asRecord(details.ACCESSLEVEL) : details;
+    return {
+      ACCESSLEVELKEY: text(raw.ACCESSLEVELKEY) || ACCESSLEVELKEY,
+      ACCESSLEVELNAME: text(raw.ACCESSLEVELNAME),
+      ACCESSLEVELDESCRIPTION: text(raw.ACCESSLEVELDESCRIPTION),
+      TIMESPECGROUPKEY: text(raw.TIMESPECGROUPKEY),
+      READERKEY: text(raw.READERKEY),
+    };
+  } catch (err) {
+    if (isBareNotFoundFail(err)) return undefined;
+    throw err;
+  }
+}
+
+/** Reads an access level group by ACCESSLEVELGROUPKEY (GetAccessLevelGroup),
+ * tolerant of the response's exact wrapping and of the controller's known
+ * FAIL/ERRMSG="NOT FOUND" quirk (documented for GetTimeSpecGroup against an
+ * empty/unconfigured collection — spec "Live facts") treated the same way
+ * here for an access level group with no members. */
+async function readAccessLevelGroup(client: NetboxClient, ACCESSLEVELGROUPKEY: string) {
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUP, { ACCESSLEVELGROUPKEY });
+    if (result.notFound) return undefined;
+    const details = asRecord(result.data);
+    const raw = 'ACCESSLEVELGROUP' in details ? asRecord(details.ACCESSLEVELGROUP) : details;
+    const items = asRecordList(asRecord(raw.ACCESSLEVELS).ACCESSLEVEL ?? []);
+    return {
+      ACCESSLEVELGROUPKEY: text(raw.ACCESSLEVELGROUPKEY) || ACCESSLEVELGROUPKEY,
+      NAME: text(raw.NAME),
+      DESCRIPTION: text(raw.DESCRIPTION),
+      ACCESSLEVELKEYS: items.map((item) => text(item.KEY)).filter((key) => key !== ''),
+    };
+  } catch (err) {
+    if (isBareNotFoundFail(err)) return undefined;
+    throw err;
+  }
+}
+
+/** Resolves the first CARDFORMAT NAME from GetCardFormats, tolerant of the response's exact wrapping. */
+async function fetchFirstCardFormatName(client: NetboxClient): Promise<string> {
+  const result = await client.call(NBAPI_COMMANDS.GET_CARD_FORMATS, {});
+  if (result.notFound) return '';
+  const details = asRecord(result.data);
+  const list = asRecordList(asRecord(details.CARDFORMATS).CARDFORMAT ?? []);
+  if (list.length > 0) return text(list[0].NAME);
+  return typeof details.NAME === 'string' ? text(details.NAME) : '';
+}
+
 /** Best-effort removal of any "MCP livecheck *" object a previous aborted run
  * left behind — only objects carrying that prefix are ever touched. */
 async function cleanupLeftovers(client: NetboxClient): Promise<string[]> {
@@ -156,6 +293,40 @@ async function cleanupLeftovers(client: NetboxClient): Promise<string[]> {
       info(`cleanup could not remove ${label}: ${errorText(err)}`);
     }
   };
+  removed.push(...(await removeExistingLivecheckPersons(client)));
+  const accessLevelGroups = await fetchAllPages(
+    client,
+    NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS,
+    'ACCESSLEVELGROUPS',
+    'ACCESSLEVELGROUP',
+    { emptyOnNotFoundFail: true }
+  );
+  for (const group of accessLevelGroups) {
+    if (text(group.NAME).startsWith(LIVE_PREFIX)) {
+      await attempt(`access level group ${text(group.ACCESSLEVELGROUPKEY)}`, () =>
+        client.call(NBAPI_COMMANDS.DELETE_ACCESS_LEVEL_GROUP, { ACCESSLEVELGROUPKEY: text(group.ACCESSLEVELGROUPKEY) })
+      );
+    }
+  }
+  const accessLevels = await fetchAllPages(client, NBAPI_COMMANDS.GET_ACCESS_LEVELS, 'ACCESSLEVELS', 'ACCESSLEVEL', {
+    emptyOnNotFoundFail: true,
+  });
+  for (const level of accessLevels) {
+    if (text(level.ACCESSLEVELNAME ?? level.NAME).startsWith(LIVE_PREFIX)) {
+      await attempt(`access level ${text(level.ACCESSLEVELKEY)}`, () =>
+        client.call(NBAPI_COMMANDS.DELETE_ACCESS_LEVEL, { ACCESSLEVELKEY: text(level.ACCESSLEVELKEY) })
+      );
+    }
+  }
+  // No list command exists for threat levels/groups — attempt removal of the
+  // known prefixed names directly; a "not found" style failure here is
+  // expected and non-fatal on a run where nothing was left behind.
+  await attempt(`threat level group "${NAMES.threatLevelGroup}"`, () =>
+    client.call(NBAPI_COMMANDS.REMOVE_THREAT_LEVEL_GROUP, { LEVELGROUPNAME: NAMES.threatLevelGroup })
+  );
+  await attempt(`threat level "${NAMES.threatLevel}"`, () =>
+    client.call(NBAPI_COMMANDS.REMOVE_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel })
+  );
   for (const group of await fetchPortalGroups(client)) {
     if (group.NAME.startsWith(LIVE_PREFIX)) {
       await attempt(`portal group ${group.PORTALGROUPKEY}`, () => client.call(NBAPI_COMMANDS.DELETE_PORTAL_GROUP, { PORTALGROUPKEY: group.PORTALGROUPKEY }));
@@ -429,6 +600,308 @@ async function portalGroupRoundTrip(client: NetboxClient, portalKey: string, nev
   return allPassed;
 }
 
+async function personRoundTrip(client: NetboxClient): Promise<boolean> {
+  let personId = '';
+  let credentialId = '';
+  let allPassed = true;
+
+  const preExisting = await removeExistingLivecheckPersons(client);
+  if (preExisting.length > 0) info(`removed pre-existing "${NAMES.person}" person(s) from a previous run: ${preExisting.join(', ')}`);
+
+  allPassed =
+    (await step('add_person -> get_person', async () => {
+      const result = await client.call(NBAPI_COMMANDS.ADD_PERSON, {
+        LASTNAME: NAMES.person,
+        FIRSTNAME: 'Test',
+        NOTES: 'created by npm run test:live:write',
+      });
+      personId = text(asRecord(result.data).PERSONID);
+      assertTrue('AddPerson returned a PERSONID', personId !== '');
+      const person = await readPerson(client, personId);
+      assertTrue(`GetPerson ${personId} found it`, person !== undefined);
+      assertEqual('LASTNAME', person!.LASTNAME, NAMES.person);
+      return `PERSONID ${personId}`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_person (MIDDLENAME/NOTES) -> get_person', async () => {
+      await client.call(NBAPI_COMMANDS.MODIFY_PERSON, {
+        PERSONID: personId,
+        MIDDLENAME: 'Livecheck',
+        NOTES: 'modified by npm run test:live:write',
+      });
+      const person = await readPerson(client, personId);
+      assertTrue(`GetPerson ${personId} found it`, person !== undefined);
+      assertEqual('MIDDLENAME', person!.MIDDLENAME, 'Livecheck');
+      assertEqual('NOTES', person!.NOTES, 'modified by npm run test:live:write');
+      return 'MIDDLENAME=Livecheck';
+    })) && allPassed;
+
+  allPassed =
+    (await step('add_credential -> get_person (WANTCREDENTIALID) shows the card', async () => {
+      const cardFormat = await fetchFirstCardFormatName(client);
+      assertTrue('GetCardFormats returned at least one format', cardFormat !== '');
+      const result = await client.call(NBAPI_COMMANDS.ADD_CREDENTIAL, {
+        PERSONID: personId,
+        CARDFORMAT: cardFormat,
+        ENCODEDNUM: TEST_CARD_NUMBER,
+        HOTSTAMP: TEST_CARD_NUMBER,
+        WANTCREDENTIALID: '1',
+      });
+      credentialId = text(asRecord(result.data).CREDENTIALID);
+      const person = await readPerson(client, personId, true);
+      assertTrue(`GetPerson ${personId} found it`, person !== undefined);
+      const card = person!.CARDS.find(
+        (c) => c.CREDENTIALID === credentialId || c.ENCODEDNUM === TEST_CARD_NUMBER || c.HOTSTAMP === TEST_CARD_NUMBER
+      );
+      assertTrue('GetPerson (WANTCREDENTIALID) lists the new card', card !== undefined);
+      if (!credentialId) credentialId = card!.CREDENTIALID;
+      assertTrue('a CREDENTIALID was resolved', credentialId !== '');
+      return `CARDFORMAT "${cardFormat}", CREDENTIALID ${credentialId}`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_credential (DISABLED=1) -> get_person shows DISABLED', async () => {
+      await client.call(NBAPI_COMMANDS.MODIFY_CREDENTIAL, { PERSONID: personId, CREDENTIALID: credentialId, DISABLED: '1' });
+      const person = await readPerson(client, personId, true);
+      const card = person?.CARDS.find((c) => c.CREDENTIALID === credentialId);
+      assertTrue('GetPerson still lists the credential', card !== undefined);
+      assertEqual('DISABLED', card!.DISABLED, '1');
+      return 'DISABLED=1';
+    })) && allPassed;
+
+  allPassed =
+    (await step('remove_credential -> get_person shows no card', async () => {
+      await client.call(NBAPI_COMMANDS.REMOVE_CREDENTIAL, { PERSONID: personId, CREDENTIALID: credentialId });
+      const person = await readPerson(client, personId, true);
+      const stillThere = person?.CARDS.some((c) => c.CREDENTIALID === credentialId) ?? false;
+      assertTrue('the credential is gone from GetPerson', !stillThere);
+      return `CREDENTIALID ${credentialId} removed`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('remove_person -> get_person (NOT FOUND or DELETED=TRUE)', async () => {
+      await client.call(NBAPI_COMMANDS.REMOVE_PERSON, { PERSONID: personId });
+      const after = await readPerson(client, personId);
+      if (after === undefined) return `PERSONID ${personId}: GetPerson returned NOT FOUND`;
+      assertTrue('GetPerson shows DELETED=TRUE after RemovePerson', after.DELETED);
+      return `PERSONID ${personId}: GetPerson returned DELETED=TRUE`;
+    })) && allPassed;
+
+  return allPassed;
+}
+
+async function accessLevelRoundTrip(client: NetboxClient, neverKey: string, readerKey: string): Promise<boolean> {
+  let levelKey = '';
+  let level2Key = '';
+  let groupKey = '';
+  let allPassed = true;
+
+  allPassed =
+    (await step('add_access_level (TIMESPECGROUPKEY=Never) -> get_access_level', async () => {
+      const result = await client.call(
+        NBAPI_COMMANDS.ADD_ACCESS_LEVEL,
+        mergeParams({ ACCESSLEVELNAME: NAMES.accessLevel, TIMESPECGROUPKEY: neverKey, READERKEY: readerKey || undefined })
+      );
+      levelKey = text(asRecord(result.data).ACCESSLEVELKEY);
+      assertTrue('AddAccessLevel returned an ACCESSLEVELKEY', levelKey !== '');
+      const level = await readAccessLevel(client, levelKey);
+      assertTrue(`GetAccessLevel ${levelKey} found it`, level !== undefined);
+      assertEqual('ACCESSLEVELNAME', level!.ACCESSLEVELNAME, NAMES.accessLevel);
+      assertEqual('TIMESPECGROUPKEY', level!.TIMESPECGROUPKEY, neverKey);
+      return `ACCESSLEVELKEY ${levelKey}`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_access_level (description) -> get_access_level', async () => {
+      await client.call(NBAPI_COMMANDS.MODIFY_ACCESS_LEVEL, {
+        ACCESSLEVELKEY: levelKey,
+        ACCESSLEVELDESCRIPTION: 'modified by npm run test:live:write',
+      });
+      const level = await readAccessLevel(client, levelKey);
+      assertTrue(`GetAccessLevel ${levelKey} found it`, level !== undefined);
+      assertEqual('ACCESSLEVELDESCRIPTION', level!.ACCESSLEVELDESCRIPTION, 'modified by npm run test:live:write');
+      return 'ACCESSLEVELDESCRIPTION modified';
+    })) && allPassed;
+
+  allPassed =
+    (await step('delete_access_level -> get_access_level', async () => {
+      await client.call(NBAPI_COMMANDS.DELETE_ACCESS_LEVEL, { ACCESSLEVELKEY: levelKey });
+      assertTrue(`access level ${levelKey} is gone`, await isGone(() => readAccessLevel(client, levelKey)));
+      return `ACCESSLEVELKEY ${levelKey} deleted`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('add_access_level_group (second temp access level) -> get_access_level_group', async () => {
+      const level2 = await client.call(
+        NBAPI_COMMANDS.ADD_ACCESS_LEVEL,
+        mergeParams({ ACCESSLEVELNAME: NAMES.accessLevel2, TIMESPECGROUPKEY: neverKey, READERKEY: readerKey || undefined })
+      );
+      level2Key = text(asRecord(level2.data).ACCESSLEVELKEY);
+      assertTrue('AddAccessLevel (temp) returned an ACCESSLEVELKEY', level2Key !== '');
+
+      const result = await client.call(
+        NBAPI_COMMANDS.ADD_ACCESS_LEVEL_GROUP,
+        mergeParams({ NAME: NAMES.accessLevelGroup, ...wrapList('ACCESSLEVELS', 'ACCESSLEVEL', [{ KEY: level2Key }]) })
+      );
+      groupKey = text(asRecord(result.data).ACCESSLEVELGROUPKEY);
+      assertTrue('AddAccessLevelGroup returned an ACCESSLEVELGROUPKEY', groupKey !== '');
+      const group = await readAccessLevelGroup(client, groupKey);
+      assertTrue(`GetAccessLevelGroup ${groupKey} found it`, group !== undefined);
+      assertEqual('NAME', group!.NAME, NAMES.accessLevelGroup);
+      assertSameSet('ACCESSLEVELKEYS', group!.ACCESSLEVELKEYS, [level2Key]);
+      return `ACCESSLEVELGROUPKEY ${groupKey}, member ${level2Key}`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_access_level_group (description) -> get_access_level_group', async () => {
+      await client.call(
+        NBAPI_COMMANDS.MODIFY_ACCESS_LEVEL_GROUP,
+        mergeParams({
+          ACCESSLEVELGROUPKEY: groupKey,
+          DESCRIPTION: 'modified by npm run test:live:write',
+          ...wrapList('ACCESSLEVELS', 'ACCESSLEVEL', [{ KEY: level2Key }]),
+        })
+      );
+      const group = await readAccessLevelGroup(client, groupKey);
+      assertTrue(`GetAccessLevelGroup ${groupKey} found it`, group !== undefined);
+      assertEqual('DESCRIPTION', group!.DESCRIPTION, 'modified by npm run test:live:write');
+      return 'DESCRIPTION modified';
+    })) && allPassed;
+
+  allPassed =
+    (await step('delete_access_level_group -> get_access_level_group (NOT FOUND quirk tolerated)', async () => {
+      await client.call(NBAPI_COMMANDS.DELETE_ACCESS_LEVEL_GROUP, { ACCESSLEVELGROUPKEY: groupKey });
+      assertTrue(`access level group ${groupKey} is gone`, await isGone(() => readAccessLevelGroup(client, groupKey)));
+      return `ACCESSLEVELGROUPKEY ${groupKey} deleted`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('delete_access_level (temp, cleanup) -> get_access_level', async () => {
+      await client.call(NBAPI_COMMANDS.DELETE_ACCESS_LEVEL, { ACCESSLEVELKEY: level2Key });
+      assertTrue(`access level ${level2Key} is gone`, await isGone(() => readAccessLevel(client, level2Key)));
+      return `ACCESSLEVELKEY ${level2Key} deleted`;
+    })) && allPassed;
+
+  return allPassed;
+}
+
+async function threatLevelRoundTrip(client: NetboxClient): Promise<boolean> {
+  let allPassed = true;
+
+  allPassed =
+    (await step('add_threat_level (COLOR=Blue)', async () => {
+      await client.call(NBAPI_COMMANDS.ADD_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Blue' });
+      return `LEVELNAME "${NAMES.threatLevel}"`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('add_threat_level_group (confirms the level exists)', async () => {
+      await client.call(
+        NBAPI_COMMANDS.ADD_THREAT_LEVEL_GROUP,
+        mergeParams({ LEVELGROUPNAME: NAMES.threatLevelGroup, ...wrapList('LEVELNAMES', 'LEVELNAME', [NAMES.threatLevel]) })
+      );
+      return `LEVELGROUPNAME "${NAMES.threatLevelGroup}" containing "${NAMES.threatLevel}"`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_threat_level (COLOR=Green)', async () => {
+      await client.call(NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel, COLOR: 'Green' });
+      return 'COLOR=Green';
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_threat_level_group (LEVELNAMES)', async () => {
+      await client.call(
+        NBAPI_COMMANDS.MODIFY_THREAT_LEVEL_GROUP,
+        mergeParams({ LEVELGROUPNAME: NAMES.threatLevelGroup, ...wrapList('LEVELNAMES', 'LEVELNAME', [NAMES.threatLevel]) })
+      );
+      return 'LEVELNAMES reaffirmed';
+    })) && allPassed;
+
+  allPassed =
+    (await step('remove_threat_level_group', async () => {
+      await client.call(NBAPI_COMMANDS.REMOVE_THREAT_LEVEL_GROUP, { LEVELGROUPNAME: NAMES.threatLevelGroup });
+      return `LEVELGROUPNAME "${NAMES.threatLevelGroup}" removed`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('remove_threat_level -> a second remove_threat_level fails (proves it is gone)', async () => {
+      await client.call(NBAPI_COMMANDS.REMOVE_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel });
+      let secondRemoveFailed = false;
+      try {
+        await client.call(NBAPI_COMMANDS.REMOVE_THREAT_LEVEL, { LEVELNAME: NAMES.threatLevel });
+      } catch {
+        secondRemoveFailed = true;
+      }
+      assertTrue('a second RemoveThreatLevel for the same name fails', secondRemoveFailed);
+      return `LEVELNAME "${NAMES.threatLevel}" removed`;
+    })) && allPassed;
+
+  return allPassed;
+}
+
+/** GetUDFLists -> ModifyUDFListItems (add) -> GetUDFListItems -> ModifyUDFListItems (delete) ->
+ * GetUDFListItems, or a recorded SKIPPED pass if no UDF list is configured on the controller. */
+async function udfListRoundTrip(client: NetboxClient): Promise<boolean> {
+  let udfListKey = '';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_UDF_LISTS, {});
+    if (!result.notFound) {
+      const details = asRecord(result.data);
+      const lists = asRecordList(asRecord(details.UDFLISTS).UDFLIST ?? []);
+      udfListKey = text(lists[0]?.UDFLISTKEY);
+    }
+  } catch (err) {
+    if (!isBareNotFoundFail(err)) throw err;
+  }
+
+  if (!udfListKey) {
+    const name = 'udf_list_items round-trip';
+    results.push({ name, pass: true, summary: 'SKIPPED: no UDF list is configured on this controller' });
+    log(`[PASS] ${name}: SKIPPED: no UDF list is configured on this controller`);
+    return true;
+  }
+
+  let allPassed = true;
+
+  allPassed =
+    (await step('modify_udf_list_items (add) -> get_udf_list_items', async () => {
+      await client.call(
+        NBAPI_COMMANDS.MODIFY_UDF_LIST_ITEMS,
+        mergeParams({
+          UDFLISTKEY: udfListKey,
+          ...wrapList('LISTITEMS', 'LISTITEM', [{ ITEMNAME: NAMES.udfItem, CUSTOMKEY: UDF_ITEM_CUSTOMKEY, DELETE: '0' }]),
+        })
+      );
+      const result = await client.call(NBAPI_COMMANDS.GET_UDF_LIST_ITEMS, { UDFLISTKEY: udfListKey });
+      const items = asRecordList(asRecord(asRecord(result.data).LISTITEMS).LISTITEM ?? []);
+      const item = items.find((candidate) => text(candidate.CUSTOMKEY) === UDF_ITEM_CUSTOMKEY);
+      assertTrue('GetUDFListItems lists the new item', item !== undefined);
+      return `UDFLISTKEY ${udfListKey}, item CUSTOMKEY ${UDF_ITEM_CUSTOMKEY}`;
+    })) && allPassed;
+
+  allPassed =
+    (await step('modify_udf_list_items (delete) -> get_udf_list_items', async () => {
+      const before = await client.call(NBAPI_COMMANDS.GET_UDF_LIST_ITEMS, { UDFLISTKEY: udfListKey });
+      const beforeItems = asRecordList(asRecord(asRecord(before.data).LISTITEMS).LISTITEM ?? []);
+      const item = beforeItems.find((candidate) => text(candidate.CUSTOMKEY) === UDF_ITEM_CUSTOMKEY);
+      assertTrue('the item to delete was found', item !== undefined);
+      const itemKey = text(item!.ITEMKEY);
+      await client.call(
+        NBAPI_COMMANDS.MODIFY_UDF_LIST_ITEMS,
+        mergeParams({ UDFLISTKEY: udfListKey, ...wrapList('LISTITEMS', 'LISTITEM', [{ ITEMKEY: itemKey, DELETE: '1' }]) })
+      );
+      const after = await client.call(NBAPI_COMMANDS.GET_UDF_LIST_ITEMS, { UDFLISTKEY: udfListKey });
+      const afterItems = asRecordList(asRecord(asRecord(after.data).LISTITEMS).LISTITEM ?? []);
+      const stillThere = afterItems.some((candidate) => text(candidate.CUSTOMKEY) === UDF_ITEM_CUSTOMKEY);
+      assertTrue('the item is gone', !stillThere);
+      return `ITEMKEY ${itemKey} deleted`;
+    })) && allPassed;
+
+  return allPassed;
+}
+
 // ---------------------------------------------------------------------------
 // (b2) controller clock estimate, from the newest GetAccessHistory record
 // ---------------------------------------------------------------------------
@@ -641,6 +1114,28 @@ async function main(): Promise<number> {
       crudPassed = false;
     }
     crudPassed = (await portalGroupRoundTrip(client, portal.PORTALKEY, never.TIMESPECGROUPKEY)) && crudPassed;
+    crudPassed = (await personRoundTrip(client)) && crudPassed;
+    crudPassed = (await accessLevelRoundTrip(client, never.TIMESPECGROUPKEY, readerKey)) && crudPassed;
+    crudPassed = (await threatLevelRoundTrip(client)) && crudPassed;
+    crudPassed =
+      (await step('insert_activity (USERACTIVITY)', async () => {
+        const activityText = `${LIVE_PREFIX} ${new Date().toISOString()}`;
+        await client.call(NBAPI_COMMANDS.INSERT_ACTIVITY, { ACTIVITYTYPE: 'USERACTIVITY', ACTIVITYTEXT: activityText });
+        return `ACTIVITYTEXT "${activityText}"`;
+      })) && crudPassed;
+    crudPassed = (await udfListRoundTrip(client)) && crudPassed;
+    crudPassed =
+      (await step('get_partitions -> switch_partition (back to the session\'s own partition)', async () => {
+        const result = await client.call(NBAPI_COMMANDS.GET_PARTITIONS, {});
+        const details = asRecord(result.data);
+        const container = 'PARTITIONS' in details ? asRecord(details.PARTITIONS) : details;
+        const partitions = asRecordList(container.PARTITION ?? []);
+        assertTrue('GetPartitions returned at least one partition', partitions.length > 0);
+        const partitionKey = text(partitions[0].PARTITIONKEY);
+        assertTrue('a PARTITIONKEY was resolved', partitionKey !== '');
+        await client.call(NBAPI_COMMANDS.SWITCH_PARTITION, { PARTITIONKEY: partitionKey });
+        return `SwitchPartition to the session's own PARTITIONKEY ${partitionKey} succeeded`;
+      })) && crudPassed;
 
     // (b2)
     const clockSkew = await controllerClockCheck(client);

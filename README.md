@@ -518,11 +518,39 @@ npm run test:live:write -- --go --start 14:30  # pin the unlock time (1-60 min a
 This skips with one line and exit 0 — making no network call — unless
 `NETBOX_BASE_URL`, `NETBOX_USERNAME`, `NETBOX_PASSWORD`,
 `NETBOX_ENABLE_WRITES=true` **and** `NETBOX_LIVE_TEST_PORTALKEY` are all set.
+Most of the round-trips below issue deletes/removes directly against the
+controller (independent of the MCP server's own `NETBOX_ENABLE_DESTRUCTIVE`
+gating, which this script bypasses by calling the NBAPI client directly), so
+**set `NETBOX_ENABLE_DESTRUCTIVE=true` before running it**.
+
 Otherwise it round-trips add → get → modify → get → delete for a time spec, a
 time spec group, a holiday, a reader group, and a portal group under the
 distinct prefix `MCP livecheck` (the portal group's unlock time spec group is
 `Never` and the holiday is in 2099, so nothing can unlock), asserting each
-read-back, and cleans up any `MCP livecheck` leftovers from an aborted run.
+read-back. It then round-trips a person (`AddPerson` → `GetPerson` →
+`ModifyPerson` → `GetPerson`) plus a credential on that person (`AddCredential`
+→ `GetPerson` with `WANTCREDENTIALID` → `ModifyCredential` with `DISABLED=1`
+→ read-back → `RemoveCredential` → read-back) → `RemovePerson`, accepting
+either `NOT FOUND` or `DELETED=TRUE` on the final `GetPerson` (never sends
+`PERSONPURGE`); an access level (`AddAccessLevel` with `TIMESPECGROUPKEY`
+`Never` → `GetAccessLevel` → `ModifyAccessLevel` → read-back →
+`DeleteAccessLevel` → read-back gone) plus an access level group built from a
+second temporary access level (`AddAccessLevelGroup` → `GetAccessLevelGroup`
+→ `ModifyAccessLevelGroup` → read-back → `DeleteAccessLevelGroup`, tolerating
+the same `FAIL`/`ERRMSG="NOT FOUND"` quirk documented for `GetTimeSpecGroup`
+against an empty collection); a threat level plus a threat level group
+(`AddThreatLevel` → `AddThreatLevelGroup` → `ModifyThreatLevel` →
+`ModifyThreatLevelGroup` → `RemoveThreatLevelGroup` → `RemoveThreatLevel`,
+proven gone by a second `RemoveThreatLevel` failing — there is no
+`GetThreatLevel`, and `SetThreatLevel` is never called); `InsertActivity`
+with a timestamped `USERACTIVITY` record; a UDF list item round-trip via
+`ModifyUDFListItems` (or a recorded `SKIPPED` pass if no UDF list is
+configured); and `GetPartitions` → `SwitchPartition` back to the session's
+own partition (`AddPartition` is never called). It cleans up any
+`MCP livecheck` leftovers — including persons, access levels/groups, and
+threat levels/groups — from an aborted run, both before and after the round
+trips.
+
 It then estimates the controller's clock from the newest `GetAccessHistory`
 record and refuses to run the door phase — regardless of `--go` — when that
 estimate disagrees with the host clock by more than 2 minutes; window times
@@ -540,10 +568,9 @@ then calls `cancel_unlock_window` and asserts the managed portal group is on
 `Never` with no managed holiday, time spec, or time spec group member left
 (leftBehind is tolerated but reported). It refuses that phase if a managed
 window already exists (so it never replaces a real one), never touches
-persons, credentials, access levels, threat levels, outputs, events,
-partitions, or UDF lists, never prints the password, exits non-zero on any
-failed assertion (still cancelling the window first), and `npm test` never
-runs it.
+outputs, TriggerEvent, or portal lock/unlock actions, never prints the
+password, exits non-zero on any failed assertion (still cancelling the
+window first), and `npm test` never runs it.
 
 ## Out of scope
 
