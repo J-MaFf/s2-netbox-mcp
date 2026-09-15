@@ -1,6 +1,6 @@
 {
   "name": "s2-netbox-mcp",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as Claude-callable tools; read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
   "type": "module",
   "private": true,

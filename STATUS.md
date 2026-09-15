@@ -18,10 +18,10 @@ passed).
 ## Current State — 2026-09-15
 
 Both stages of the write-tools spec (now archived at `specs/archive/s2-netbox-mcp-write.md`) are
-complete and live-verified. Stage 1 (issue #8) added the 80-command allowlist, nested `PARAMS`
-XML, the write gates and R7 config, 18 read tools, and 45 pass-through write tools —
-[PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) is open for review. Stage 2 (issue #9),
-on `feat/netbox-unlock-window` stacked on top, added:
+complete and live-verified, and both are merged into `main`. Stage 1 (issue #8) added the
+80-command allowlist, nested `PARAMS` XML, the write gates and R7 config, 18 read tools, and 45
+pass-through write tools — [PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) (merged).
+Stage 2 (issue #9), on `feat/netbox-unlock-window` stacked on top, added:
 
 - `set_portals_state` (composite write): bulk lock / unlock / momentary-unlock, sequential, never
   aborting, with `succeeded` / `alreadyInState` / `failed` partitions.
@@ -38,11 +38,16 @@ on `feat/netbox-unlock-window` stacked on top, added:
 - The shared NEXTKEY paging helper (`src/paging.ts`) and RESPONSE-level field merging in the
   client.
 
-[PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stacked on PR #10) is open for review.
+[PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stacked on PR #10, merged) added it.
+[PR #14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) (issues #12/#13, merged) then extended
+`npm run test:live:write` with round-trips for people/credentials, access levels, threat levels,
+`InsertActivity`, a UDF list item, and `SwitchPartition`, plus the `trigger_event_activate`/
+`trigger_event_deactivate` supervised actions — the only live verification path for `TriggerEvent`.
 
-Tool surface: 35 read tools with writes off; 72 with `NETBOX_ENABLE_WRITES`; 83 with
-`NETBOX_ENABLE_DESTRUCTIVE` as well. `main` still has the read-only v0.2.0 surface (16 tools) —
-neither stacked branch is merged yet.
+Tool surface on `main`: 35 read tools with writes off; 72 with `NETBOX_ENABLE_WRITES`; 83 with
+`NETBOX_ENABLE_DESTRUCTIVE` as well. This is the full surface — all three PRs above are merged.
+The project is now being prepared for its first tagged release, `v0.1.0`, consolidating all
+CHANGELOG history to date into one entry.
 
 409 unit tests pass (24 files), `npm run typecheck` and `npm run build` are clean, `npm run
 test:live` reports 34/34 PASS against the real NetBox 6.2.0 controller issuing no write command,
@@ -93,6 +98,8 @@ Three findings came out of the live write check and are folded into the spec/REA
 | [#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6) | `find_portals`: search doors by name or reader description | [#7](https://github.com/J-MaFf/s2-netbox-mcp/pull/7) |
 | [#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8) | NBAPI write tools (stage 1: allowlist, gates, 18 read + 45 write pass-through tools) | [#10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) |
 | [#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9) | Managed unlock windows, `set_portals_state`, live write smoke test (stage 2); live door test passed | [#11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) |
+| [#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12) | Track live-verification status of every MCP tool; added `trigger_event_activate`/`trigger_event_deactivate` supervised actions | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
+| [#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13) | Live round-trips for people, credentials, access levels, threat levels, activity, UDF, partitions in `test:live:write` | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
 
 ### Open Issues
 
@@ -100,12 +107,9 @@ None.
 
 ## Natural Next Steps
 
-1. Merge [PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10), then
-   [PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stacked on it), restacking onto
-   `main` per git-policies; both stop at the merge gate for human approval.
-2. Remove the two stale worktrees under `.claude/worktrees/`.
-3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
-4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
+1. Tag and publish the `v0.1.0` GitHub release now that all work to date is merged to `main`.
+2. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
+3. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
 
 ## Prerequisites to Run
