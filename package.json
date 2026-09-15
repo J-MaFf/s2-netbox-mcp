@@ -1,6 +1,6 @@
 {
   "name": "s2-netbox-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as Claude-callable tools; read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
   "type": "module",
   "private": true,
@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:live": "tsx scripts/live-check.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:live:write": "tsx scripts/live-check-write.ts"
+    "test:live:write": "tsx scripts/live-check-write.ts",
+    "test:live:write:daily": "tsx scripts/live-check-write-daily.ts"
   },
   "engines": {
     "node": ">=18.17"

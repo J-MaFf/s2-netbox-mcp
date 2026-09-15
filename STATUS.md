@@ -8,9 +8,11 @@ events/activity, partitions/UDF lists) as Claude-callable tools, so NetBox data 
 and, when explicitly enabled, changed — conversationally instead of via hand-built XML/HTTP calls.
 Node/TypeScript, stdio transport, session-login auth only. Read-only by default; write tools are
 gated behind `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` (see README "Write access"). On top
-of the pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, and a
-managed unlock window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`)
-that the controller enforces itself (README "Scheduled unlock windows"). See
+of the pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, a
+managed unlock window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`),
+and a managed **daily recurring** unlock window (`schedule_daily_unlock_window` /
+`cancel_daily_unlock_window` / `get_daily_unlock_window`) — both enforced by the controller itself
+(README "Scheduled unlock windows" / "Scheduled daily unlock windows"). See
 `specs/archive/s2-netbox-mcp-write.md` for the write-tools spec (archived
 `specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all its acceptance criteria
 passed).
@@ -44,17 +46,9 @@ Stage 2 (issue #9), on `feat/netbox-unlock-window` stacked on top, added:
 `InsertActivity`, a UDF list item, and `SwitchPartition`, plus the `trigger_event_activate`/
 `trigger_event_deactivate` supervised actions — the only live verification path for `TriggerEvent`.
 
-Tool surface on `main`: 35 read tools with writes off; 72 with `NETBOX_ENABLE_WRITES`; 83 with
-`NETBOX_ENABLE_DESTRUCTIVE` as well. This is the full surface — all three PRs above are merged.
-The project is now being prepared for its first tagged release, `v0.1.0`, consolidating all
-CHANGELOG history to date into one entry.
-
-409 unit tests pass (24 files), `npm run typecheck` and `npm run build` are clean, `npm run
-test:live` reports 34/34 PASS against the real NetBox 6.2.0 controller issuing no write command,
-and `npm run test:live:write` reports 16/16 PASS (CRUD round-trips plus the door-unlock window).
-The live door test ran 2026-09-15: portal `02OF01A` unlocked at 08:25 and relocked at the end of
-the 08:27 minute, confirmed on Monitor → Portal Status; the script itself passed 19/19 (16 CRUD +
-the 3-step door observation).
+Tool surface on `main` (before the daily-unlock-window work below): 35 read tools with writes off;
+72 with `NETBOX_ENABLE_WRITES`; 83 with `NETBOX_ENABLE_DESTRUCTIVE` as well. All three PRs above
+are merged, and `v0.1.1` has since been tagged (LICENSE + archived-spec path redaction).
 
 Three findings came out of the live write check and are folded into the spec/README/CHANGELOG:
 
@@ -66,11 +60,46 @@ Three findings came out of the live write check and are folded into the spec/REA
   and `npm run test:live:write`'s door phase now measures clock skew and refuses to proceed above
   a 2-minute threshold rather than schedule a window against the wrong clock.
 
+### Daily recurring unlock window (`v0.2.0`)
+
+Adds a companion to the managed unlock window above: `schedule_daily_unlock_window` /
+`cancel_daily_unlock_window` / `get_daily_unlock_window` express "unlock these doors from
+*dailyStartTime* to *dailyEndTime*, every day from *startDate* through *endDate*" — a single
+partial-day window that recurs daily across a date range, which `schedule_unlock_window` cannot
+express without keeping doors unlocked overnight on days strictly between the first and last.
+
+- A pure planner (`src/unlockWindow/dailyPlanner.ts`) always produces exactly **one** segment (no
+  first/middle/last splitting is ever needed for this shape of request) separated from the
+  executor (`src/unlockWindow/dailyExecutor.ts`), which reuses `src/unlockWindow/managed.ts`'s
+  existing fetchers/normalisers rather than duplicating them.
+- A dedicated reserved holiday group, `NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP` (default `5`), validated
+  at startup to never collide with `NETBOX_UNLOCK_HOLIDAY_GROUPS`, and its own name prefix,
+  `NETBOX_DAILY_UNLOCK_NAME_PREFIX` (default `MCP Daily Unlock Window`) — so the two features use
+  disjoint holiday groups and disjoint managed-object names and may both be active at once.
+- The same side-effect check, read-back verification, rollback-on-failure, tolerated-refusal
+  cancel, and idempotency guarantees as the continuous feature, scoped to this feature's own plan
+  and prefix (a concurrently-active continuous window is reported like any other foreign object,
+  not special-cased).
+- `scripts/live-check-write-daily.ts` (`npm run test:live:write:daily`): CRUD round-trips under the
+  `MCP livecheck daily` prefix, the same controller-clock-skew gate, and — only with `--go` — a
+  real 2-minute daily window on `NETBOX_LIVE_TEST_PORTALKEY`. Kept as a separate `npm` script
+  rather than chained onto `npm run test:live:write` with `&&`, because npm appends `-- --go` to
+  the end of a chained script string, which would silently misdirect the flag to the wrong script.
+
+Tool surface after this work: 36 read tools with writes off; 75 with `NETBOX_ENABLE_WRITES`; 86
+with `NETBOX_ENABLE_DESTRUCTIVE` as well. `package.json` bumped to `0.2.0` (new backward-compatible
+feature, per semver).
+
+521 unit tests pass (27 files), `npm run typecheck` and `npm run build` are clean. `npm run
+test:live` and `npm run test:live:write`/`npm run test:live:write:daily` are unchanged in their
+gating and have not yet been re-run live against the controller for this feature — see the
+completion note for what remains to be live-verified.
+
 ### Components
 
 | File | Description |
 |---|---|
-| `src/index.ts` | MCP server entrypoint; registers `check_connection` plus every `registerXxxTools` module (including `registerUnlockWindowTools`), gated by `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE`; handles startup/shutdown |
+| `src/index.ts` | MCP server entrypoint; registers `check_connection` plus every `registerXxxTools` module (including `registerUnlockWindowTools`/`registerDailyUnlockWindowTools`), gated by `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE`; handles startup/shutdown |
 | `src/paging.ts` | The shared "fully paginated" NEXTKEY loop (`fetchAllPages` / `fetchAllPagesWith`) plus the XML-record helpers, used by every composite tool |
 | `src/portalSearch.ts` | `find_portals` logic: pages GetPortals + GetReaders, joins reader descriptions by READERKEY, term search |
 | `src/portalState.ts` | `set_portals_state` logic: one Lock/Unlock/MomentaryUnlock per portal, sequential, outcome partitioning |
@@ -78,15 +107,19 @@ Three findings came out of the live write check and are folded into the spec/REA
 | `src/unlockWindow/managed.ts` | Managed-object naming (R27), read-back normalisation (`TRUE`/`FALSE`, `HH:MM:SS`, `YYYY-MM-DD HH:MM:SS`, comma key strings), typed paginated readers |
 | `src/unlockWindow/executor.ts` | `scheduleUnlockWindow` (R22/R24/R25/R28), `cancelUnlockWindow` (R26), `getUnlockWindow` (R26) |
 | `src/tools/unlockWindow.ts` | Registers `get_unlock_window` (always) and `schedule_unlock_window` / `cancel_unlock_window` (writes on) |
+| `src/unlockWindow/dailyPlanner.ts` | Pure daily-window planner (`planDailyUnlockWindow`, always one segment), date/time parsing/validation, clock/31-day checks |
+| `src/unlockWindow/dailyExecutor.ts` | `scheduleDailyUnlockWindow`, `cancelDailyUnlockWindow`, `getDailyUnlockWindow` — reuses `managed.ts`'s fetchers/normalisers |
+| `src/tools/dailyUnlockWindow.ts` | Registers `get_daily_unlock_window` (always) and `schedule_daily_unlock_window` / `cancel_daily_unlock_window` (writes on) |
 | `src/netboxClient.ts` | NBAPI XML client: session login/logout, retry-once-on-expiry, error mapping, per-command request path, RESPONSE-level field merge |
 | `src/config.ts` | Environment-variable configuration, including the write-tool gates and the unlock-window variables |
 | `src/commands.ts` | The closed 80-command NBAPI allowlist |
 | `src/xml.ts` | NBAPI XML request building (nested/array PARAMS) / response parsing |
 | `src/errors.ts` | APIERROR code descriptions, `NbapiApiError`/`NbapiFailError` |
 | `src/toolHelpers.ts` | `runNbapiTool`, `ToolGateFlags`, `formatWriteSuccess`, `clientGuardError`/`destructiveFlagRequired`, `wrapList` |
-| `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `misc`, `unlockWindow` |
+| `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `misc`, `unlockWindow`, `dailyUnlockWindow` |
 | `scripts/live-check.ts` | Opt-in live read-only smoke test (`npm run test:live`) — all 34 pass-through/`find_portals` read tools |
 | `scripts/live-check-write.ts`, `scripts/liveCheckWriteHelpers.ts` | Opt-in live write smoke test (`npm run test:live:write`) and its unit-tested pure helpers |
+| `scripts/live-check-write-daily.ts` | Opt-in live write smoke test for the daily window (`npm run test:live:write:daily`) |
 | `test/fakeNetbox.ts` | Stateful in-memory controller double for the composite tools' tests (reproduces the live 6.2.0 quirks) |
 
 ### Resolved Issues
