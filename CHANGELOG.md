@@ -91,6 +91,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `npm run test:live:write`; `.env.example` and `STATUS.md` reflect the completed feature
   ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
 
+### Fixed
+- The managed time spec group is named `"<prefix> time specs"`, not `"<prefix>"` — group names
+  are unique across group types on the verified 6.2.0 controller, so a portal group and a time
+  spec group cannot share a name ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- `ModifyPortalGroup`/`ModifyReaderGroup` replace the group's entire membership rather than
+  appending, so `schedule_unlock_window`/`cancel_unlock_window` always send the full portal key
+  list on every modify, not just the delta ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- `npm run test:live:write`'s door phase now measures controller clock skew against the host
+  clock and refuses to proceed when it exceeds 2 minutes, instead of scheduling a window whose
+  `start`/`end` were computed against the wrong clock — live-observed on a controller whose clock
+  was off by ~4h35m ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- Documented that `ENDTIME` is inclusive through the end of the stated minute (the built-in
+  `Always` time spec covers `00:00`–`23:59`), so a multi-day unlock window has no midnight gap
+  between segments; the door instead relocks up to 59 seconds after the stated `end` minute
+  (observed live: a window ending `08:27` relocked at `08:27:59` controller time) — the README
+  previously described an up-to-60-second relock gap at each midnight, which was wrong
+  ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+
 ## [0.2.0] — 2026-09-14
 ### Added
 - `NETBOX_API_PATH` environment variable, defaulting to the verified NetBox 6.x NBAPI path

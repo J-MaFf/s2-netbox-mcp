@@ -242,7 +242,7 @@ that NBAPI command's response fields — no reshaping. Each tool's input
 schema declares exactly the documented PARAMS fields for its command — no
 invented, renamed, or passthrough fields. All NBAPI parameter names above
 are copied verbatim from the NBAPI Command Reference (see
-`specs/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
+`specs/archive/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
 — none are invented or guessed.
 
 Five tools are composites — they combine several NBAPI commands and reshape
@@ -448,10 +448,12 @@ from them and `activeNow` on the host clock.
   that is refused. `portalKeys` are keys only (use `get_portals` or
   `find_portals` to map names); an unknown key is refused before anything is
   written.
-- End of day on the NBAPI is `23:59` (the built-in `Always` uses it), so a
-  multi-day window may **relock for up to 60 seconds at each midnight**
-  between segments. An `end` of `00:00` means "up to 23:59 of the previous
-  day".
+- End of day on the NBAPI is `23:59` (the built-in `Always` uses it), and
+  `ENDTIME` is **inclusive through the end of that minute**, so there is no
+  midnight gap between segments of a multi-day window. A window's door
+  relocks up to **59 seconds after** the stated `end` minute (observed live:
+  a window ending `08:27` relocked at `08:27:59` controller time). An `end`
+  of `00:00` means "up to 23:59 of the previous day".
 - Times are the **controller's local time**. The MCP host is assumed to share
   the controller's timezone; the host clock is used only to reject windows
   that have already elapsed and to compute `activeNow`.
@@ -566,7 +568,7 @@ runs it.
 - Any GUI/dashboard beyond the MCP tool surface
 - Publishing/packaging this server, or a CI/CD pipeline
 
-See `specs/s2-netbox-mcp-write.md` for the full requirements the write-tool
+See `specs/archive/s2-netbox-mcp-write.md` for the full requirements the write-tool
 surface was built against, and `specs/archive/s2-netbox-mcp.md` for the
 original read-only v1 spec (archived — all its acceptance criteria passed,
 including live verification).

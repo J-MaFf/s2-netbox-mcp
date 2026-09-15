@@ -1,5 +1,18 @@
 # Spec: S2 NetBox MCP Server — Write Tools and Managed Unlock Windows
 
+> **COMPLETED, 2026-09-15.** All 23 acceptance criteria + C-final PASS. Built via
+> #8/[PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) (stage 1: gating, 80-command
+> allowlist, nested XML, event path, 18 read + 45 write tools) and
+> #9/[PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stage 2: `set_portals_state`,
+> managed unlock windows, write live check). C20 was closed by the user standing at portal
+> `02OF01A`: `npm run test:live:write -- --go` scheduled a 08:25–08:27 window, the strike released
+> at 08:25 and re-engaged at the end of the 08:27 minute, and the script's cancel left no managed
+> holiday or time spec behind (19/19). Three live findings amended this spec during the run and
+> are recorded in Context: group names are unique across group types, Modify replaces group
+> membership with the parsed list, and the controller clock was 4 h 35 min wrong (fixed by the
+> user; the live check now measures skew). Archived as a historical record; see `CHANGELOG.md` /
+> `STATUS.md` for current state.
+
 ## Goal
 Extend the existing read-only S2 NetBox MCP server with the NBAPI's write/control commands as
 environment-gated tools, and add a composite "unlock window" capability so that "unlock all doors
@@ -151,8 +164,12 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
 - Holiday date range: `STARTDATE` is inclusive at 00:00 and `ENDDATE` is **exclusive** — the doc's
   one-day Christmas example is `2016-12-25 00:00` → `2016-12-26 00:00` (printed p. 49) and the
   live 10-day GRAND OPENING is `09-11 00:00` → `09-21 00:00`.
-- End of day is `ENDTIME` `23:59` (the built-in *Always* uses it). A multi-day window therefore has
-  a possible relock of up to 60 s at each midnight between segments; accepted and documented.
+- End of day is `ENDTIME` `23:59` (the built-in *Always* uses it). **Live, 2026-09-15:** `ENDTIME`
+  is inclusive through the end of its minute — a window ending `08:27` relocked at `08:27:59`
+  controller time — so a multi-day window has **no** relock gap at midnight (`23:59` covers through
+  `23:59:59`, and the next segment starts at `00:00`). The earlier "up to 60 s gap" caveat is
+  withdrawn; the user-facing consequence is that the door relocks up to 59 s after the stated
+  `end` minute.
 - A time spec with no weekdays and holiday group *G* ticked is active only on dates covered by a
   holiday in group *G* (live: GRAND OPENING, user-confirmed working).
 - A holiday in group *G* suppresses, on its dates, time specs that do **not** tick *G* (S2 training

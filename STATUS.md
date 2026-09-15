@@ -11,16 +11,17 @@ gated behind `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` (see README "Wri
 of the pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, and a
 managed unlock window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`)
 that the controller enforces itself (README "Scheduled unlock windows"). See
-`specs/s2-netbox-mcp-write.md` for the write-tools spec (archived
+`specs/archive/s2-netbox-mcp-write.md` for the write-tools spec (archived
 `specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all its acceptance criteria
 passed).
 
-## Current State — 2026-09-14
+## Current State — 2026-09-15
 
-On branch `feat/netbox-unlock-window` (stacked on `feat/netbox-write-tools`, PR #10), implementing
-issue #9 — **stage 2 of 2** of the write-tools spec. Stage 1 (issue #8, PR #10) added the
-80-command allowlist, nested `PARAMS` XML, the write gates and R7 config, 18 read tools, and 45
-pass-through write tools. This stage adds:
+Both stages of the write-tools spec (now archived at `specs/archive/s2-netbox-mcp-write.md`) are
+complete and live-verified. Stage 1 (issue #8) added the 80-command allowlist, nested `PARAMS`
+XML, the write gates and R7 config, 18 read tools, and 45 pass-through write tools —
+[PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) is open for review. Stage 2 (issue #9),
+on `feat/netbox-unlock-window` stacked on top, added:
 
 - `set_portals_state` (composite write): bulk lock / unlock / momentary-unlock, sequential, never
   aborting, with `succeeded` / `alreadyInState` / `failed` partitions.
@@ -37,16 +38,28 @@ pass-through write tools. This stage adds:
 - The shared NEXTKEY paging helper (`src/paging.ts`) and RESPONSE-level field merging in the
   client.
 
+[PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stacked on PR #10) is open for review.
+
 Tool surface: 35 read tools with writes off; 72 with `NETBOX_ENABLE_WRITES`; 83 with
 `NETBOX_ENABLE_DESTRUCTIVE` as well. `main` still has the read-only v0.2.0 surface (16 tools) —
 neither stacked branch is merged yet.
 
-391 unit tests pass (24 files), `npm run typecheck` and `npm run build` are clean, and
-`npm run test:live` reports 34/34 PASS against the real NetBox 6.2.0 controller, issuing no write
-command. **`npm run test:live:write` has not been run yet in this stage** — the CRUD phase and the
-door test are for the operator to run after notifying the user (see README "Live write smoke
-test"); the user records whether the designated portal `02OF01A` was observed unlocked during the
-window and locked afterwards.
+409 unit tests pass (24 files), `npm run typecheck` and `npm run build` are clean, `npm run
+test:live` reports 34/34 PASS against the real NetBox 6.2.0 controller issuing no write command,
+and `npm run test:live:write` reports 16/16 PASS (CRUD round-trips plus the door-unlock window).
+The live door test ran 2026-09-15: portal `02OF01A` unlocked at 08:25 and relocked at the end of
+the 08:27 minute, confirmed on Monitor → Portal Status; the script itself passed 19/19 (16 CRUD +
+the 3-step door observation).
+
+Three findings came out of the live write check and are folded into the spec/README/CHANGELOG:
+
+- Group names are unique **across** group types on the controller, so the managed time spec group
+  is named `"<prefix> time specs"`, never `"<prefix>"` (which the portal group already uses).
+- `ModifyPortalGroup`/`ModifyReaderGroup` **replace** the group's entire membership rather than
+  appending to it, so the full portal/reader key list must be sent on every modify.
+- The controller's clock was found to be off by roughly 4 hours 35 minutes; the user corrected it,
+  and `npm run test:live:write`'s door phase now measures clock skew and refuses to proceed above
+  a 2-minute threshold rather than schedule a window against the wrong clock.
 
 ### Components
 
@@ -78,24 +91,21 @@ window and locked afterwards.
 | [#2](https://github.com/J-MaFf/s2-netbox-mcp/issues/2) | Build read-only S2 NetBox MCP server | [#3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3) |
 | [#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4) | NetBox 6.x endpoint (`/nbws/goforms/nbapi`), 410/APIERROR-5 diagnostics, README prerequisites, `extraParams` field-name cleanup, live-check empty-collection accommodation | [#5](https://github.com/J-MaFf/s2-netbox-mcp/pull/5) |
 | [#6](https://github.com/J-MaFf/s2-netbox-mcp/issues/6) | `find_portals`: search doors by name or reader description | [#7](https://github.com/J-MaFf/s2-netbox-mcp/pull/7) |
+| [#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8) | NBAPI write tools (stage 1: allowlist, gates, 18 read + 45 write pass-through tools) | [#10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) |
+| [#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9) | Managed unlock windows, `set_portals_state`, live write smoke test (stage 2); live door test passed | [#11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) |
 
 ### Open Issues
 
-| Issue | Description | Status |
-|---|---|---|
-| [#8](https://github.com/J-MaFf/s2-netbox-mcp/issues/8) | NBAPI write tools (stage 1: allowlist, gates, 18 read + 45 write pass-through tools) | Implemented on `feat/netbox-write-tools`; [PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10) open for review |
-| [#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9) | Managed unlock windows, `set_portals_state`, live write smoke test (stage 2) | Implemented on `feat/netbox-unlock-window` (stacked on PR #10); live write check not yet run |
+None.
 
 ## Natural Next Steps
 
-1. Operator: run `npm run test:live:write` (CRUD phase), then — after notifying the user with the
-   exact unlock/relock times and getting a go-ahead — `npm run test:live:write -- --go` (or
-   `--start HH:MM`), and record in the completion note whether portal `02OF01A` was observed
-   unlocked during the window and locked afterwards (C20).
-2. Open the stacked PR for this branch against `feat/netbox-write-tools`, referencing issue #9
-   (`Fixes #9`); merge bottom-up after PR #10, restacking onto `main` per git-policies; stop at the
-   merge gate for human approval.
-3. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
+1. Merge [PR #10](https://github.com/J-MaFf/s2-netbox-mcp/pull/10), then
+   [PR #11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) (stacked on it), restacking onto
+   `main` per git-policies; both stop at the merge gate for human approval.
+2. Remove the two stale worktrees under `.claude/worktrees/`.
+3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
+4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
 
 ## Prerequisites to Run
