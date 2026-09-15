@@ -10,21 +10,43 @@ partitions/UDF lists — as Claude-callable tools.
 > (`Web-Based API for S2 NetBox and S2 Global`, LenelS2 doc #API-UG-14).
 
 **Read-only by default.** With no write-related environment variables set,
-this server registers only query/read NBAPI commands (`Login`, `Logout`,
-`GetAPIVersion`, `GetPerson`, `SearchPersonData`, `GetCardAccessDetails`,
-`GetCardFormats`, `GetAccessLevel(s)`, `GetAccessLevelGroup(s)`,
-`GetPortals`, `GetReader(s)`, `GetOutputs`, `GetTimeSpec(s)`,
-`GetTimeSpecGroup(s)`, `GetHoliday(s)`, `GetPortalGroup(s)`,
-`GetReaderGroup(s)`, `GetAccessLevelNames`, `GetPartitions`, `GetUDFLists`,
-`GetUDFListItems`, `GetElevators`, `GetFloors`, `PingApp`, `GetEventHistory`,
-`ListEvents`, `GetAccessHistory`) and is incapable of adding, modifying,
-deleting, locking/unlocking, activating/deactivating, or triggering anything
-on the controller. Write/control tools exist in the codebase but are not
-registered unless you explicitly opt in — see **Write access** below. The
-read-only surface includes two composites, `find_portals` and
-`get_unlock_window`, which only issue read commands. Note there is no
-`GetPortal` (singular) command; only `GetPortals` (plural, paginated, no
-single-portal filter) exists on the real NBAPI.
+this server registers only query/read NBAPI commands:
+
+- `Login`
+- `Logout`
+- `GetAPIVersion`
+- `GetPerson`
+- `SearchPersonData`
+- `GetCardAccessDetails`
+- `GetCardFormats`
+- `GetAccessLevel(s)`
+- `GetAccessLevelGroup(s)`
+- `GetPortals`
+- `GetReader(s)`
+- `GetOutputs`
+- `GetTimeSpec(s)`
+- `GetTimeSpecGroup(s)`
+- `GetHoliday(s)`
+- `GetPortalGroup(s)`
+- `GetReaderGroup(s)`
+- `GetAccessLevelNames`
+- `GetPartitions`
+- `GetUDFLists`
+- `GetUDFListItems`
+- `GetElevators`
+- `GetFloors`
+- `PingApp`
+- `GetEventHistory`
+- `ListEvents`
+- `GetAccessHistory`
+
+By default, this server registers only the query/read commands listed above.
+It does not register any write, delete, or control operations against the
+controller until you explicitly opt in via the environment variables in
+**Write access** below. Among the read-only tools, two are composites,
+`find_portals` and `get_unlock_window`, which issue only read commands. Note
+there is no `GetPortal` (singular) command; only `GetPortals` (plural,
+paginated, no single-portal filter) exists on the real NBAPI.
 
 ## Requirements
 
