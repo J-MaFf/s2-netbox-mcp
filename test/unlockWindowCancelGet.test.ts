@@ -49,7 +49,10 @@ describe('cancel_unlock_window (R26)', () => {
       { command: C.GET_HOLIDAY, params: { HOLIDAYKEY: '104' } },
       { command: C.GET_HOLIDAY, params: { HOLIDAYKEY: '106' } },
       { command: C.GET_TIME_SPECS, params: {} },
-      { command: C.MODIFY_PORTAL_GROUP, params: { PORTALGROUPKEY: '108', PORTALKEY: ['1', '2'], UNLOCKTIMESPECGROUPKEY: '2' } },
+      {
+        command: C.MODIFY_PORTAL_GROUP,
+        params: { PORTALGROUPKEY: '108', PORTALKEYS: { PORTALKEY: ['1', '2'] }, UNLOCKTIMESPECGROUPKEY: '2' },
+      },
       { command: C.DELETE_HOLIDAY, params: { HOLIDAYKEY: '102' } },
       { command: C.DELETE_HOLIDAY, params: { HOLIDAYKEY: '104' } },
       { command: C.DELETE_HOLIDAY, params: { HOLIDAYKEY: '106' } },

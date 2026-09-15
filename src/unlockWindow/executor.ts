@@ -429,7 +429,7 @@ export async function scheduleUnlockWindow(
     if (existing) {
       await client.call(NBAPI_COMMANDS.MODIFY_PORTAL_GROUP, {
         PORTALGROUPKEY: existing.PORTALGROUPKEY,
-        PORTALKEY: targetKeys,
+        ...wrapList('PORTALKEYS', 'PORTALKEY', targetKeys),
         UNLOCKTIMESPECGROUPKEY: timeSpecGroupKey,
       });
       portalGroupKey = existing.PORTALGROUPKEY;
@@ -593,7 +593,7 @@ export async function cancelUnlockWindow(client: NetboxClient, settings: UnlockW
   await atStep('2 (point the managed portal group at Never)', () =>
     client.call(NBAPI_COMMANDS.MODIFY_PORTAL_GROUP, {
       PORTALGROUPKEY: portalGroup.PORTALGROUPKEY,
-      PORTALKEY: portalGroup.PORTALS.map((portal) => portal.PORTALKEY),
+      ...wrapList('PORTALKEYS', 'PORTALKEY', portalGroup.PORTALS.map((portal) => portal.PORTALKEY)),
       UNLOCKTIMESPECGROUPKEY: never.TIMESPECGROUPKEY,
     })
   );

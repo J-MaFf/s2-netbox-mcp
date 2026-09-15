@@ -44,12 +44,12 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
 
     server.tool(
       'modify_reader_group',
-      'WRITE: Modifies an existing reader group (wraps NBAPI ModifyReaderGroup). READERKEYS, if given, replaces the group’s membership.',
+      'WRITE: Modifies an existing reader group (wraps NBAPI ModifyReaderGroup). READERKEYS is the complete desired membership — omitting it clears the group’s membership on this controller (live, 2026-09-15), so it is required and must carry the complete membership.',
       {
         READERGROUPKEY: z.string().describe('Required. The READERGROUPKEY of the reader group to modify.'),
         NAME: z.string().optional().describe('Optional. New name for the reader group.'),
         DESCRIPTION: z.string().optional().describe('Optional. New description for the reader group.'),
-        READERKEYS: z.array(z.string()).optional().describe('Optional. Complete replacement list of member READERKEY values.'),
+        READERKEYS: z.array(z.string()).describe('Required. Complete replacement list of member READERKEY values.'),
       },
       async ({ READERGROUPKEY, NAME, DESCRIPTION, READERKEYS }) =>
         runNbapiTool(

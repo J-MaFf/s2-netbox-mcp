@@ -310,7 +310,10 @@ describe('schedule_unlock_window (R25): the eight-step apply order', () => {
       { command: C.DELETE_TIME_SPEC, params: { TIMESPECKEY: '107' } }, // last
       { command: C.DELETE_HOLIDAY, params: { HOLIDAYKEY: '106' } },
       { command: C.GET_PORTAL_GROUPS, params: {} }, // step 6: found, modify
-      { command: C.MODIFY_PORTAL_GROUP, params: { PORTALGROUPKEY: '108', PORTALKEY: ['1', '2'], UNLOCKTIMESPECGROUPKEY: '101' } },
+      {
+        command: C.MODIFY_PORTAL_GROUP,
+        params: { PORTALGROUPKEY: '108', PORTALKEYS: { PORTALKEY: ['1', '2'] }, UNLOCKTIMESPECGROUPKEY: '101' },
+      },
       { command: C.GET_PORTAL_GROUP, params: { PORTALGROUPKEY: '108' } }, // step 7
       { command: C.GET_TIME_SPEC_GROUPS, params: {} },
       { command: C.GET_TIME_SPEC, params: { TIMESPECKEY: '103' } },

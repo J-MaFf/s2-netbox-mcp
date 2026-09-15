@@ -51,7 +51,7 @@ describe('R13: portal group write tools', () => {
     ]);
   });
 
-  it('modify_portal_group sends PORTALKEYS as repeated top-level PORTALKEY siblings, not wrapped', async () => {
+  it('modify_portal_group requires PORTALKEYS and wraps it as <PORTALKEYS><PORTALKEY>..., same as add', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerPortalGroupTools(server as unknown as McpServer, client, WRITES_ON);
@@ -63,7 +63,7 @@ describe('R13: portal group write tools', () => {
     expect(calls).toEqual([
       {
         command: NBAPI_COMMANDS.MODIFY_PORTAL_GROUP,
-        params: { PORTALGROUPKEY: '56', PORTALKEY: ['1', '2'] },
+        params: { PORTALGROUPKEY: '56', PORTALKEYS: { PORTALKEY: ['1', '2'] } },
       },
     ]);
   });

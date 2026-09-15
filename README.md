@@ -302,7 +302,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `modify_portal_group`         | `ModifyPortalGroup`        | `PORTALGROUPKEY`, `PORTALKEYS`                   | write       |
 | `delete_portal_group`         | `DeletePortalGroup`        | `PORTALGROUPKEY`                                 | destructive |
 | `add_reader_group`            | `AddReaderGroup`           | `NAME`, `READERKEYS`                             | write       |
-| `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`                                 | write       |
+| `modify_reader_group`         | `ModifyReaderGroup`        | `READERGROUPKEY`, `READERKEYS`                   | write       |
 | `delete_reader_group`         | `DeleteReaderGroup`        | `READERGROUPKEY`                                 | destructive |
 | `add_access_level`            | `AddAccessLevel`           | `ACCESSLEVELNAME`, `TIMESPECGROUPKEY`             | write       |
 | `modify_access_level`         | `ModifyAccessLevel`        | `ACCESSLEVELKEY`                                 | write       |
@@ -331,6 +331,11 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `set_portals_state`           | `LockPortal` / `UnlockPortal` / `MomentaryUnlockPortal` per portal, after `GetPortals` (composite) | `action` (`portalKeys` optional; omitted = every portal) | write |
 | `schedule_unlock_window`      | `AddHoliday`/`ModifyHoliday`, `AddTimeSpec`/`ModifyTimeSpec`, `AddTimeSpecGroup`/`ModifyTimeSpecGroup`, `AddPortalGroup`/`ModifyPortalGroup`, plus `DeleteTimeSpec`/`DeleteHoliday` of leftover managed segments, plus reads (composite) | `start`, `end` (`portalKeys`, `acknowledgeSideEffects`, `dryRun` optional) | write |
 | `cancel_unlock_window`        | `ModifyPortalGroup`, `DeleteHoliday`, `ModifyTimeSpecGroup`, `DeleteTimeSpec` — managed objects only — plus reads (composite) | — | write |
+
+`modify_portal_group` and `modify_reader_group` always replace the group's
+membership with the `PORTALKEYS`/`READERKEYS` you send — on this controller
+(6.2.0, verified live) an omitted or unparsed list empties the group instead
+of leaving it unchanged, so both tools require the complete membership.
 
 `trigger_event` is **unverified live on 6.x**; `NETBOX_EVENT_API_PATH` is
 available to override the request path if your controller serves the Event

@@ -354,7 +354,11 @@ async function readerGroupRoundTrip(client: NetboxClient, readerKey: string): Pr
 
   allPassed =
     (await step('modify_reader_group -> get_reader_group', async () => {
-      await client.call(NBAPI_COMMANDS.MODIFY_READER_GROUP, { READERGROUPKEY: key, DESCRIPTION: 'modified by npm run test:live:write' });
+      await client.call(NBAPI_COMMANDS.MODIFY_READER_GROUP, {
+        READERGROUPKEY: key,
+        DESCRIPTION: 'modified by npm run test:live:write',
+        ...wrapList('READERKEYS', 'READERKEY', [readerKey]),
+      });
       const group = await readReaderGroup(client, key);
       assertTrue(`GetReaderGroup ${key} found it`, group !== undefined);
       assertEqual('DESCRIPTION', group!.DESCRIPTION, 'modified by npm run test:live:write');
@@ -399,7 +403,7 @@ async function portalGroupRoundTrip(client: NetboxClient, portalKey: string, nev
       await client.call(NBAPI_COMMANDS.MODIFY_PORTAL_GROUP, {
         PORTALGROUPKEY: key,
         DESCRIPTION: 'modified by npm run test:live:write',
-        PORTALKEY: [portalKey],
+        ...wrapList('PORTALKEYS', 'PORTALKEY', [portalKey]),
         UNLOCKTIMESPECGROUPKEY: neverKey,
       });
       const group = await fetchPortalGroup(client, key);

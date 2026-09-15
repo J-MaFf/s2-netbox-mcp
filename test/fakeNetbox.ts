@@ -437,11 +437,15 @@ export class FakeNetbox {
       }
 
       case NBAPI_COMMANDS.MODIFY_PORTAL_GROUP: {
+        // Live 6.2.0 behaviour (2026-09-15): membership is replaced by the
+        // wrapped <PORTALKEYS><PORTALKEY>... list if present, and CLEARED if
+        // that wrapper is absent — including when only top-level PORTALKEY
+        // siblings are given, since that shape is not parsed.
         const group = this.portalGroups.find((candidate) => candidate.PORTALGROUPKEY === str(params.PORTALGROUPKEY));
         if (!group) return fail('Invalid PORTALGROUPKEY');
         if (params.NAME !== undefined) group.NAME = str(params.NAME);
         if (params.DESCRIPTION !== undefined) group.DESCRIPTION = str(params.DESCRIPTION);
-        if (params.PORTALKEY !== undefined) group.PORTALKEYS = list(params.PORTALKEY);
+        group.PORTALKEYS = list((params.PORTALKEYS as Params | undefined)?.PORTALKEY);
         if (params.UNLOCKTIMESPECGROUPKEY !== undefined) group.UNLOCKTIMESPECGROUPKEY = str(params.UNLOCKTIMESPECGROUPKEY);
         if (params.THREATLEVELGROUPKEY !== undefined) group.THREATLEVELGROUPKEY = str(params.THREATLEVELGROUPKEY);
         return ok({});
