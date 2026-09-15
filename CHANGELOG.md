@@ -11,6 +11,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   interactive OTP, automatic provenance attestations. Requires the Trusted Publisher to be
   configured on the package's npmjs.com settings page once the package exists on the
   registry ([#33](https://github.com/J-MaFf/s2-netbox-mcp/issues/33)).
+- `.github/workflows/ci.yml`: runs `npm ci`/`typecheck`/`test`/`build` on every push and PR
+  against `main` ([#28](https://github.com/J-MaFf/s2-netbox-mcp/issues/28)).
+- `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`, and
+  `.github/PULL_REQUEST_TEMPLATE.md` for outside contributors
+  ([#28](https://github.com/J-MaFf/s2-netbox-mcp/issues/28)).
+
+### Fixed
+- README's "Out of scope" list no longer claims "Publishing/packaging this server, or a
+  CI/CD pipeline" is out of scope — both now exist (#27, #33)
+  ([#28](https://github.com/J-MaFf/s2-netbox-mcp/issues/28)).
 
 ## [0.2.1] — 2026-09-15
 
