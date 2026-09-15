@@ -23,6 +23,14 @@ export interface NetboxConfig {
   unlockHolidayGroups: [number, number, number] | [number, number] | [number];
   /** R7/R25/R27: name prefix for the (stage-2) managed unlock-window objects. */
   unlockNamePrefix: string;
+  /** Daily-unlock-window spec R1: the single reserved holiday group used by
+   * the daily recurring unlock window planner. Never a member of
+   * `unlockHolidayGroups` (enforced at load time), so the two features'
+   * reserved groups can never collide. */
+  dailyUnlockHolidayGroup: number;
+  /** Daily-unlock-window spec R1: name prefix for the managed daily-unlock-
+   * window objects. */
+  dailyUnlockNamePrefix: string;
   /** R7/R30 (stage-2 live write check only): the PORTALKEY the operator has
    * designated safe to physically unlock during a live write smoke test. */
   liveTestPortalKey: string | undefined;
@@ -110,11 +118,51 @@ function resolveUnlockNamePrefix(raw: string | undefined): string {
   return value;
 }
 
+export const DEFAULT_DAILY_UNLOCK_HOLIDAY_GROUP = '5';
+export const DEFAULT_DAILY_UNLOCK_NAME_PREFIX = 'MCP Daily Unlock Window';
+
+/**
+ * Validates and parses NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP (daily-unlock-window
+ * spec R1): exactly one integer in 1..8, and never a member of the resolved
+ * NETBOX_UNLOCK_HOLIDAY_GROUPS list (so the continuous and daily features'
+ * reserved holiday groups can never collide). Throws a one-line
+ * NetboxConfigError naming the variable and the rule on any violation.
+ */
+function resolveDailyUnlockHolidayGroup(raw: string | undefined, unlockHolidayGroups: readonly number[]): number {
+  const value = raw && raw.trim() !== '' ? raw.trim() : DEFAULT_DAILY_UNLOCK_HOLIDAY_GROUP;
+  if (!/^[1-8]$/.test(value)) {
+    throw new NetboxConfigError('NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP must be a single integer in 1..8.');
+  }
+  const group = Number.parseInt(value, 10);
+  if (unlockHolidayGroups.includes(group)) {
+    throw new NetboxConfigError(
+      `NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP (${group}) must not be a member of NETBOX_UNLOCK_HOLIDAY_GROUPS (${unlockHolidayGroups.join(',')}) — the two features' reserved holiday groups must never collide.`
+    );
+  }
+  return group;
+}
+
+/**
+ * Validates NETBOX_DAILY_UNLOCK_NAME_PREFIX (daily-unlock-window spec R1):
+ * 1-40 characters, so `<prefix> time specs` (the longest managed-object NAME
+ * this prefix produces) still fits the NBAPI's 64-character NAME limit.
+ */
+function resolveDailyUnlockNamePrefix(raw: string | undefined): string {
+  const value = raw && raw.trim() !== '' ? raw : DEFAULT_DAILY_UNLOCK_NAME_PREFIX;
+  if (value.length < 1 || value.length > 40) {
+    throw new NetboxConfigError(
+      'NETBOX_DAILY_UNLOCK_NAME_PREFIX must be 1-40 characters (so "<prefix> time specs" fits the 64-character NAME limit).'
+    );
+  }
+  return value;
+}
+
 /**
  * Reads and validates NETBOX_BASE_URL, NETBOX_USERNAME, NETBOX_PASSWORD, and
  * the optional NETBOX_ALLOW_INSECURE_TLS, NETBOX_API_PATH, NETBOX_EVENT_API_PATH,
  * NETBOX_ENABLE_WRITES, NETBOX_ENABLE_DESTRUCTIVE, NETBOX_UNLOCK_HOLIDAY_GROUPS,
- * NETBOX_UNLOCK_NAME_PREFIX, and NETBOX_LIVE_TEST_PORTALKEY from the given
+ * NETBOX_UNLOCK_NAME_PREFIX, NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP,
+ * NETBOX_DAILY_UNLOCK_NAME_PREFIX, and NETBOX_LIVE_TEST_PORTALKEY from the given
  * environment (defaults to `process.env`). Throws NetboxConfigError with a
  * single-line, actionable message (naming only the missing/invalid variable
  * name, never any value) if any required variable is missing or any
@@ -139,6 +187,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): NetboxC
 
   const allowInsecureTls = parseBool(env.NETBOX_ALLOW_INSECURE_TLS);
   const apiPath = resolveApiPath(env.NETBOX_API_PATH);
+  const unlockHolidayGroups = resolveUnlockHolidayGroups(env.NETBOX_UNLOCK_HOLIDAY_GROUPS);
 
   return {
     baseUrl: baseUrl!.replace(/\/+$/, ''),
@@ -149,8 +198,10 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): NetboxC
     eventApiPath: resolveEventApiPath(env.NETBOX_EVENT_API_PATH, apiPath),
     enableWrites: parseBool(env.NETBOX_ENABLE_WRITES),
     enableDestructive: parseBool(env.NETBOX_ENABLE_DESTRUCTIVE),
-    unlockHolidayGroups: resolveUnlockHolidayGroups(env.NETBOX_UNLOCK_HOLIDAY_GROUPS),
+    unlockHolidayGroups,
     unlockNamePrefix: resolveUnlockNamePrefix(env.NETBOX_UNLOCK_NAME_PREFIX),
+    dailyUnlockHolidayGroup: resolveDailyUnlockHolidayGroup(env.NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP, unlockHolidayGroups),
+    dailyUnlockNamePrefix: resolveDailyUnlockNamePrefix(env.NETBOX_DAILY_UNLOCK_NAME_PREFIX),
     liveTestPortalKey: env.NETBOX_LIVE_TEST_PORTALKEY || undefined,
   };
 }

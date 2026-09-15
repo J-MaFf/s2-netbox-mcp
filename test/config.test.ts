@@ -5,6 +5,8 @@ import {
   DEFAULT_NETBOX_API_PATH,
   DEFAULT_UNLOCK_HOLIDAY_GROUPS,
   DEFAULT_UNLOCK_NAME_PREFIX,
+  DEFAULT_DAILY_UNLOCK_HOLIDAY_GROUP,
+  DEFAULT_DAILY_UNLOCK_NAME_PREFIX,
 } from '../src/config.js';
 
 const FULL_ENV = {
@@ -27,6 +29,8 @@ describe('loadConfigFromEnv (R3)', () => {
       enableDestructive: false,
       unlockHolidayGroups: [8, 7, 6],
       unlockNamePrefix: 'MCP Unlock Window',
+      dailyUnlockHolidayGroup: 5,
+      dailyUnlockNamePrefix: 'MCP Daily Unlock Window',
       liveTestPortalKey: undefined,
     });
   });
@@ -203,6 +207,92 @@ describe('loadConfigFromEnv NETBOX_UNLOCK_NAME_PREFIX (R7)', () => {
     const err = thrown as NetboxConfigError;
     expect(err.message.split('\n')).toHaveLength(1);
     expect(err.message).toContain('NETBOX_UNLOCK_NAME_PREFIX');
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP (daily-unlock-window spec R1)', () => {
+  it('defaults to 5', () => {
+    expect(DEFAULT_DAILY_UNLOCK_HOLIDAY_GROUP).toBe('5');
+    expect(loadConfigFromEnv(FULL_ENV).dailyUnlockHolidayGroup).toBe(5);
+  });
+
+  it('accepts a valid override not present in NETBOX_UNLOCK_HOLIDAY_GROUPS', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP: '2' }).dailyUnlockHolidayGroup).toBe(2);
+  });
+
+  it('treats an empty override as unset (falls back to the default)', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP: '' }).dailyUnlockHolidayGroup).toBe(5);
+  });
+
+  it.each(['0', '9', 'a', '1,2', '10'])(
+    'rejects a value that is not a single integer in 1..8 with a one-line NetboxConfigError naming the variable',
+    (raw) => {
+      let thrown: unknown;
+      try {
+        loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP: raw });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(NetboxConfigError);
+      const err = thrown as NetboxConfigError;
+      expect(err.message.split('\n')).toHaveLength(1);
+      expect(err.message).toContain('NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP');
+    }
+  );
+
+  it('rejects a value equal to any group in the resolved NETBOX_UNLOCK_HOLIDAY_GROUPS list, naming both variables', () => {
+    let thrown: unknown;
+    try {
+      loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '8,7,6', NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP: '7' });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NetboxConfigError);
+    const err = thrown as NetboxConfigError;
+    expect(err.message.split('\n')).toHaveLength(1);
+    expect(err.message).toContain('NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP');
+    expect(err.message).toContain('NETBOX_UNLOCK_HOLIDAY_GROUPS');
+  });
+
+  it('rejects the default (5) colliding with a custom NETBOX_UNLOCK_HOLIDAY_GROUPS', () => {
+    let thrown: unknown;
+    try {
+      loadConfigFromEnv({ ...FULL_ENV, NETBOX_UNLOCK_HOLIDAY_GROUPS: '5' });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NetboxConfigError);
+    expect((thrown as NetboxConfigError).message).toContain('NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP');
+  });
+});
+
+describe('loadConfigFromEnv NETBOX_DAILY_UNLOCK_NAME_PREFIX (daily-unlock-window spec R1)', () => {
+  it('defaults to "MCP Daily Unlock Window"', () => {
+    expect(DEFAULT_DAILY_UNLOCK_NAME_PREFIX).toBe('MCP Daily Unlock Window');
+    expect(loadConfigFromEnv(FULL_ENV).dailyUnlockNamePrefix).toBe('MCP Daily Unlock Window');
+  });
+
+  it('accepts a 1-40 character override', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_NAME_PREFIX: 'X' }).dailyUnlockNamePrefix).toBe('X');
+    const fortyChars = 'A'.repeat(40);
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_NAME_PREFIX: fortyChars }).dailyUnlockNamePrefix).toBe(fortyChars);
+  });
+
+  it('treats an empty override as unset (default)', () => {
+    expect(loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_NAME_PREFIX: '' }).dailyUnlockNamePrefix).toBe('MCP Daily Unlock Window');
+  });
+
+  it('rejects an over-long (41+ character) override with a one-line NetboxConfigError naming the variable', () => {
+    let thrown: unknown;
+    try {
+      loadConfigFromEnv({ ...FULL_ENV, NETBOX_DAILY_UNLOCK_NAME_PREFIX: 'A'.repeat(41) });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NetboxConfigError);
+    const err = thrown as NetboxConfigError;
+    expect(err.message.split('\n')).toHaveLength(1);
+    expect(err.message).toContain('NETBOX_DAILY_UNLOCK_NAME_PREFIX');
   });
 });
 

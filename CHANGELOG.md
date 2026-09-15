@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Daily recurring unlock window: `schedule_daily_unlock_window`, `cancel_daily_unlock_window`,
+  and `get_daily_unlock_window` express "unlock these doors from *dailyStartTime* to
+  *dailyEndTime*, every day from *startDate* through *endDate*" as a single managed window —
+  which the existing `schedule_unlock_window` cannot express without keeping doors unlocked
+  overnight on days strictly between the first and last. Reuses the continuous feature's
+  holiday + time spec + portal group mechanism with a single, always-one-segment plan (no
+  first/middle/last splitting), a dedicated reserved holiday group
+  (`NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP`, default `5`, validated at startup to never collide with
+  `NETBOX_UNLOCK_HOLIDAY_GROUPS`) and its own name prefix (`NETBOX_DAILY_UNLOCK_NAME_PREFIX`,
+  default `MCP Daily Unlock Window`), so the two features may be scheduled and active at the same
+  time. Adds `scripts/live-check-write-daily.ts` (`npm run test:live:write:daily`), the daily
+  window's opt-in live write smoke test, mirroring `npm run test:live:write`'s CRUD round-trips,
+  clock-skew gate, and `--go` door-unlock phase under its own `MCP livecheck daily` prefix.
+  (See the GitHub issue and PR that introduce this feature, opened per this repo's issue-first
+  workflow.)
+
 ## [0.1.1] — 2026-09-15
 
 ### Added

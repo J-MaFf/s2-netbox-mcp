@@ -12,6 +12,7 @@ import { registerThreatLevelTools } from '../src/tools/threatLevel.js';
 import { registerPartitionTools } from '../src/tools/partition.js';
 import { registerMiscTools } from '../src/tools/misc.js';
 import { registerUnlockWindowTools } from '../src/tools/unlockWindow.js';
+import { registerDailyUnlockWindowTools } from '../src/tools/dailyUnlockWindow.js';
 import { runNbapiTool, type ToolGateFlags } from '../src/toolHelpers.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
 import { FakeServer, fakeClient } from './testUtils.js';
@@ -43,6 +44,7 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
   registerPartitionTools(server as unknown as McpServer, client, gate);
   registerMiscTools(server as unknown as McpServer, client);
   registerUnlockWindowTools(server as unknown as McpServer, client, gate, { holidayGroups: [8, 7, 6], namePrefix: 'MCP Unlock Window' });
+  registerDailyUnlockWindowTools(server as unknown as McpServer, client, gate, { holidayGroup: 5, namePrefix: 'MCP Daily Unlock Window' });
 }
 
 const READ_TOOLS = [
@@ -82,6 +84,8 @@ const READ_TOOLS = [
   'ping_app',
   // R1: the read-only composite unlock-window status tool is always registered.
   'get_unlock_window',
+  // Daily-unlock-window spec R9: likewise always registered.
+  'get_daily_unlock_window',
 ];
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = [
@@ -123,13 +127,23 @@ const NON_DESTRUCTIVE_WRITE_TOOLS = [
   'set_portals_state',
   'schedule_unlock_window',
   'cancel_unlock_window',
+  // Daily-unlock-window spec R4/R8: likewise, registered only with NETBOX_ENABLE_WRITES.
+  'schedule_daily_unlock_window',
+  'cancel_daily_unlock_window',
 ];
 
 // The composite write tools need a stateful controller to succeed, so their
 // SUCCESS text is asserted in test/portalState.test.ts,
-// test/unlockWindowSchedule.test.ts and test/unlockWindowCancelGet.test.ts
+// test/unlockWindowSchedule.test.ts, test/unlockWindowCancelGet.test.ts,
+// test/dailyUnlockWindowSchedule.test.ts and test/dailyUnlockWindowCancelGet.test.ts
 // against FakeNetbox; here they are only checked for the WRITE: prefix.
-const COMPOSITE_WRITE_TOOLS = ['set_portals_state', 'schedule_unlock_window', 'cancel_unlock_window'];
+const COMPOSITE_WRITE_TOOLS = [
+  'set_portals_state',
+  'schedule_unlock_window',
+  'cancel_unlock_window',
+  'schedule_daily_unlock_window',
+  'cancel_daily_unlock_window',
+];
 
 // The 11 destructive tools (R2), named exactly as the spec lists them.
 const DESTRUCTIVE_TOOLS = [
@@ -147,11 +161,11 @@ const DESTRUCTIVE_TOOLS = [
 ];
 
 describe('R1/C1: registration matrix', () => {
-  it('registers exactly the 35 read tools (16 v0.2.0 + 18 R8 + get_unlock_window) when NETBOX_ENABLE_WRITES is off', () => {
+  it('registers exactly the 36 read tools (16 v0.2.0 + 18 R8 + get_unlock_window + get_daily_unlock_window) when NETBOX_ENABLE_WRITES is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
-    expect(server.registrations).toHaveLength(35);
+    expect(server.registrations).toHaveLength(36);
   });
 
   it('with writes off, no tool that can issue a write command is registered', () => {
@@ -169,23 +183,23 @@ describe('R1/C1: registration matrix', () => {
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
   });
 
-  it('registers the 35 read tools + 37 non-destructive write tools (34 pass-through + 3 composite) when writes are on and destructive is off', () => {
+  it('registers the 36 read tools + 39 non-destructive write tools (34 pass-through + 5 composite) when writes are on and destructive is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: false });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS].sort());
-    expect(names).toHaveLength(72);
+    expect(names).toHaveLength(75);
     for (const destructive of DESTRUCTIVE_TOOLS) {
       expect(names).not.toContain(destructive);
     }
   });
 
-  it('registers all 83 tools (35 read + 37 write + 11 destructive) when both flags are on', () => {
+  it('registers all 86 tools (36 read + 39 write + 11 destructive) when both flags are on', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
-    expect(names).toHaveLength(83);
+    expect(names).toHaveLength(86);
   });
 });
 

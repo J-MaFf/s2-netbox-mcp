@@ -18,6 +18,7 @@ import { registerThreatLevelTools } from './tools/threatLevel.js';
 import { registerPartitionTools } from './tools/partition.js';
 import { registerMiscTools } from './tools/misc.js';
 import { registerUnlockWindowTools } from './tools/unlockWindow.js';
+import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
 
 /**
  * MCP server entrypoint. Registers every NetBox NBAPI tool on a stdio
@@ -25,12 +26,13 @@ import { registerUnlockWindowTools } from './tools/unlockWindow.js';
  *
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
  * only the read-only tool surface (16 v0.2.0 tools + the 18 R8 read tools +
- * the read-only composite `get_unlock_window` = 35 tools) is registered —
- * byte-for-byte the same read-only posture as before, plus the new read
- * tools. With NETBOX_ENABLE_WRITES truthy, the 45 R9/R11-R20 write tools and
- * the three composite write tools (`set_portals_state`,
- * `schedule_unlock_window`, `cancel_unlock_window`) are also registered,
- * except the 11 destructive tools, which additionally require
+ * the read-only composites `get_unlock_window`/`get_daily_unlock_window` =
+ * 36 tools) is registered — byte-for-byte the same read-only posture as
+ * before, plus the new read tools. With NETBOX_ENABLE_WRITES truthy, the 45
+ * R9/R11-R20 write tools and the five composite write tools
+ * (`set_portals_state`, `schedule_unlock_window`, `cancel_unlock_window`,
+ * `schedule_daily_unlock_window`, `cancel_daily_unlock_window`) are also
+ * registered, except the 11 destructive tools, which additionally require
  * NETBOX_ENABLE_DESTRUCTIVE.
  */
 
@@ -78,6 +80,10 @@ registerMiscTools(server, client);
 registerUnlockWindowTools(server, client, gate, {
   holidayGroups: config.unlockHolidayGroups,
   namePrefix: config.unlockNamePrefix,
+});
+registerDailyUnlockWindowTools(server, client, gate, {
+  holidayGroup: config.dailyUnlockHolidayGroup,
+  namePrefix: config.dailyUnlockNamePrefix,
 });
 
 registerShutdownHandlers(client);
