@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `.github/workflows/publish.yml`: publishes to npm via [Trusted Publishing](https://docs.npmjs.com/trusted-publishers)
+  (OIDC from GitHub Actions) on every `v*` tag push -- no long-lived npm token, no
+  interactive OTP, automatic provenance attestations. Requires the Trusted Publisher to be
+  configured on the package's npmjs.com settings page once the package exists on the
+  registry ([#33](https://github.com/J-MaFf/s2-netbox-mcp/issues/33)).
+
 ## [0.2.1] — 2026-09-15
 
 ### Added
