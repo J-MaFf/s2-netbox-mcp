@@ -1,5 +1,20 @@
 # Spec: S2 NetBox MCP Server — Daily Recurring Unlock Window
 
+> **COMPLETED, 2026-09-15.** All 14 acceptance criteria + C-final PASS in one `forge` round. Built
+> via #23/[PR #24](https://github.com/J-MaFf/s2-netbox-mcp/pull/24) (`schedule_daily_unlock_window`,
+> `cancel_daily_unlock_window`, `get_daily_unlock_window`, 521/521 unit tests, adversarial evaluator
+> verdict PASS on every criterion). R11's real-controller phase — the one thing the merge-time
+> evaluator couldn't check — was run live the same day: `npx tsx scripts/live-check-write-daily.ts
+> --go` scheduled a 14:15–14:17 window on portal `02OF01A`, the user confirmed the door unlocked and
+> relocked in person, and the script's own 16/16 PASS summary confirms `cancel_daily_unlock_window`
+> left the portal group on `Never` with no managed holiday/time spec remaining. One finding
+> surfaced during this run and is worth carrying forward: on this host, `npm run
+> test:live:write:daily -- --go` silently drops the `--go` flag (PowerShell/npm printed `npm warn
+> Unknown cli config "--go"` and phase (c) was skipped) — `npx tsx scripts/live-check-write-daily.ts
+> --go` (bypassing npm's argument parsing entirely) is the reliable invocation and should be the one
+> documented in README.md if it isn't already. Archived as a historical record; see `CHANGELOG.md` /
+> `STATUS.md` for current state.
+
 ## Goal
 Add a companion to the existing managed unlock window feature that expresses "unlock these doors
 from *dailyStartTime* to *dailyEndTime*, every day from *startDate* through *endDate*" — a single
