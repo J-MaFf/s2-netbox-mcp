@@ -1,4 +1,6 @@
 import { formatLocalDateTime } from '../src/unlockWindow/planner.js';
+import { NBAPI_COMMANDS, type NbapiCommandName } from '../src/commands.js';
+import type { PortalStateAction } from '../src/portalState.js';
 
 /**
  * Pure helpers for scripts/live-check-write.ts, kept separate so they can be
@@ -22,6 +24,18 @@ export class LiveAssertionError extends Error {
   }
 }
 
+/** Thrown for the supervised single-action mode's own argument problems —
+ * an unknown `--action`, `--action` combined with `--go`, or a missing
+ * `--value` a given action requires. The script maps this to exit code 2
+ * (distinct from LiveCheckArgError's exit code 1), and every case that can
+ * throw it is checked before any network call is made (#12). */
+export class LiveCheckActionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LiveCheckActionError';
+  }
+}
+
 export interface LiveCheckWriteArgs {
   /** `--go`: the operator has notified the user and received a go-ahead, so
    * phase (c) — the real 2-minute unlock of the designated portal — may run. */
@@ -29,6 +43,12 @@ export interface LiveCheckWriteArgs {
   /** `--start HH:MM`: unlock at this clock time today instead of now + 2 min,
    * so the exact times can be communicated to the user before the go-ahead. */
   start?: string;
+  /** `--action <name>`: run exactly one supervised action instead of the
+   * full (b)/(b2)/(c) flow (#12). */
+  action?: string;
+  /** `--value <v>`: extra value some actions require (currently only
+   * `set_threat_level`, as the LEVELNAME to set). */
+  value?: string;
 }
 
 /** Parses the script's own arguments (everything after `node script`). */
@@ -44,11 +64,213 @@ export function parseLiveCheckWriteArgs(argv: readonly string[]): LiveCheckWrite
         throw new LiveCheckArgError('--start requires a clock time in the form HH:MM (e.g. --start 14:30).');
       }
       args.start = value;
+    } else if (arg === '--action' || arg.startsWith('--action=')) {
+      const value = arg === '--action' ? argv[++i] : arg.slice('--action='.length);
+      if (!value) {
+        throw new LiveCheckArgError('--action requires a value (e.g. --action unlock_portal).');
+      }
+      args.action = value;
+    } else if (arg === '--value' || arg.startsWith('--value=')) {
+      const value = arg === '--value' ? argv[++i] : arg.slice('--value='.length);
+      if (value === undefined || value === '') {
+        throw new LiveCheckArgError('--value requires a non-empty value (e.g. --value High).');
+      }
+      args.value = value;
     } else {
-      throw new LiveCheckArgError(`Unknown argument "${arg}". Usage: npm run test:live:write -- [--go] [--start HH:MM]`);
+      throw new LiveCheckArgError(
+        `Unknown argument "${arg}". Usage: npm run test:live:write -- [--go] [--start HH:MM] | -- --action <name> [--value <v>]`
+      );
     }
   }
+  if (args.action !== undefined && args.go) {
+    throw new LiveCheckActionError(
+      '--action cannot be combined with --go: supervised single actions run standalone, skipping phases (b), (b2), and (c) entirely.'
+    );
+  }
   return args;
+}
+
+// ---------------------------------------------------------------------------
+// Supervised single-action mode (#12): `--action <name> [--value <v>]`
+// ---------------------------------------------------------------------------
+
+export const LIVE_CHECK_ACTION_NAMES = [
+  'unlock_portal',
+  'lock_portal',
+  'momentary_unlock_portal',
+  'dog_on_next_exit_portal',
+  'activate_output',
+  'deactivate_output',
+  'set_portals_state_unlock',
+  'set_portals_state_lock',
+  'set_portals_state_momentary',
+  'set_threat_level',
+] as const;
+
+export type LiveCheckActionName = (typeof LIVE_CHECK_ACTION_NAMES)[number];
+
+export interface LiveCheckActionContext {
+  /** The designated portal's NAME (GetPortals). */
+  portalName: string;
+  /** Present only when `--value` was given. */
+  value?: string;
+}
+
+export interface LiveCheckActionSpec {
+  name: LiveCheckActionName;
+  /** 'command': one direct NBAPI command against PORTALKEY, OUTPUTKEY, or
+   *  (for set_threat_level) LEVELNAME. 'setPortalsState': routed through the
+   *  real `setPortalsState` function (src/portalState.ts) instead. */
+  kind: 'command' | 'setPortalsState';
+  /** Set for kind 'command'. Always an NBAPI_COMMANDS constant — never a literal. */
+  command?: NbapiCommandName;
+  /** Set for kind 'setPortalsState': the action passed to setPortalsState(). */
+  portalStateAction?: PortalStateAction;
+  /** True when this action targets the portal's strike OUTPUTKEY rather than its PORTALKEY. */
+  targetsOutput: boolean;
+  /** True when this action refuses to run without `--value` (currently only set_threat_level). */
+  requiresValue: boolean;
+  /** Builds the "OBSERVE: ..." line printed after the action runs. */
+  observe: (ctx: LiveCheckActionContext) => string;
+}
+
+/** The supervised single-action table (#12). Every entry uses an
+ * NBAPI_COMMANDS constant (or the real setPortalsState function) — never a
+ * literal command string — and every action is reversible, as documented in
+ * the README's "Supervised single actions" paragraph. */
+export const LIVE_CHECK_ACTIONS: Readonly<Record<LiveCheckActionName, LiveCheckActionSpec>> = {
+  unlock_portal: {
+    name: 'unlock_portal',
+    kind: 'command',
+    command: NBAPI_COMMANDS.UNLOCK_PORTAL,
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should be unlocked now (Extended Unlock) until lock_portal is run`,
+  },
+  lock_portal: {
+    name: 'lock_portal',
+    kind: 'command',
+    command: NBAPI_COMMANDS.LOCK_PORTAL,
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should be locked now`,
+  },
+  momentary_unlock_portal: {
+    name: 'momentary_unlock_portal',
+    kind: 'command',
+    command: NBAPI_COMMANDS.MOMENTARY_UNLOCK_PORTAL,
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should have unlocked briefly and relocked on its own (Momentary Unlock)`,
+  },
+  dog_on_next_exit_portal: {
+    name: 'dog_on_next_exit_portal',
+    kind: 'command',
+    command: NBAPI_COMMANDS.DOG_ON_NEXT_EXIT_PORTAL,
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should unlock (Dog) on its next REX/exit until lock_portal is run`,
+  },
+  activate_output: {
+    name: 'activate_output',
+    kind: 'command',
+    command: NBAPI_COMMANDS.ACTIVATE_OUTPUT,
+    targetsOutput: true,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: the strike output for ${portalName} should be active (energized) now until deactivate_output is run`,
+  },
+  deactivate_output: {
+    name: 'deactivate_output',
+    kind: 'command',
+    command: NBAPI_COMMANDS.DEACTIVATE_OUTPUT,
+    targetsOutput: true,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: the strike output for ${portalName} should be inactive (de-energized) now`,
+  },
+  set_portals_state_unlock: {
+    name: 'set_portals_state_unlock',
+    kind: 'setPortalsState',
+    portalStateAction: 'UNLOCK',
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should be unlocked now (Extended Unlock) until set_portals_state_lock is run`,
+  },
+  set_portals_state_lock: {
+    name: 'set_portals_state_lock',
+    kind: 'setPortalsState',
+    portalStateAction: 'LOCK',
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should be locked now`,
+  },
+  set_portals_state_momentary: {
+    name: 'set_portals_state_momentary',
+    kind: 'setPortalsState',
+    portalStateAction: 'MOMENTARY_UNLOCK',
+    targetsOutput: false,
+    requiresValue: false,
+    observe: ({ portalName }) => `OBSERVE: ${portalName} should have unlocked briefly and relocked on its own (Momentary Unlock)`,
+  },
+  set_threat_level: {
+    name: 'set_threat_level',
+    kind: 'command',
+    command: NBAPI_COMMANDS.SET_THREAT_LEVEL,
+    targetsOutput: false,
+    requiresValue: true,
+    observe: ({ value }) =>
+      `OBSERVE: the system-wide threat level should now show "${value}" on Monitor — set it back with ` +
+      '--action set_threat_level --value Default when done',
+  },
+};
+
+/** Resolves `--action <name>` against LIVE_CHECK_ACTIONS, throwing
+ * LiveCheckActionError with the full supported list on an unknown name. */
+export function resolveLiveCheckAction(name: string): LiveCheckActionSpec {
+  const spec = (LIVE_CHECK_ACTIONS as Record<string, LiveCheckActionSpec | undefined>)[name];
+  if (!spec) {
+    throw new LiveCheckActionError(`Unknown --action "${name}". Supported actions: ${LIVE_CHECK_ACTION_NAMES.join(', ')}.`);
+  }
+  return spec;
+}
+
+export interface LiveCheckOutputRef {
+  NAME: string;
+  OUTPUTKEY: string;
+}
+
+/** Finds the GetOutputs entry whose NAME starts with the designated portal's
+ * NAME (e.g. portal "02OF01A" -> output "02OF01A EL"), per #12. Returns the
+ * first match in list order. */
+export function findStrikeOutput(portalName: string, outputs: readonly LiveCheckOutputRef[]): LiveCheckOutputRef | undefined {
+  return outputs.find((output) => output.NAME.startsWith(portalName));
+}
+
+/** The controller's ERRMSG when a lock/unlock/momentary/dog command is a
+ * no-op (mirrors src/portalState.ts's ALREADY_IN_STATE, kept local here so
+ * this file stays independently unit-testable). */
+const PORTAL_STATE_NOT_CHANGED = /Portal state not changed/i;
+
+/** True when a FAIL's ERRMSG is the controller's "no-op" answer, which #12
+ * reports as PASS-with-note (already in that state) rather than a failure. */
+export function isPortalStateNotChangedError(errmsg: string | undefined): boolean {
+  return PORTAL_STATE_NOT_CHANGED.test(errmsg ?? '');
+}
+
+/** Builds the params sent for a kind:'command' action (#12). Never called for
+ * kind:'setPortalsState', which goes through the real setPortalsState()
+ * function and its own PORTALKEY list instead. */
+export function buildActionParams(
+  spec: LiveCheckActionSpec,
+  target: { PORTALKEY: string; OUTPUTKEY?: string },
+  value: string | undefined
+): Record<string, string> {
+  if (spec.name === 'set_threat_level') {
+    return { LEVELNAME: value ?? '' };
+  }
+  if (spec.targetsOutput) {
+    return { OUTPUTKEY: target.OUTPUTKEY ?? '' };
+  }
+  return { PORTALKEY: target.PORTALKEY };
 }
 
 export interface TestWindow {

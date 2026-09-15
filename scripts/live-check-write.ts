@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { loadConfigFromEnv, NetboxConfigError } from '../src/config.js';
 import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
+import { NbapiFailError } from '../src/errors.js';
+import { setPortalsState } from '../src/portalState.js';
 import { wrapList, mergeParams } from '../src/toolHelpers.js';
 import { asRecord, asRecordList, fetchAllPages, isBareNotFoundFail, text } from '../src/paging.js';
 import {
@@ -19,18 +21,24 @@ import {
 import { cancelUnlockWindow, getUnlockWindow, scheduleUnlockWindow, type UnlockWindowSettings } from '../src/unlockWindow/executor.js';
 import {
   LIVE_PREFIX,
+  LiveCheckActionError,
   LiveCheckArgError,
   assertEqual,
   assertSameSet,
   assertTrue,
+  buildActionParams,
   clockOf,
   computeClockSkew,
   computeTestWindow,
   estimateControllerClock,
+  findStrikeOutput,
   formatDurationHMS,
+  isPortalStateNotChangedError,
   parseCardFormatName,
   parseLiveCheckWriteArgs,
+  resolveLiveCheckAction,
   type ClockSkewResult,
+  type LiveCheckActionSpec,
 } from './liveCheckWriteHelpers.js';
 
 /**
@@ -59,12 +67,23 @@ import {
  *     is on *Never* and no managed holiday remains. `--start HH:MM` pins the
  *     unlock time (1-60 min ahead) so the exact times can be communicated
  *     before the go-ahead; otherwise unlock = now + 2 min, relock = + 4 min.
- * (d) Never touches outputs or portal lock/unlock actions directly, never
- *     calls SetThreatLevel, AddPartition, TriggerEvent, or permanently purges
- *     a person record (unit tests cover those).
- * (e) Never prints NETBOX_PASSWORD (every line goes through redact()).
+ * (d) Phases (b)/(b2)/(c) above never touch outputs or portal lock/unlock
+ *     actions directly, never call SetThreatLevel, AddPartition, TriggerEvent,
+ *     or permanently purge a person record (unit tests cover those). AddPartition
+ *     and TriggerEvent are never called anywhere in this script, including by
+ *     `--action` below (#12).
+ * (e) Never prints NETBOX_PASSWORD (every line goes through redact()) or any
+ *     `.env` content.
  * (f) Exits non-zero on any assertion failure; once (c) has begun, always
  *     attempts cancel_unlock_window before exiting.
+ * (g) `--action <name> [--value <v>]` (#12): a supervised single-action mode
+ *     that skips (b), (b2), and (c) entirely and issues exactly one write
+ *     against the designated portal (or its strike output) — see
+ *     LIVE_CHECK_ACTIONS in scripts/liveCheckWriteHelpers.ts for the full
+ *     table. Requires the same credentials/NETBOX_ENABLE_WRITES=true as (a),
+ *     but never NETBOX_ENABLE_DESTRUCTIVE (no deletes happen). Refuses (exit
+ *     2, no network) when combined with `--go`, when the action name is
+ *     unknown, or when a required `--value` is missing.
  *
  * `npm test` never runs this file.
  */
@@ -1115,17 +1134,119 @@ async function unlockWindowPhase(
 }
 
 // ---------------------------------------------------------------------------
+// Supervised single-action mode (#12): `--action <name> [--value <v>]`
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs exactly one supervised action against the designated portal (or its
+ * strike output) and returns the process exit code: 0 on SUCCESS or
+ * already-in-state, 1 otherwise. Never runs phases (b), (b2), or (c) — it is
+ * called instead of them, never alongside them (#12).
+ */
+async function runSingleAction(
+  client: NetboxClient,
+  actionSpec: LiveCheckActionSpec,
+  liveTestPortalKey: string,
+  value: string | undefined
+): Promise<number> {
+  const portals = await fetchAllPages(client, NBAPI_COMMANDS.GET_PORTALS, 'PORTALS', 'PORTAL');
+  const portalRecord = portals.find((portal) => text(portal.PORTALKEY) === liveTestPortalKey);
+  if (!portalRecord) {
+    logErr(`s2-netbox-mcp live-check-write: NETBOX_LIVE_TEST_PORTALKEY=${liveTestPortalKey} was not returned by GetPortals.`);
+    return 1;
+  }
+  const portal = { PORTALKEY: text(portalRecord.PORTALKEY), NAME: text(portalRecord.NAME) };
+  log(`Designated portal: ${portal.NAME} (key ${portal.PORTALKEY}); action ${actionSpec.name}`);
+
+  let outputKey: string | undefined;
+  if (actionSpec.targetsOutput) {
+    const outputs = await fetchAllPages(client, NBAPI_COMMANDS.GET_OUTPUTS, 'OUTPUTS', 'OUTPUT');
+    const match = findStrikeOutput(
+      portal.NAME,
+      outputs.map((output) => ({ NAME: text(output.NAME), OUTPUTKEY: text(output.OUTPUTKEY) }))
+    );
+    if (!match) {
+      logErr(
+        `s2-netbox-mcp live-check-write: no GetOutputs entry whose NAME starts with portal NAME "${portal.NAME}" was found ` +
+          '(e.g. "02OF01A EL" for portal "02OF01A").'
+      );
+      return 1;
+    }
+    outputKey = match.OUTPUTKEY;
+    info(`Resolved strike output "${match.NAME}" (OUTPUTKEY ${outputKey}) for portal "${portal.NAME}"`);
+  }
+
+  const ctx = { portalName: portal.NAME, value };
+
+  if (actionSpec.kind === 'setPortalsState') {
+    const stateAction = actionSpec.portalStateAction!;
+    log(`Sending setPortalsState(${stateAction}, portalKeys: [${portal.PORTALKEY}])`);
+    const result = await setPortalsState(client, stateAction, [portal.PORTALKEY]);
+    log(JSON.stringify(result, null, 2));
+    log(actionSpec.observe(ctx));
+    if (result.succeeded.length > 0) return 0;
+    if (result.alreadyInState.length > 0) {
+      log(`PASS (already in that state): ${portal.NAME}`);
+      return 0;
+    }
+    logErr(`FAIL: ${result.failed.map((failure) => `${failure.NAME}: ${failure.error}`).join('; ')}`);
+    return 1;
+  }
+
+  const params = buildActionParams(actionSpec, { PORTALKEY: portal.PORTALKEY, OUTPUTKEY: outputKey }, value);
+  log(`Sending ${actionSpec.command} ${JSON.stringify(params)}`);
+  try {
+    const result = await client.call(actionSpec.command!, params);
+    log(`CODE SUCCESS${result.data !== undefined ? ` DETAILS ${JSON.stringify(result.data)}` : ''}`);
+    log(actionSpec.observe(ctx));
+    return 0;
+  } catch (err) {
+    if (err instanceof NbapiFailError && isPortalStateNotChangedError(err.errmsg)) {
+      log(`PASS (already in that state): FAIL ERRMSG "${err.errmsg}"`);
+      log(actionSpec.observe(ctx));
+      return 0;
+    }
+    logErr(`FAIL: ${errorText(err)}`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
   let args;
   try {
     args = parseLiveCheckWriteArgs(process.argv.slice(2));
   } catch (err) {
+    if (err instanceof LiveCheckActionError) {
+      console.error(`s2-netbox-mcp live-check-write: ${err.message}`);
+      return 2;
+    }
     if (err instanceof LiveCheckArgError) {
       console.error(`s2-netbox-mcp live-check-write: ${err.message}`);
       return 1;
     }
     throw err;
+  }
+
+  // Supervised single-action mode (#12): resolve and validate `--action`
+  // before any network call — an unknown action, or a missing `--value` an
+  // action requires, exits 2 without touching the controller.
+  let actionSpec: LiveCheckActionSpec | undefined;
+  if (args.action !== undefined) {
+    try {
+      actionSpec = resolveLiveCheckAction(args.action);
+    } catch (err) {
+      if (err instanceof LiveCheckActionError) {
+        console.error(`s2-netbox-mcp live-check-write: ${err.message}`);
+        return 2;
+      }
+      throw err;
+    }
+    if (actionSpec.requiresValue && !args.value) {
+      console.error(`s2-netbox-mcp live-check-write: --action ${args.action} requires --value (e.g. --value High).`);
+      return 2;
+    }
   }
 
   const { NETBOX_BASE_URL, NETBOX_USERNAME, NETBOX_PASSWORD } = process.env;
@@ -1152,8 +1273,17 @@ async function main(): Promise<number> {
   }
 
   secret = config.password;
-  const settings: UnlockWindowSettings = { holidayGroups: config.unlockHolidayGroups, namePrefix: config.unlockNamePrefix };
   const client = new NetboxClient(config);
+
+  if (actionSpec !== undefined) {
+    try {
+      return await runSingleAction(client, actionSpec, config.liveTestPortalKey, args.value);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  const settings: UnlockWindowSettings = { holidayGroups: config.unlockHolidayGroups, namePrefix: config.unlockNamePrefix };
 
   try {
     // Preconditions: the designated portal, one of its readers, and Never.

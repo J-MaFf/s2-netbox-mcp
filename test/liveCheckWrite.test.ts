@@ -1,22 +1,30 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { NBAPI_COMMANDS } from '../src/commands.js';
 import {
+  LIVE_CHECK_ACTIONS,
+  LIVE_CHECK_ACTION_NAMES,
   LIVE_PREFIX,
   LiveAssertionError,
+  LiveCheckActionError,
   LiveCheckArgError,
   assertEqual,
   assertSameSet,
   assertTrue,
+  buildActionParams,
   clockOf,
   computeClockSkew,
   computeTestWindow,
   estimateControllerClock,
+  findStrikeOutput,
   formatClockHMS,
   formatDurationHMS,
+  isPortalStateNotChangedError,
   parseCardFormatName,
   parseControllerDttm,
   parseLiveCheckWriteArgs,
+  resolveLiveCheckAction,
 } from '../scripts/liveCheckWriteHelpers.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -41,6 +49,174 @@ describe('live-check-write helpers (R30)', () => {
       expect(() => parseLiveCheckWriteArgs(['--start'])).toThrow(LiveCheckArgError);
       expect(() => parseLiveCheckWriteArgs(['--start', '9:30'])).toThrow(/HH:MM/);
       expect(() => parseLiveCheckWriteArgs(['--bogus'])).toThrow(/Unknown argument "--bogus"/);
+    });
+
+    it('accepts --action and --value (both spellings)', () => {
+      expect(parseLiveCheckWriteArgs(['--action', 'unlock_portal'])).toEqual({ go: false, action: 'unlock_portal' });
+      expect(parseLiveCheckWriteArgs(['--action=lock_portal'])).toEqual({ go: false, action: 'lock_portal' });
+      expect(parseLiveCheckWriteArgs(['--action', 'set_threat_level', '--value', 'High'])).toEqual({
+        go: false,
+        action: 'set_threat_level',
+        value: 'High',
+      });
+      expect(parseLiveCheckWriteArgs(['--action=set_threat_level', '--value=High'])).toEqual({
+        go: false,
+        action: 'set_threat_level',
+        value: 'High',
+      });
+    });
+
+    it('rejects a missing --action or --value value', () => {
+      expect(() => parseLiveCheckWriteArgs(['--action'])).toThrow(LiveCheckArgError);
+      expect(() => parseLiveCheckWriteArgs(['--action', 'unlock_portal', '--value'])).toThrow(LiveCheckArgError);
+      expect(() => parseLiveCheckWriteArgs(['--action='])).toThrow(LiveCheckArgError);
+    });
+
+    it('refuses --action combined with --go with a LiveCheckActionError (exit-2 case), before any other validation', () => {
+      expect(() => parseLiveCheckWriteArgs(['--action', 'unlock_portal', '--go'])).toThrow(LiveCheckActionError);
+      expect(() => parseLiveCheckWriteArgs(['--go', '--action', 'unlock_portal'])).toThrow(/cannot be combined with --go/);
+    });
+  });
+
+  describe('supervised single-action mode (#12)', () => {
+    describe('resolveLiveCheckAction', () => {
+      it('resolves every documented action name to a spec built from NBAPI_COMMANDS constants', () => {
+        for (const name of LIVE_CHECK_ACTION_NAMES) {
+          const spec = resolveLiveCheckAction(name);
+          expect(spec.name).toBe(name);
+          if (spec.kind === 'command') {
+            expect(spec.command).toBeTruthy();
+          } else {
+            expect(spec.portalStateAction).toBeTruthy();
+          }
+        }
+      });
+
+      it('throws LiveCheckActionError with the full supported list for an unknown action', () => {
+        expect(() => resolveLiveCheckAction('bogus_action')).toThrow(LiveCheckActionError);
+        try {
+          resolveLiveCheckAction('bogus_action');
+          expect.unreachable();
+        } catch (err) {
+          expect(err).toBeInstanceOf(LiveCheckActionError);
+          for (const name of LIVE_CHECK_ACTION_NAMES) {
+            expect((err as Error).message).toContain(name);
+          }
+        }
+      });
+    });
+
+    it('maps each action to the exact NBAPI_COMMANDS constant (or setPortalsState action) it sends — never a literal', () => {
+      expect(LIVE_CHECK_ACTIONS.unlock_portal).toMatchObject({ kind: 'command', command: NBAPI_COMMANDS.UNLOCK_PORTAL, targetsOutput: false });
+      expect(LIVE_CHECK_ACTIONS.lock_portal).toMatchObject({ kind: 'command', command: NBAPI_COMMANDS.LOCK_PORTAL, targetsOutput: false });
+      expect(LIVE_CHECK_ACTIONS.momentary_unlock_portal).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.MOMENTARY_UNLOCK_PORTAL,
+        targetsOutput: false,
+      });
+      expect(LIVE_CHECK_ACTIONS.dog_on_next_exit_portal).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.DOG_ON_NEXT_EXIT_PORTAL,
+        targetsOutput: false,
+      });
+      expect(LIVE_CHECK_ACTIONS.activate_output).toMatchObject({ kind: 'command', command: NBAPI_COMMANDS.ACTIVATE_OUTPUT, targetsOutput: true });
+      expect(LIVE_CHECK_ACTIONS.deactivate_output).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.DEACTIVATE_OUTPUT,
+        targetsOutput: true,
+      });
+      expect(LIVE_CHECK_ACTIONS.set_portals_state_unlock).toMatchObject({ kind: 'setPortalsState', portalStateAction: 'UNLOCK' });
+      expect(LIVE_CHECK_ACTIONS.set_portals_state_lock).toMatchObject({ kind: 'setPortalsState', portalStateAction: 'LOCK' });
+      expect(LIVE_CHECK_ACTIONS.set_portals_state_momentary).toMatchObject({ kind: 'setPortalsState', portalStateAction: 'MOMENTARY_UNLOCK' });
+      expect(LIVE_CHECK_ACTIONS.set_threat_level).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.SET_THREAT_LEVEL,
+        requiresValue: true,
+      });
+    });
+
+    it('only set_threat_level requires --value', () => {
+      for (const name of LIVE_CHECK_ACTION_NAMES) {
+        expect(LIVE_CHECK_ACTIONS[name].requiresValue).toBe(name === 'set_threat_level');
+      }
+    });
+
+    it('AddPartition and TriggerEvent are not reachable through any action in the table', () => {
+      const commands = Object.values(LIVE_CHECK_ACTIONS).map((spec) => spec.command);
+      expect(commands).not.toContain(NBAPI_COMMANDS.ADD_PARTITION);
+      expect(commands).not.toContain(NBAPI_COMMANDS.TRIGGER_EVENT);
+    });
+
+    describe('OBSERVE text', () => {
+      it('unlock_portal / lock_portal name each other as the reversing action', () => {
+        expect(LIVE_CHECK_ACTIONS.unlock_portal.observe({ portalName: '02OF01A EL' })).toBe(
+          'OBSERVE: 02OF01A EL should be unlocked now (Extended Unlock) until lock_portal is run'
+        );
+        expect(LIVE_CHECK_ACTIONS.lock_portal.observe({ portalName: '02OF01A EL' })).toBe('OBSERVE: 02OF01A EL should be locked now');
+      });
+
+      it('dog_on_next_exit_portal names lock_portal as the reversing action', () => {
+        expect(LIVE_CHECK_ACTIONS.dog_on_next_exit_portal.observe({ portalName: 'Lobby' })).toContain('until lock_portal is run');
+      });
+
+      it('activate_output / deactivate_output name each other as the reversing action', () => {
+        expect(LIVE_CHECK_ACTIONS.activate_output.observe({ portalName: 'Lobby' })).toContain('until deactivate_output is run');
+        expect(LIVE_CHECK_ACTIONS.deactivate_output.observe({ portalName: 'Lobby' })).toContain('inactive');
+      });
+
+      it('set_portals_state_unlock / set_portals_state_lock name each other as the reversing action', () => {
+        expect(LIVE_CHECK_ACTIONS.set_portals_state_unlock.observe({ portalName: 'Lobby' })).toContain('until set_portals_state_lock is run');
+        expect(LIVE_CHECK_ACTIONS.set_portals_state_lock.observe({ portalName: 'Lobby' })).toBe('OBSERVE: Lobby should be locked now');
+      });
+
+      it('set_threat_level echoes --value and names Default as the reversing value', () => {
+        const line = LIVE_CHECK_ACTIONS.set_threat_level.observe({ portalName: 'Lobby', value: 'High' });
+        expect(line).toContain('"High"');
+        expect(line).toContain('--value Default');
+      });
+    });
+
+    describe('findStrikeOutput', () => {
+      it('finds the first GetOutputs entry whose NAME starts with the portal NAME', () => {
+        const outputs = [
+          { NAME: '01OF01A EL', OUTPUTKEY: '10' },
+          { NAME: '02OF01A EL', OUTPUTKEY: '11' },
+          { NAME: '02OF01A EL 2', OUTPUTKEY: '12' },
+        ];
+        expect(findStrikeOutput('02OF01A', outputs)).toEqual({ NAME: '02OF01A EL', OUTPUTKEY: '11' });
+      });
+
+      it('returns undefined when no output NAME starts with the portal NAME', () => {
+        expect(findStrikeOutput('Nonexistent', [{ NAME: '01OF01A EL', OUTPUTKEY: '10' }])).toBeUndefined();
+      });
+    });
+
+    describe('isPortalStateNotChangedError', () => {
+      it('matches the controller\'s no-op ERRMSG, case-insensitively', () => {
+        expect(isPortalStateNotChangedError('Portal state not changed')).toBe(true);
+        expect(isPortalStateNotChangedError('portal state NOT CHANGED')).toBe(true);
+      });
+
+      it('does not match other ERRMSGs, or undefined', () => {
+        expect(isPortalStateNotChangedError('Invalid portal key')).toBe(false);
+        expect(isPortalStateNotChangedError(undefined)).toBe(false);
+      });
+    });
+
+    describe('buildActionParams', () => {
+      it('sends PORTALKEY for a portal-targeting command action', () => {
+        expect(buildActionParams(LIVE_CHECK_ACTIONS.unlock_portal, { PORTALKEY: '5' }, undefined)).toEqual({ PORTALKEY: '5' });
+      });
+
+      it('sends OUTPUTKEY (never PORTALKEY) for an output-targeting command action', () => {
+        expect(buildActionParams(LIVE_CHECK_ACTIONS.activate_output, { PORTALKEY: '5', OUTPUTKEY: '99' }, undefined)).toEqual({
+          OUTPUTKEY: '99',
+        });
+      });
+
+      it('sends LEVELNAME from --value for set_threat_level', () => {
+        expect(buildActionParams(LIVE_CHECK_ACTIONS.set_threat_level, { PORTALKEY: '5' }, 'High')).toEqual({ LEVELNAME: 'High' });
+      });
     });
   });
 
@@ -286,6 +462,37 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
     expect(script).toContain('badge any reader and re-run');
     expect(script).not.toMatch(/status === 'stale'/);
     expect(script).not.toContain("'stale'");
+  });
+
+  it('supervised single-action mode (#12): resolves --action before the credential skip-line check, runs runSingleAction instead of phases (b)/(b2)/(c), and never a literal NBAPI command string for it', () => {
+    expect(script).toContain('resolveLiveCheckAction(args.action)');
+    expect(script).toContain('await runSingleAction(client, actionSpec');
+    const actionResolveIndex = script.indexOf('resolveLiveCheckAction(args.action)');
+    const skipLineIndex = script.indexOf("const { NETBOX_BASE_URL, NETBOX_USERNAME, NETBOX_PASSWORD } = process.env;");
+    expect(actionResolveIndex).toBeGreaterThan(-1);
+    expect(skipLineIndex).toBeGreaterThan(actionResolveIndex);
+    // runSingleAction sends actionSpec.command / setPortalsState(stateAction, ...), never a literal command string.
+    const runSingleActionStart = script.indexOf('async function runSingleAction');
+    const runSingleActionEnd = script.indexOf('\n// ---', runSingleActionStart);
+    const body = script.slice(runSingleActionStart, runSingleActionEnd);
+    expect(body).not.toMatch(/NBAPI_COMMANDS\.(ADD_PARTITION|TRIGGER_EVENT)/);
+    expect(body).toContain('actionSpec.command');
+    expect(body).toContain('setPortalsState(client, stateAction');
+  });
+
+  it('exits 2 (no network) when --action is combined with --go, or when the action/value is invalid', () => {
+    expect(script).toContain('LiveCheckActionError');
+    expect(script).toMatch(/err instanceof LiveCheckActionError[\s\S]{0,200}return 2;/);
+    expect(script).toContain('requires --value');
+  });
+
+  it('a FAIL with ERRMSG "Portal state not changed" is reported PASS-with-note in action mode', () => {
+    expect(script).toContain('isPortalStateNotChangedError(err.errmsg)');
+    expect(script).toContain('PASS (already in that state)');
+  });
+
+  it('action mode never reads config.enableDestructive (NETBOX_ENABLE_DESTRUCTIVE is not required, since action mode never deletes anything)', () => {
+    expect(script).not.toContain('config.enableDestructive');
   });
 });
 

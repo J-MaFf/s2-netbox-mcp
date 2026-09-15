@@ -567,10 +567,53 @@ Status`, polls `get_unlock_window` every 30 s until one minute after relock,
 then calls `cancel_unlock_window` and asserts the managed portal group is on
 `Never` with no managed holiday, time spec, or time spec group member left
 (leftBehind is tolerated but reported). It refuses that phase if a managed
-window already exists (so it never replaces a real one), never touches
-outputs, TriggerEvent, or portal lock/unlock actions, never prints the
-password, exits non-zero on any failed assertion (still cancelling the
-window first), and `npm test` never runs it.
+window already exists (so it never replaces a real one); apart from the
+supervised single actions below, it never touches outputs, `TriggerEvent`, or
+portal lock/unlock actions, never prints the password, exits non-zero on any
+failed assertion (still cancelling the window first), and `npm test` never
+runs it.
+
+#### Supervised single actions
+
+```bash
+npm run test:live:write -- --action unlock_portal
+npm run test:live:write -- --action set_threat_level --value High
+```
+
+`--action <name> [--value <v>]` runs exactly **one** write against the
+designated portal (or its strike output) instead of the full flow above —
+skipping phases (b), (b2), and (c) entirely. It still requires
+`NETBOX_ENABLE_WRITES=true` and the credential variables (same skip line as
+above), but **not** `NETBOX_ENABLE_DESTRUCTIVE`, since no deletes happen. It
+refuses to run — exit 2, no network call — if `--action` is combined with
+`--go`, if the action name is unknown, or if `set_threat_level`'s required
+`--value` is missing. It prints the exact command and params sent (never
+credentials), the controller's `CODE`/`DETAILS` or `ERRMSG`, and an
+`OBSERVE: ...` line describing what to check at the door or on Monitor; a
+`FAIL` with `ERRMSG` `"Portal state not changed"` is reported as
+PASS-with-note rather than a failure. Exits 0 on success or already-in-state,
+1 otherwise, and unknown/invalid arguments exit 2.
+
+Every action is reversible:
+
+| Action | Effect | Reverse |
+| --- | --- | --- |
+| `unlock_portal` | `UnlockPortal` (Extended Unlock) | `lock_portal` |
+| `lock_portal` | `LockPortal` | — |
+| `momentary_unlock_portal` | `MomentaryUnlockPortal` (relocks itself) | — |
+| `dog_on_next_exit_portal` | `DogOnNextExitPortal` | `lock_portal` |
+| `activate_output` | `ActivateOutput` on the portal's strike output | `deactivate_output` |
+| `deactivate_output` | `DeactivateOutput` on the portal's strike output | — |
+| `set_portals_state_unlock` | the real `set_portals_state` (`setPortalsState`) tool, action `UNLOCK` | `set_portals_state_lock` |
+| `set_portals_state_lock` | `set_portals_state`, action `LOCK` | — |
+| `set_portals_state_momentary` | `set_portals_state`, action `MOMENTARY_UNLOCK` (relocks itself) | — |
+| `set_threat_level` | `SetThreatLevel LEVELNAME=<--value>` | `set_threat_level --value Default` |
+
+`activate_output`/`deactivate_output` resolve the strike output by finding
+the `GetOutputs` entry whose `NAME` starts with the designated portal's
+`NAME` (e.g. portal `"02OF01A"` → output `"02OF01A EL"`), failing clearly if
+none is found. `AddPartition` and `TriggerEvent` are never reachable through
+`--action`, same as the rest of this script.
 
 ## Out of scope
 
