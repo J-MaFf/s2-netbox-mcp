@@ -498,7 +498,8 @@ no network access and no live controller are required or contacted.
 npm run test:live
 ```
 
-This calls all 34 read tools against a **real, configured** controller and
+This calls all read tools except `get_unlock_window` (34 of the 35 — see
+**Tools exposed** below) against a **real, configured** controller and
 prints a PASS/FAIL line per tool plus a summary, exiting non-zero if
 anything failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
 `NETBOX_PASSWORD` are all set (loaded from `.env` if present); otherwise it

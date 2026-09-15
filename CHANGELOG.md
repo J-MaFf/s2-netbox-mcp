@@ -4,20 +4,27 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
-### Added
-- Extended `npm run test:live:write` (the live write smoke test) with round-trips for a person and
-  a credential on that person, an access level and an access level group, a threat level and a
-  threat level group, `InsertActivity`, a UDF list item, and `SwitchPartition` back to the
-  session's own partition — all under the existing `MCP livecheck` prefix, cleaned up on every run.
-  `SetThreatLevel`, `AddPartition`, `PERSONPURGE`, and `TriggerEvent` are still never used
-  ([#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13)).
-- Two supervised single actions, `trigger_event_activate` and `trigger_event_deactivate`
-  (`npm run test:live:write -- --action trigger_event_activate --value <EVENTNAME>`), the only
-  live verification path for `TriggerEvent` — the target event must already exist in the NetBox
-  UI ([#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12)).
 
-## [0.3.0] — 2026-09-14
+## [0.1.0] — 2026-09-15
+
+First public release. Everything below shipped incrementally on `main` before any version was
+tagged, so it is consolidated here as one release rather than split across the untagged
+`0.1.0`/`0.2.0`/`0.3.0` milestones it was originally drafted under.
+
 ### Added
+- Initial read-only S2 NetBox MCP server: 15 tools covering persons/credentials, access levels,
+  portals/readers, and event/access history, backed by a session-login NBAPI client with
+  retry-once-on-expired-session handling, a closed 17-command allowlist, and a mocked-HTTP unit
+  test suite ([#2](https://github.com/J-MaFf/s2-netbox-mcp/issues/2),
+  [#3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3)).
+- `NETBOX_API_PATH` environment variable, defaulting to the verified NetBox 6.x NBAPI path
+  `/nbws/goforms/nbapi`; a non-empty override is honoured verbatim (with a leading `/` added if
+  missing) — the documented `/goforms/nbapi` remains available as an explicit pre-6.x override
+  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
+- A "Controller prerequisites" section in `README.md` documenting the *Data Integration* tab
+  checkboxes required for session-login auth, plus troubleshooting entries for "Login succeeds
+  but every other command returns APIERROR 5" and "HTTP 410 Gone"
+  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
 - `find_portals` tool, which finds doors by location or name. Portal names are site codes, so it
   also searches each portal's reader names and reader descriptions (joined in from `GetReaders` by
   `READERKEY`). Every whitespace-separated term must match, case-insensitively. It reads all pages
@@ -81,6 +88,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with `--go` (after the user has been notified of the exact times), schedules, observes, and
   cancels a real 2-minute unlock of the designated portal, always cancelling before exiting on a
   failure ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
+- Extended `npm run test:live:write` (the live write smoke test) with round-trips for a person and
+  a credential on that person, an access level and an access level group, a threat level and a
+  threat level group, `InsertActivity`, a UDF list item, and `SwitchPartition` back to the
+  session's own partition — all under the existing `MCP livecheck` prefix, cleaned up on every run.
+  `SetThreatLevel`, `AddPartition`, `PERSONPURGE`, and `TriggerEvent` are still never used
+  ([#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13)).
+- Two supervised single actions, `trigger_event_activate` and `trigger_event_deactivate`
+  (`npm run test:live:write -- --action trigger_event_activate --value <EVENTNAME>`), the only
+  live verification path for `TriggerEvent` — the target event must already exist in the NetBox
+  UI ([#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12)).
 
 ### Changed
 - `scripts/live-check.ts` now exercises all 34 read tools (16 pre-existing + the 18 added above);
@@ -103,6 +120,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
 
 ### Fixed
+- Non-2xx HTTP responses now surface the status code and request path in the tool error; a 410
+  specifically names `NETBOX_API_PATH` as the thing to check, instead of a generic HTTP error
+  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
+- When a re-login succeeds but the retried command still returns `APIERROR 5`, the tool error now
+  names the "Use login username/password for authentication" checkbox — the live-observed symptom
+  of the controller being configured for MAC auth instead of session login
+  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
+- Removed the undocumented `extraParams` passthrough field from `search_person_data`,
+  `get_event_history`, and `get_access_history`'s input schemas; each tool now declares only the
+  field names documented in the NBAPI Command Reference, per the read-only server's "no invented
+  field names" requirement ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
+- `npm run test:live` now treats `GetAccessLevelGroups`/`GetAccessLevelGroup` returning
+  `CODE=FAIL, ERRMSG="NOT FOUND"` as an accepted no-data outcome rather than a failure — observed
+  live against a real controller with zero Access Level Groups configured; the underlying NBAPI
+  client's error handling is unchanged ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
 - The managed time spec group is named `"<prefix> time specs"`, not `"<prefix>"` — group names
   are unique across group types on the verified 6.2.0 controller, so a portal group and a time
   spec group cannot share a name ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
@@ -119,39 +151,3 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (observed live: a window ending `08:27` relocked at `08:27:59` controller time) — the README
   previously described an up-to-60-second relock gap at each midnight, which was wrong
   ([#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9)).
-
-## [0.2.0] — 2026-09-14
-### Added
-- `NETBOX_API_PATH` environment variable, defaulting to the verified NetBox 6.x NBAPI path
-  `/nbws/goforms/nbapi`; a non-empty override is honoured verbatim (with a leading `/` added if
-  missing) — the documented `/goforms/nbapi` remains available as an explicit pre-6.x override
-  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-- A "Controller prerequisites" section in `README.md` documenting the *Data Integration* tab
-  checkboxes required for session-login auth, plus troubleshooting entries for "Login succeeds
-  but every other command returns APIERROR 5" and "HTTP 410 Gone"
-  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-
-### Fixed
-- Non-2xx HTTP responses now surface the status code and request path in the tool error; a 410
-  specifically names `NETBOX_API_PATH` as the thing to check, instead of a generic HTTP error
-  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-- When a re-login succeeds but the retried command still returns `APIERROR 5`, the tool error now
-  names the "Use login username/password for authentication" checkbox — the live-observed symptom
-  of the controller being configured for MAC auth instead of session login
-  ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-- Removed the undocumented `extraParams` passthrough field from `search_person_data`,
-  `get_event_history`, and `get_access_history`'s input schemas; each tool now declares only the
-  field names documented in the NBAPI Command Reference, per the read-only server's "no invented
-  field names" requirement ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-- `npm run test:live` now treats `GetAccessLevelGroups`/`GetAccessLevelGroup` returning
-  `CODE=FAIL, ERRMSG="NOT FOUND"` as an accepted no-data outcome rather than a failure — observed
-  live against a real controller with zero Access Level Groups configured; the underlying NBAPI
-  client's error handling is unchanged ([#4](https://github.com/J-MaFf/s2-netbox-mcp/issues/4)).
-
-## [0.1.0] — 2026-09-14
-### Added
-- Initial read-only S2 NetBox MCP server: 15 tools covering persons/credentials, access levels,
-  portals/readers, and event/access history, backed by a session-login NBAPI client with
-  retry-once-on-expired-session handling, a closed 17-command allowlist, and a mocked-HTTP unit
-  test suite ([#2](https://github.com/J-MaFf/s2-netbox-mcp/issues/2),
-  [#3](https://github.com/J-MaFf/s2-netbox-mcp/pull/3)).
