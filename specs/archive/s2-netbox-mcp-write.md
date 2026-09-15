@@ -22,7 +22,7 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
 ## Context
 
 ### Where this builds on
-- The repo is `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp` (GitHub `J-MaFf/s2-netbox-mcp`),
+- The repo is `C:\Users\<user>\Documents\Scripts\s2-netbox-mcp` (GitHub `J-MaFf/s2-netbox-mcp`),
   currently v0.2.0 plus the unreleased `find_portals` door search (#6, merged as PR #7 on
   2026-09-14: 16 tools, 101 unit tests, `npm run test:live` 16/16), `main` clean, all read-only
   acceptance criteria passed and live-verified. The
@@ -68,7 +68,7 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
 
 ### Primary source (verified)
 - "Web-Based API for S2 NetBox and S2 Global", LenelS2, February 2020, doc #API-UG-14. Local copy:
-  `C:\Users\jmaffiola\.claude\projects\C--Users-jmaffiola-Documents-Tasks\9b02c63b-5b70-42ba-8ef1-bd9e89371a6e\tool-results\webfetch-1789396815900-v6cg0d.pdf`
+  `C:\Users\<user>\.claude\projects\C--Users-<user>-Documents-Tasks\9b02c63b-5b70-42ba-8ef1-bd9e89371a6e\tool-results\webfetch-1789396815900-v6cg0d.pdf`
   (201 pages, text-extractable with `pypdf`; **printed page number + 5 = PDF page index**). Every
   command in the "Command reference" section below was read from its own page; the printed page is
   cited per command so a reviewer can re-check any field name in seconds.
@@ -220,7 +220,7 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
 - Windows 11 host, PowerShell/Git Bash, Node 24 (`engines` says >= 18.17). No WSL required.
 
 ## Deliverable
-Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
+Changes inside `C:\Users\<user>\Documents\Scripts\s2-netbox-mcp\`:
 - `src/commands.ts` — `NBAPI_COMMANDS` extended to the 80-command closed set in R4.
 - `src/xml.ts` — nested `PARAMS` support per R5.
 - `src/config.ts` — new env vars per R7.

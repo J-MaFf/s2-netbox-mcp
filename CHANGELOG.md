@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `LICENSE` (MIT), matching every other licensed repo under this account
+  ([#19](https://github.com/J-MaFf/s2-netbox-mcp/issues/19),
+  [#20](https://github.com/J-MaFf/s2-netbox-mcp/pull/20)).
+
+### Changed
+- Redacted the local Windows username from `specs/archive/*.md` (repo-convention notes and a
+  local PDF path carried over from planning) ahead of making the repo public
+  ([#19](https://github.com/J-MaFf/s2-netbox-mcp/issues/19),
+  [#20](https://github.com/J-MaFf/s2-netbox-mcp/pull/20)).
+
 ## [0.1.0] — 2026-09-15
 
 First public release. Everything below shipped incrementally on `main` before any version was

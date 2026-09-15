@@ -100,6 +100,8 @@ Three findings came out of the live write check and are folded into the spec/REA
 | [#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9) | Managed unlock windows, `set_portals_state`, live write smoke test (stage 2); live door test passed | [#11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) |
 | [#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12) | Track live-verification status of every MCP tool; added `trigger_event_activate`/`trigger_event_deactivate` supervised actions | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
 | [#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13) | Live round-trips for people, credentials, access levels, threat levels, activity, UDF, partitions in `test:live:write` | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
+| [#17](https://github.com/J-MaFf/s2-netbox-mcp/issues/17) | README leaked maintainer's personal Windows path in the MCP config example | [#18](https://github.com/J-MaFf/s2-netbox-mcp/pull/18) |
+| [#19](https://github.com/J-MaFf/s2-netbox-mcp/issues/19) | Add LICENSE (MIT); redact local Windows username from archived specs | [#20](https://github.com/J-MaFf/s2-netbox-mcp/pull/20) |
 
 ### Open Issues
 
