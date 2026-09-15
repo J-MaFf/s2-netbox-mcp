@@ -126,3 +126,102 @@ export function assertSameSet(label: string, actual: readonly string[], expected
     throw new LiveAssertionError(`${label}: expected [${right.join(',')}], got [${left.join(',')}]`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// (b2) controller clock estimate, from the newest GetAccessHistory record
+// ---------------------------------------------------------------------------
+
+/** Skew above this is a hard [FAIL] that skips phase (c) (R30 b2). */
+const SKEW_FAIL_SECONDS = 2 * 60;
+/** Beyond this, the newest record is too old to trust as a clock estimate —
+ * warn instead of failing, since an idle site with no recent badge activity
+ * looks identical to a large skew from a single record alone (R30 b2). */
+const SKEW_STALE_SECONDS = 10 * 60;
+
+export type ClockSkewStatus = 'ok' | 'fail' | 'stale' | 'no-record';
+
+export interface ClockSkewResult {
+  status: ClockSkewStatus;
+  /** `HH:MM:SS`, host clock at the moment of the check. */
+  hostClock: string;
+  /** `HH:MM:SS`, parsed from the newest access record's DTTM. Absent for `no-record`. */
+  controllerClock?: string;
+  /** Absolute difference between the two clocks, in whole seconds. Absent for `no-record`. */
+  skewSeconds?: number;
+  /** Signed `controller - host`, in whole seconds. Absent for `no-record`. Used to
+   * project an estimated controller clock time forward from a later host time
+   * (the HEADS-UP line in phase (c), R30 c). */
+  offsetSeconds?: number;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** `HH:MM:SS` in the local (host) time zone. */
+export function formatClockHMS(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+/** Formats a non-negative duration, in seconds, as `HH:MM:SS`. */
+export function formatDurationHMS(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(secs)}`;
+}
+
+/**
+ * Parses a controller DTTM (`YYYY-MM-DD HH:MM:SS`) as host-local wall time —
+ * per R30 b2, the controller's clock is compared against the host clock by
+ * treating the two as the same time zone, since the whole point of the check
+ * is to catch a controller whose clock (not time zone) has drifted.
+ */
+export function parseControllerDttm(dttm: string): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(dttm.trim());
+  if (!match) return undefined;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/**
+ * Estimates controller/host clock skew from the newest access-history
+ * record's `DTTM` (R30 b2). `newestDttm` is `undefined` when no record was
+ * returned at all.
+ *
+ * - No record, or a `DTTM` that doesn't parse -> `no-record` (WARN, stale
+ *   estimate, continue).
+ * - Skew beyond `SKEW_STALE_SECONDS` (10 min) -> `stale` (WARN, continue) —
+ *   deliberately checked before the fail threshold: a record this old could
+ *   just mean nobody has badged through a door recently, which looks
+ *   identical to a large clock skew from a single sample, so this case is
+ *   not confidently treated as a clock problem.
+ * - Skew beyond `SKEW_FAIL_SECONDS` (2 min) -> `fail` (skip phase (c)).
+ * - Otherwise -> `ok`.
+ */
+export function computeClockSkew(hostNow: Date, newestDttm: string | undefined): ClockSkewResult {
+  const hostClock = formatClockHMS(hostNow);
+  const controllerDate = newestDttm === undefined ? undefined : parseControllerDttm(newestDttm);
+  if (!controllerDate) {
+    return { status: 'no-record', hostClock };
+  }
+  const controllerClock = formatClockHMS(controllerDate);
+  const offsetSeconds = Math.round((controllerDate.getTime() - hostNow.getTime()) / 1000);
+  const skewSeconds = Math.abs(offsetSeconds);
+  if (skewSeconds > SKEW_STALE_SECONDS) {
+    return { status: 'stale', hostClock, controllerClock, skewSeconds, offsetSeconds };
+  }
+  if (skewSeconds > SKEW_FAIL_SECONDS) {
+    return { status: 'fail', hostClock, controllerClock, skewSeconds, offsetSeconds };
+  }
+  return { status: 'ok', hostClock, controllerClock, skewSeconds, offsetSeconds };
+}
+
+/** Projects an estimated controller clock time forward from `offsetSeconds`
+ * (as returned by `computeClockSkew`) applied to a later host time — used
+ * for the HEADS-UP line in phase (c) (R30 c). */
+export function estimateControllerClock(hostNow: Date, offsetSeconds: number): string {
+  return formatClockHMS(new Date(hostNow.getTime() + offsetSeconds * 1000));
+}

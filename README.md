@@ -521,6 +521,10 @@ time spec group, a holiday, a reader group, and a portal group under the
 distinct prefix `MCP livecheck` (the portal group's unlock time spec group is
 `Never` and the holiday is in 2099, so nothing can unlock), asserting each
 read-back, and cleans up any `MCP livecheck` leftovers from an aborted run.
+It then estimates the controller's clock from the newest `GetAccessHistory`
+record and refuses to run the door phase — regardless of `--go` — when that
+estimate disagrees with the host clock by more than 2 minutes; window times
+passed to `schedule_unlock_window` are always controller-local, not host-local.
 
 With `--go` — pass it **only after** notifying the user (push notification
 plus a chat message giving the exact unlock and relock clock times) and

@@ -24,8 +24,12 @@ import {
   assertSameSet,
   assertTrue,
   clockOf,
+  computeClockSkew,
   computeTestWindow,
+  estimateControllerClock,
+  formatDurationHMS,
   parseLiveCheckWriteArgs,
+  type ClockSkewResult,
 } from './liveCheckWriteHelpers.js';
 
 /**
@@ -426,6 +430,72 @@ async function portalGroupRoundTrip(client: NetboxClient, portalKey: string, nev
 }
 
 // ---------------------------------------------------------------------------
+// (b2) controller clock estimate, from the newest GetAccessHistory record
+// ---------------------------------------------------------------------------
+
+/** Digs the newest record's DTTM out of GetAccessHistory's response, tolerant
+ * of exactly where fast-xml-parser lands it (a wrapped collection, a single
+ * collapsed record, or the field sitting directly on the top level). */
+function findNewestAccessDttm(data: unknown): string | undefined {
+  const record = asRecord(data);
+  if (typeof record.DTTM === 'string') return record.DTTM;
+  for (const value of Object.values(record)) {
+    if (value === null || typeof value !== 'object') continue;
+    const nested = asRecord(value);
+    if (typeof nested.DTTM === 'string') return nested.DTTM;
+    for (const list of [asRecordList(value), ...Object.values(nested).map(asRecordList)]) {
+      const withDttm = list.find((item) => typeof item.DTTM === 'string');
+      if (withDttm) return text(withDttm.DTTM);
+    }
+  }
+  return undefined;
+}
+
+/** Fetches the newest access-history record's DTTM, or `undefined` if the
+ * controller has none (bare NOT FOUND is treated the same as an empty list). */
+async function fetchNewestAccessDttm(client: NetboxClient): Promise<string | undefined> {
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_HISTORY, { MAXRECORDS: '1' });
+    if (result.notFound) return undefined;
+    return findNewestAccessDttm(result.data);
+  } catch (err) {
+    if (isBareNotFoundFail(err)) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * (b2): estimates the controller's clock from the newest GetAccessHistory
+ * record and compares it with the host clock (R30 b2). Returns the skew
+ * result so phase (c) can both gate on it and print an estimated controller
+ * time in its HEADS-UP line.
+ */
+async function controllerClockCheck(client: NetboxClient): Promise<ClockSkewResult> {
+  const newestDttm = await fetchNewestAccessDttm(client);
+  const skew = computeClockSkew(new Date(), newestDttm);
+  const name = 'controller clock check (newest access record vs host clock)';
+  if (skew.status === 'ok' || skew.status === 'fail') {
+    const line = `controller clock ~${skew.controllerClock} (newest access record) vs host ${skew.hostClock} — skew ${formatDurationHMS(skew.skewSeconds ?? 0)}`;
+    if (skew.status === 'ok') {
+      results.push({ name, pass: true, summary: line });
+      info(line);
+    } else {
+      const summary = `controller clock skew: controller ${skew.controllerClock} vs host ${skew.hostClock}`;
+      results.push({ name, pass: false, summary });
+      info(line);
+      log(`[FAIL] ${summary}`);
+    }
+    return skew;
+  }
+  const warnLine =
+    skew.status === 'stale'
+      ? `stale controller clock estimate: newest access record (${skew.controllerClock}) is more than 10 minutes old by the host clock (${skew.hostClock}); skipping the skew gate`
+      : `no access history record was available to estimate the controller clock; skipping the skew gate`;
+  log(`[WARN] ${warnLine}`);
+  return skew;
+}
+
+// ---------------------------------------------------------------------------
 // (c) the real 2-minute window on the designated portal
 // ---------------------------------------------------------------------------
 
@@ -434,10 +504,15 @@ async function unlockWindowPhase(
   settings: UnlockWindowSettings,
   portal: { PORTALKEY: string; NAME: string },
   neverKey: string,
-  startClock: string | undefined
+  startClock: string | undefined,
+  clockSkew: ClockSkewResult
 ): Promise<void> {
   const window = computeTestWindow(new Date(), startClock);
-  log(`HEADS-UP: scheduling a 2-minute unlock of portal ${portal.NAME} (key ${portal.PORTALKEY}): unlock ${window.unlockClock}, relock ${window.relockClock}`);
+  const estimatedControllerNow =
+    clockSkew.offsetSeconds === undefined ? 'unavailable' : estimateControllerClock(new Date(), clockSkew.offsetSeconds);
+  log(
+    `HEADS-UP: scheduling a 2-minute unlock of portal ${portal.NAME} (key ${portal.PORTALKEY}): unlock ${window.unlockClock}, relock ${window.relockClock} (estimated controller time now: ${estimatedControllerNow})`
+  );
 
   let scheduled = false;
   try {
@@ -570,8 +645,13 @@ async function main(): Promise<number> {
     }
     crudPassed = (await portalGroupRoundTrip(client, portal.PORTALKEY, never.TIMESPECGROUPKEY)) && crudPassed;
 
+    // (b2)
+    const clockSkew = await controllerClockCheck(client);
+
     // (c)
-    if (!args.go) {
+    if (clockSkew.status === 'fail') {
+      info('phase (c) — the real 2-minute unlock of the designated portal — was NOT run: the controller clock skew check failed above.');
+    } else if (!args.go) {
       info(
         'phase (c) — the real 2-minute unlock of the designated portal — was NOT run. Notify the user (push notification plus a chat ' +
           'message with the exact unlock and relock clock times), get a go-ahead, then re-run with `npm run test:live:write -- --go [--start HH:MM]`.'
@@ -589,7 +669,7 @@ async function main(): Promise<number> {
         });
         log(`[FAIL] unlock window phase: ${results[results.length - 1].summary}`);
       } else {
-        await unlockWindowPhase(client, settings, portal, never.TIMESPECGROUPKEY, args.start);
+        await unlockWindowPhase(client, settings, portal, never.TIMESPECGROUPKEY, args.start, clockSkew);
       }
     }
 

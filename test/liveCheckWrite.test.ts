@@ -9,7 +9,12 @@ import {
   assertSameSet,
   assertTrue,
   clockOf,
+  computeClockSkew,
   computeTestWindow,
+  estimateControllerClock,
+  formatClockHMS,
+  formatDurationHMS,
+  parseControllerDttm,
   parseLiveCheckWriteArgs,
 } from '../scripts/liveCheckWriteHelpers.js';
 
@@ -122,5 +127,111 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
   it('package.json wires test:live:write to the script and npm test never runs it', () => {
     expect(pkg.scripts['test:live:write']).toBe('tsx scripts/live-check-write.ts');
     expect(pkg.scripts.test).not.toContain('live');
+  });
+
+  it('runs the controller clock check after the CRUD round-trips and before phase (c), and gates (c) on it', () => {
+    expect(script).toContain('controllerClockCheck');
+    expect(script).toContain("clockSkew.status === 'fail'");
+    const crudIndex = script.indexOf('portalGroupRoundTrip(client, portal.PORTALKEY, never.TIMESPECGROUPKEY)');
+    const clockCheckIndex = script.indexOf('await controllerClockCheck(client)');
+    const phaseCIndex = script.indexOf("if (clockSkew.status === 'fail')");
+    expect(crudIndex).toBeGreaterThan(-1);
+    expect(clockCheckIndex).toBeGreaterThan(crudIndex);
+    expect(phaseCIndex).toBeGreaterThan(clockCheckIndex);
+  });
+
+  it('the HEADS-UP line includes the estimated controller time', () => {
+    expect(script).toContain('estimated controller time now');
+    expect(script).toContain('estimateControllerClock');
+  });
+});
+
+describe('R30 b2: controller clock skew estimate', () => {
+  describe('formatClockHMS / formatDurationHMS / parseControllerDttm', () => {
+    it('formats a Date as local HH:MM:SS', () => {
+      expect(formatClockHMS(new Date(2026, 8, 15, 8, 5, 34))).toBe('08:05:34');
+      expect(formatClockHMS(new Date(2026, 8, 15, 0, 0, 0))).toBe('00:00:00');
+    });
+
+    it('formats a duration in seconds as HH:MM:SS', () => {
+      expect(formatDurationHMS(0)).toBe('00:00:00');
+      expect(formatDurationHMS(65)).toBe('00:01:05');
+      expect(formatDurationHMS(4 * 3600 + 34 * 60 + 56)).toBe('04:34:56');
+    });
+
+    it('parses a controller DTTM as host-local wall time', () => {
+      const parsed = parseControllerDttm('2026-09-15 03:30:38');
+      expect(parsed).toEqual(new Date(2026, 8, 15, 3, 30, 38));
+    });
+
+    it('rejects a DTTM that does not match YYYY-MM-DD HH:MM:SS', () => {
+      expect(parseControllerDttm('not a date')).toBeUndefined();
+      expect(parseControllerDttm('2026-09-15')).toBeUndefined();
+      expect(parseControllerDttm('2026-09-15T03:30:38')).toBeUndefined();
+    });
+  });
+
+  describe('computeClockSkew', () => {
+    it('is ok when the clocks agree within 2 minutes', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 34);
+      const dttm = '2026-09-15 08:04:00'; // 1m34s behind
+      const result = computeClockSkew(host, dttm);
+      expect(result.status).toBe('ok');
+      expect(result.hostClock).toBe('08:05:34');
+      expect(result.controllerClock).toBe('08:04:00');
+      expect(result.skewSeconds).toBe(94);
+      expect(result.offsetSeconds).toBe(-94);
+    });
+
+    it('is ok exactly at the 2-minute boundary', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 0);
+      const dttm = '2026-09-15 08:03:00'; // exactly 2 min behind
+      expect(computeClockSkew(host, dttm).status).toBe('ok');
+    });
+
+    it('fails when the clocks disagree by more than 2 minutes but the record is not stale (<=10 min)', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 0);
+      const dttm = '2026-09-15 08:00:00'; // 5 min behind
+      const result = computeClockSkew(host, dttm);
+      expect(result.status).toBe('fail');
+      expect(result.skewSeconds).toBe(300);
+      expect(result.offsetSeconds).toBe(-300);
+    });
+
+    it('fails on the live-observed scenario\'s shape scaled inside the 10-minute stale window', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 34);
+      const dttm = '2026-09-15 07:56:00'; // ~9m34s behind, still under the 10-min stale cutoff
+      expect(computeClockSkew(host, dttm).status).toBe('fail');
+    });
+
+    it('is stale (warn), not fail, when the newest record is more than 10 minutes old by the host clock', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 34);
+      const dttm = '2026-09-15 03:30:38'; // the live-observed ~4h35m skew
+      const result = computeClockSkew(host, dttm);
+      expect(result.status).toBe('stale');
+      expect(result.controllerClock).toBe('03:30:38');
+      expect(result.hostClock).toBe('08:05:34');
+    });
+
+    it('is no-record when there is no access history record at all', () => {
+      const result = computeClockSkew(new Date(2026, 8, 15, 8, 5, 34), undefined);
+      expect(result.status).toBe('no-record');
+      expect(result.controllerClock).toBeUndefined();
+      expect(result.skewSeconds).toBeUndefined();
+    });
+
+    it('is no-record when the DTTM does not parse', () => {
+      const result = computeClockSkew(new Date(2026, 8, 15, 8, 5, 34), 'garbage');
+      expect(result.status).toBe('no-record');
+    });
+  });
+
+  describe('estimateControllerClock', () => {
+    it('projects the controller clock forward using a signed offset', () => {
+      const host = new Date(2026, 8, 15, 8, 10, 0);
+      expect(estimateControllerClock(host, -94)).toBe('08:08:26');
+      expect(estimateControllerClock(host, 0)).toBe('08:10:00');
+      expect(estimateControllerClock(host, 60)).toBe('08:11:00');
+    });
   });
 });
