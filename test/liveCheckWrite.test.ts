@@ -133,18 +133,36 @@ describe('live-check-write helpers (R30)', () => {
         command: NBAPI_COMMANDS.SET_THREAT_LEVEL,
         requiresValue: true,
       });
+      expect(LIVE_CHECK_ACTIONS.trigger_event_activate).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.TRIGGER_EVENT,
+        targetsOutput: false,
+        requiresValue: true,
+      });
+      expect(LIVE_CHECK_ACTIONS.trigger_event_deactivate).toMatchObject({
+        kind: 'command',
+        command: NBAPI_COMMANDS.TRIGGER_EVENT,
+        targetsOutput: false,
+        requiresValue: true,
+      });
     });
 
-    it('only set_threat_level requires --value', () => {
+    it('only set_threat_level and the two trigger_event actions require --value', () => {
+      const requiresValueNames = new Set(['set_threat_level', 'trigger_event_activate', 'trigger_event_deactivate']);
       for (const name of LIVE_CHECK_ACTION_NAMES) {
-        expect(LIVE_CHECK_ACTIONS[name].requiresValue).toBe(name === 'set_threat_level');
+        expect(LIVE_CHECK_ACTIONS[name].requiresValue).toBe(requiresValueNames.has(name));
       }
     });
 
-    it('AddPartition and TriggerEvent are not reachable through any action in the table', () => {
-      const commands = Object.values(LIVE_CHECK_ACTIONS).map((spec) => spec.command);
+    it('AddPartition is not reachable through any action in the table; TriggerEvent is reachable only via the two named trigger_event actions, each requiring --value', () => {
+      const entries = Object.values(LIVE_CHECK_ACTIONS);
+      const commands = entries.map((spec) => spec.command);
       expect(commands).not.toContain(NBAPI_COMMANDS.ADD_PARTITION);
-      expect(commands).not.toContain(NBAPI_COMMANDS.TRIGGER_EVENT);
+      const triggerEventActions = entries.filter((spec) => spec.command === NBAPI_COMMANDS.TRIGGER_EVENT);
+      expect(triggerEventActions.map((spec) => spec.name).sort()).toEqual(['trigger_event_activate', 'trigger_event_deactivate']);
+      for (const spec of triggerEventActions) {
+        expect(spec.requiresValue).toBe(true);
+      }
     });
 
     describe('OBSERVE text', () => {
@@ -173,6 +191,16 @@ describe('live-check-write helpers (R30)', () => {
         const line = LIVE_CHECK_ACTIONS.set_threat_level.observe({ portalName: 'Lobby', value: 'High' });
         expect(line).toContain('"High"');
         expect(line).toContain('--value Default');
+      });
+
+      it('trigger_event_activate / trigger_event_deactivate echo the event name and name each other as the reversing action', () => {
+        const activated = LIVE_CHECK_ACTIONS.trigger_event_activate.observe({ portalName: '02OF01A', value: 'Door Alarm' });
+        expect(activated).toContain('event Door Alarm activated');
+        expect(activated).toContain('02OF01A');
+        expect(activated).toContain('trigger_event_deactivate');
+        const deactivated = LIVE_CHECK_ACTIONS.trigger_event_deactivate.observe({ portalName: '02OF01A', value: 'Door Alarm' });
+        expect(deactivated).toContain('event Door Alarm deactivated');
+        expect(deactivated).toContain('02OF01A');
       });
     });
 
@@ -216,6 +244,19 @@ describe('live-check-write helpers (R30)', () => {
 
       it('sends LEVELNAME from --value for set_threat_level', () => {
         expect(buildActionParams(LIVE_CHECK_ACTIONS.set_threat_level, { PORTALKEY: '5' }, 'High')).toEqual({ LEVELNAME: 'High' });
+      });
+
+      it('sends EVENTNAME from --value, EVENTACTION, and PARTITIONID 1 for the trigger_event actions (never PORTALKEY/OUTPUTKEY)', () => {
+        expect(buildActionParams(LIVE_CHECK_ACTIONS.trigger_event_activate, { PORTALKEY: '5' }, 'Door Alarm')).toEqual({
+          EVENTNAME: 'Door Alarm',
+          EVENTACTION: 'ACTIVATE',
+          PARTITIONID: '1',
+        });
+        expect(buildActionParams(LIVE_CHECK_ACTIONS.trigger_event_deactivate, { PORTALKEY: '5' }, 'Door Alarm')).toEqual({
+          EVENTNAME: 'Door Alarm',
+          EVENTACTION: 'DEACTIVATE',
+          PARTITIONID: '1',
+        });
       });
     });
   });

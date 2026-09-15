@@ -11,6 +11,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   session's own partition — all under the existing `MCP livecheck` prefix, cleaned up on every run.
   `SetThreatLevel`, `AddPartition`, `PERSONPURGE`, and `TriggerEvent` are still never used
   ([#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13)).
+- Two supervised single actions, `trigger_event_activate` and `trigger_event_deactivate`
+  (`npm run test:live:write -- --action trigger_event_activate --value <EVENTNAME>`), the only
+  live verification path for `TriggerEvent` — the target event must already exist in the NetBox
+  UI ([#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12)).
 
 ## [0.3.0] — 2026-09-14
 ### Added

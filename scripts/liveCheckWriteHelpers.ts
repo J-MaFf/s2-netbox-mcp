@@ -105,6 +105,8 @@ export const LIVE_CHECK_ACTION_NAMES = [
   'set_portals_state_lock',
   'set_portals_state_momentary',
   'set_threat_level',
+  'trigger_event_activate',
+  'trigger_event_deactivate',
 ] as const;
 
 export type LiveCheckActionName = (typeof LIVE_CHECK_ACTION_NAMES)[number];
@@ -128,7 +130,8 @@ export interface LiveCheckActionSpec {
   portalStateAction?: PortalStateAction;
   /** True when this action targets the portal's strike OUTPUTKEY rather than its PORTALKEY. */
   targetsOutput: boolean;
-  /** True when this action refuses to run without `--value` (currently only set_threat_level). */
+  /** True when this action refuses to run without `--value` (set_threat_level's
+   * LEVELNAME, and trigger_event_activate/trigger_event_deactivate's EVENTNAME). */
   requiresValue: boolean;
   /** Builds the "OBSERVE: ..." line printed after the action runs. */
   observe: (ctx: LiveCheckActionContext) => string;
@@ -221,6 +224,30 @@ export const LIVE_CHECK_ACTIONS: Readonly<Record<LiveCheckActionName, LiveCheckA
       `OBSERVE: the system-wide threat level should now show "${value}" on Monitor — set it back with ` +
       '--action set_threat_level --value Default when done',
   },
+  // The only way TriggerEvent is reachable from this script (#12): the target
+  // event must already exist in the NetBox UI (events cannot be created via
+  // the NBAPI), and EVENTNAME (--value) identifies it. Routed through the
+  // real NetboxClient.call, so NETBOX_EVENT_API_PATH still applies (R6).
+  trigger_event_activate: {
+    name: 'trigger_event_activate',
+    kind: 'command',
+    command: NBAPI_COMMANDS.TRIGGER_EVENT,
+    targetsOutput: false,
+    requiresValue: true,
+    observe: ({ portalName, value }) =>
+      `OBSERVE: event ${value} activated — if its action is Unlock Portal, ${portalName} should be unlocked ` +
+      'until trigger_event_deactivate; if Momentary Unlock, a brief release',
+  },
+  trigger_event_deactivate: {
+    name: 'trigger_event_deactivate',
+    kind: 'command',
+    command: NBAPI_COMMANDS.TRIGGER_EVENT,
+    targetsOutput: false,
+    requiresValue: true,
+    observe: ({ portalName, value }) =>
+      `OBSERVE: event ${value} deactivated — if its action is Unlock Portal, ${portalName} should now be locked; ` +
+      'a Momentary Unlock event has already relocked itself',
+  },
 };
 
 /** Resolves `--action <name>` against LIVE_CHECK_ACTIONS, throwing
@@ -266,6 +293,13 @@ export function buildActionParams(
 ): Record<string, string> {
   if (spec.name === 'set_threat_level') {
     return { LEVELNAME: value ?? '' };
+  }
+  if (spec.name === 'trigger_event_activate' || spec.name === 'trigger_event_deactivate') {
+    return {
+      EVENTNAME: value ?? '',
+      EVENTACTION: spec.name === 'trigger_event_activate' ? 'ACTIVATE' : 'DEACTIVATE',
+      PARTITIONID: '1',
+    };
   }
   if (spec.targetsOutput) {
     return { OUTPUTKEY: target.OUTPUTKEY ?? '' };

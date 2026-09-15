@@ -70,8 +70,11 @@ import {
  * (d) Phases (b)/(b2)/(c) above never touch outputs or portal lock/unlock
  *     actions directly, never call SetThreatLevel, AddPartition, TriggerEvent,
  *     or permanently purge a person record (unit tests cover those). AddPartition
- *     and TriggerEvent are never called anywhere in this script, including by
- *     `--action` below (#12).
+ *     is never called anywhere in this script. TriggerEvent is reachable only
+ *     through `--action trigger_event_activate`/`trigger_event_deactivate`
+ *     below (#12) — the only live verification path for `trigger_event`, since
+ *     the target event must already exist in the NetBox UI (events cannot be
+ *     created via the NBAPI).
  * (e) Never prints NETBOX_PASSWORD (every line goes through redact()) or any
  *     `.env` content.
  * (f) Exits non-zero on any assertion failure; once (c) has begun, always
@@ -80,7 +83,13 @@ import {
  *     that skips (b), (b2), and (c) entirely and issues exactly one write
  *     against the designated portal (or its strike output) — see
  *     LIVE_CHECK_ACTIONS in scripts/liveCheckWriteHelpers.ts for the full
- *     table. Requires the same credentials/NETBOX_ENABLE_WRITES=true as (a),
+ *     table. Two of these actions, `trigger_event_activate` and
+ *     `trigger_event_deactivate`, call TriggerEvent instead (EVENTNAME from
+ *     the required `--value`, EVENTACTION ACTIVATE/DEACTIVATE, PARTITIONID 1)
+ *     — the only place this script ever calls TriggerEvent — routed through
+ *     the same NetboxClient.call used everywhere else, so NETBOX_EVENT_API_PATH
+ *     still applies; the path actually used is printed (never credentials).
+ *     Requires the same credentials/NETBOX_ENABLE_WRITES=true as (a),
  *     but never NETBOX_ENABLE_DESTRUCTIVE (no deletes happen). Refuses (exit
  *     2, no network) when combined with `--go`, when the action name is
  *     unknown, or when a required `--value` is missing.
@@ -1194,6 +1203,7 @@ async function runSingleAction(
   }
 
   const params = buildActionParams(actionSpec, { PORTALKEY: portal.PORTALKEY, OUTPUTKEY: outputKey }, value);
+  info(`Using NBAPI path: ${client.pathFor(actionSpec.command!)}`);
   log(`Sending ${actionSpec.command} ${JSON.stringify(params)}`);
   try {
     const result = await client.call(actionSpec.command!, params);

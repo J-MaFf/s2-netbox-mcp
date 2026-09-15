@@ -608,12 +608,22 @@ Every action is reversible:
 | `set_portals_state_lock` | `set_portals_state`, action `LOCK` | — |
 | `set_portals_state_momentary` | `set_portals_state`, action `MOMENTARY_UNLOCK` (relocks itself) | — |
 | `set_threat_level` | `SetThreatLevel LEVELNAME=<--value>` | `set_threat_level --value Default` |
+| `trigger_event_activate` | `TriggerEvent EVENTNAME=<--value> EVENTACTION=ACTIVATE PARTITIONID=1` | `trigger_event_deactivate` |
+| `trigger_event_deactivate` | `TriggerEvent EVENTNAME=<--value> EVENTACTION=DEACTIVATE PARTITIONID=1` | — |
 
 `activate_output`/`deactivate_output` resolve the strike output by finding
 the `GetOutputs` entry whose `NAME` starts with the designated portal's
 `NAME` (e.g. portal `"02OF01A"` → output `"02OF01A EL"`), failing clearly if
-none is found. `AddPartition` and `TriggerEvent` are never reachable through
-`--action`, same as the rest of this script.
+none is found. `AddPartition` is never reachable through `--action`, same as
+the rest of this script.
+
+`trigger_event_activate`/`trigger_event_deactivate` require `--value
+<EVENTNAME>` — the name of a NetBox event that must already exist (events
+cannot be created via the NBAPI; create it first in the NetBox UI). This is
+the **only** live verification path for `trigger_event` — the full CRUD
+flow above never calls `TriggerEvent`. Both actions go through the same
+`NetboxClient.call` as every other command, so `NETBOX_EVENT_API_PATH`
+routing still applies; the script prints which URL path it used.
 
 ## Out of scope
 

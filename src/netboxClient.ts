@@ -163,6 +163,13 @@ export class NetboxClient {
     return command === NBAPI_COMMANDS.TRIGGER_EVENT ? this.config.eventApiPath : this.config.apiPath;
   }
 
+  /** Public hook onto {@link defaultPathFor}, so callers (e.g. the live write
+   * check's supervised `--action` mode) can report which URL path a call
+   * used without touching credentials or any other config field. */
+  pathFor(command: NbapiCommandName): string {
+    return this.defaultPathFor(command);
+  }
+
   private async postXml(xml: string, path: string): Promise<string> {
     const url = `${this.config.baseUrl}${path}`;
     const response = await this.fetchImpl(url, {
