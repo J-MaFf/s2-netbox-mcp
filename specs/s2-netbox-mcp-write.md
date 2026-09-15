@@ -120,6 +120,18 @@ from <date-time> to <date-time>" is one tool call whose schedule the controller 
   *Monitor → Portal Status* (R30).
 - `ListEvents` on this controller returns events whose actions include "Unlock Door" — triggering
   one would physically unlock a door, so no event may be used as a live-test target.
+- **Group membership on Modify (live write check, 2026-09-15):** `AddPortalGroup` with
+  `<PORTALKEYS><PORTALKEY>56</PORTALKEY></PORTALKEYS>` and `AddReaderGroup` with
+  `<READERKEYS><READERKEY>187</READERKEY></READERKEYS>` both create the group **with** the member
+  (read back verified). But `ModifyReaderGroup` sent with only `DESCRIPTION` **cleared** the
+  membership (read-back `[]`): on this firmware an omitted list means "no members", not "leave
+  unchanged". And `ModifyPortalGroup` sent with the doc's repeated top-level `<PORTALKEY>` siblings
+  (p. 165 example) also left membership empty — that shape is not parsed. Consequences: every
+  Modify of a portal or reader group must send the **complete** membership, and `ModifyPortalGroup`
+  uses the same wrapped `<PORTALKEYS><PORTALKEY>…` shape as `AddPortalGroup` (R13, R14, R25 step 6,
+  R26). Other live confirmations from the same run: `AddTimeSpec` also creates a same-named singular
+  time spec group; `AddTimeSpecGroup` returns `TIMESPECGROUPKEY`; `ModifyTimeSpecGroup` with an
+  empty `TIMESPECKEYS` list empties the group.
 - **Designated live-test portal (chosen by the user, 2026-09-14):** `02OF01A` ("STAIRWELL TO
   OFFICE"), `PORTALKEY` `56`, reader `187` (`02OF01A READER`, OSDP), strike output `189`
   (`02OF01A EL`); it belongs to **no** portal group, so the managed test group creates no overlap.
@@ -314,13 +326,18 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   are controller-local. [verify: schema tests; description text contains "exclusive"]
 - R13. Portal groups: `add_portal_group` (`NAME` req; `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`,
   `THREATLEVELGROUPKEY` opt; `PORTALKEYS` string[] req → wire `<PORTALKEYS><PORTALKEY>…`),
-  `modify_portal_group` (`PORTALGROUPKEY` req; `PORTALKEYS` string[] req → wire **repeated
-  top-level** `<PORTALKEY>` siblings per the doc example; `NAME`, `DESCRIPTION`,
-  `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY` opt), `delete_portal_group` (`PORTALGROUPKEY`).
-  [verify: schema + wire-shape tests, including the top-level-sibling shape]
+  `modify_portal_group` (`PORTALGROUPKEY` req; `PORTALKEYS` string[] req → wire
+  `<PORTALKEYS><PORTALKEY>…</PORTALKEY>…</PORTALKEYS>`, the same wrapped shape as `add_portal_group`
+  — the doc's repeated top-level `<PORTALKEY>` example is **not parsed** by this controller and
+  leaves the group empty (live, 2026-09-15); `NAME`, `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`,
+  `THREATLEVELGROUPKEY` opt; the description states that `PORTALKEYS` is the complete membership
+  because an omitted or unparsed list empties the group), `delete_portal_group` (`PORTALGROUPKEY`).
+  [verify: schema + wire-shape tests, including the wrapped shape on modify]
 - R14. Reader groups: `add_reader_group` (`NAME` req; `DESCRIPTION` opt; `READERKEYS` string[] req →
-  `<READERKEYS><READERKEY>…`), `modify_reader_group` (`READERGROUPKEY` req; `NAME`, `DESCRIPTION`,
-  `READERKEYS` string[] opt), `delete_reader_group` (`READERGROUPKEY`). [verify: as above]
+  `<READERKEYS><READERKEY>…`), `modify_reader_group` (`READERGROUPKEY` and `READERKEYS` string[]
+  **req** — omitting the list clears the group's membership on this controller (live, 2026-09-15),
+  so the tool requires the complete membership and its description says so; `NAME`, `DESCRIPTION`
+  opt), `delete_reader_group` (`READERGROUPKEY`). [verify: as above]
 - R15. Access levels: `add_access_level` (`ACCESSLEVELNAME`, `TIMESPECGROUPKEY` req;
   `ACCESSLEVELDESCRIPTION`, `READERKEY`, `READERGROUPKEY`, `THREATLEVELGROUPKEY` opt; client-side
   error if both `READERKEY` and `READERGROUPKEY` are given), `modify_access_level` (`ACCESSLEVELKEY`
@@ -428,7 +445,8 @@ Changes inside `C:\Users\jmaffiola\Documents\Scripts\s2-netbox-mcp\`:
   6. Managed portal group: find by exact `NAME` = prefix in paginated `GetPortalGroups`; if absent
      `AddPortalGroup(NAME=prefix, DESCRIPTION as above, UNLOCKTIMESPECGROUPKEY=managed TSG,
      PORTALKEYS=targets)`; else `ModifyPortalGroup(PORTALGROUPKEY, PORTALKEYS=targets,
-     UNLOCKTIMESPECGROUPKEY=managed TSG)`.
+     UNLOCKTIMESPECGROUPKEY=managed TSG)` — both with the wrapped `<PORTALKEYS><PORTALKEY>…`
+     shape (see the Context finding on membership).
   7. Read back (`GetPortalGroup`; the managed group's entry in paginated `GetTimeSpecGroups`
      filtered by `TIMESPECGROUPKEY` — not `GetTimeSpecGroup`, which fails on this controller;
      `GetTimeSpec` and `GetHoliday` per segment) and compare to the plan, normalising
@@ -641,12 +659,12 @@ Holidays
 
 Portal groups / reader groups
 - **AddPortalGroup** (p. 56) — PARAMS `NAME` (≤ 64), `DESCRIPTION`, `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY` opt, `PORTALKEYS` → `<PORTALKEYS><PORTALKEY>k</PORTALKEY>…</PORTALKEYS>`. Response `PORTALGROUPKEY`. FAIL includes "Duplicate".
-- **ModifyPortalGroup** (p. 165) — PARAMS `PORTALGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `PORTALKEY` (required; the example sends repeated top-level `<PORTALKEY>` siblings), `UNLOCKTIMESPECGROUPKEY` opt, `THREATLEVELGROUPKEY` opt. Response: none.
+- **ModifyPortalGroup** (p. 165) — PARAMS `PORTALGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, membership (the doc says `PORTALKEY` required and its example sends repeated top-level `<PORTALKEY>` siblings — **live 6.2.0: that shape is ignored and the group ends up empty; send `<PORTALKEYS><PORTALKEY>…</PORTALKEYS>` exactly as AddPortalGroup does**), `UNLOCKTIMESPECGROUPKEY` opt, `THREATLEVELGROUPKEY` opt. Response: none. Membership is replaced by whatever list is parsed — always send the complete list.
 - **DeletePortalGroup** (p. 69) — PARAMS `PORTALGROUPKEY`. Response `PORTALGROUPKEY`.
 - **GetPortalGroup** (p. 114) — PARAMS `PORTALGROUPKEY`. Response `PORTALGROUP` {`PORTALGROUPKEY`, `NAME`, `DESCRIPTION`, `PORTALS`/`PORTAL`[{`PORTALKEY`, `NAME`}], `UNLOCKTIMESPECGROUPKEY`, `THREATLEVELGROUPKEY`}.
 - **GetPortalGroups** (p. 116) — PARAMS `STARTFROMKEY` opt. Response `PORTALGROUPS`/`PORTALGROUP`[…], `NEXTKEY`.
 - **AddReaderGroup** (p. 58) — PARAMS `NAME`, `DESCRIPTION`, `READERKEYS` → `<READERKEYS><READERKEY>k</READERKEY>…</READERKEYS>`. Response `READERGROUPKEY`.
-- **ModifyReaderGroup** (p. 167) — PARAMS `READERGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `READERKEYS` opt. Response: none.
+- **ModifyReaderGroup** (p. 167) — PARAMS `READERGROUPKEY`, `NAME` opt, `DESCRIPTION` opt, `READERKEYS` (doc: opt; **live 6.2.0: omitting it clears the membership**, so always send the complete list). Response: none.
 - **DeleteReaderGroup** (p. 70) — PARAMS `READERGROUPKEY`. Response `READERGROUPKEY`. FAIL includes "Cannot Delete: May be referenced by an Access Level".
 - **GetReaderGroup** (p. 124) — PARAMS `READERGROUPKEY`. Response `READERGROUP` {`READERGROUPKEY`, `NAME`, `DESCRIPTION`, `READERS`/`READER`[{`READERKEY`, `NAME`}]}.
 - **GetReaderGroups** (p. 126) — PARAMS `STARTFROMKEY` opt. Response `READERGROUPS`/`READERGROUP`[…], `NEXTKEY`.
