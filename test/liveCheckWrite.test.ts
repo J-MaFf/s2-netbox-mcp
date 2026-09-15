@@ -144,6 +144,14 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
     expect(script).toContain('estimated controller time now');
     expect(script).toContain('estimateControllerClock');
   });
+
+  it('R30 b2: the clock-skew FAIL prints the required message shape and a re-run hint, with no stale-record exemption', () => {
+    expect(script).toContain('controller clock skew: controller');
+    expect(script).toContain('[FAIL] ${summary}');
+    expect(script).toContain('badge any reader and re-run');
+    expect(script).not.toMatch(/status === 'stale'/);
+    expect(script).not.toContain("'stale'");
+  });
 });
 
 describe('R30 b2: controller clock skew estimate', () => {
@@ -189,7 +197,7 @@ describe('R30 b2: controller clock skew estimate', () => {
       expect(computeClockSkew(host, dttm).status).toBe('ok');
     });
 
-    it('fails when the clocks disagree by more than 2 minutes but the record is not stale (<=10 min)', () => {
+    it('fails when the clocks disagree by more than 2 minutes', () => {
       const host = new Date(2026, 8, 15, 8, 5, 0);
       const dttm = '2026-09-15 08:00:00'; // 5 min behind
       const result = computeClockSkew(host, dttm);
@@ -198,17 +206,17 @@ describe('R30 b2: controller clock skew estimate', () => {
       expect(result.offsetSeconds).toBe(-300);
     });
 
-    it('fails on the live-observed scenario\'s shape scaled inside the 10-minute stale window', () => {
+    it('fails on the live-observed scenario\'s shape scaled to a moderate delta', () => {
       const host = new Date(2026, 8, 15, 8, 5, 34);
-      const dttm = '2026-09-15 07:56:00'; // ~9m34s behind, still under the 10-min stale cutoff
+      const dttm = '2026-09-15 07:56:00'; // ~9m34s behind
       expect(computeClockSkew(host, dttm).status).toBe('fail');
     });
 
-    it('is stale (warn), not fail, when the newest record is more than 10 minutes old by the host clock', () => {
+    it('fails with no stale-record exemption, even for a large delta like the live-observed ~4h35m skew', () => {
       const host = new Date(2026, 8, 15, 8, 5, 34);
       const dttm = '2026-09-15 03:30:38'; // the live-observed ~4h35m skew
       const result = computeClockSkew(host, dttm);
-      expect(result.status).toBe('stale');
+      expect(result.status).toBe('fail');
       expect(result.controllerClock).toBe('03:30:38');
       expect(result.hostClock).toBe('08:05:34');
     });

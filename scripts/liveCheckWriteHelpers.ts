@@ -131,14 +131,13 @@ export function assertSameSet(label: string, actual: readonly string[], expected
 // (b2) controller clock estimate, from the newest GetAccessHistory record
 // ---------------------------------------------------------------------------
 
-/** Skew above this is a hard [FAIL] that skips phase (c) (R30 b2). */
+/** Skew above this is a hard [FAIL] that skips phase (c) (R30 b2). There is
+ * no "stale record" exemption: a large delta is indistinguishable from a
+ * wrong clock, so any delta above this threshold fails closed regardless of
+ * how old the newest access record is. */
 const SKEW_FAIL_SECONDS = 2 * 60;
-/** Beyond this, the newest record is too old to trust as a clock estimate —
- * warn instead of failing, since an idle site with no recent badge activity
- * looks identical to a large skew from a single record alone (R30 b2). */
-const SKEW_STALE_SECONDS = 10 * 60;
 
-export type ClockSkewStatus = 'ok' | 'fail' | 'stale' | 'no-record';
+export type ClockSkewStatus = 'ok' | 'fail' | 'no-record';
 
 export interface ClockSkewResult {
   status: ClockSkewStatus;
@@ -191,14 +190,13 @@ export function parseControllerDttm(dttm: string): Date | undefined {
  * record's `DTTM` (R30 b2). `newestDttm` is `undefined` when no record was
  * returned at all.
  *
- * - No record, or a `DTTM` that doesn't parse -> `no-record` (WARN, stale
- *   estimate, continue).
- * - Skew beyond `SKEW_STALE_SECONDS` (10 min) -> `stale` (WARN, continue) —
- *   deliberately checked before the fail threshold: a record this old could
- *   just mean nobody has badged through a door recently, which looks
- *   identical to a large clock skew from a single sample, so this case is
- *   not confidently treated as a clock problem.
- * - Skew beyond `SKEW_FAIL_SECONDS` (2 min) -> `fail` (skip phase (c)).
+ * - No record, or a `DTTM` that doesn't parse -> `no-record` (WARN, continue)
+ *   — only in this case is the estimate too weak to judge, since there is
+ *   nothing to compare against.
+ * - Skew beyond `SKEW_FAIL_SECONDS` (2 min) -> `fail` (skip phase (c)). There
+ *   is no "stale record" exemption for a large delta: an old newest record
+ *   is indistinguishable from a wrong clock, so any delta above the
+ *   threshold fails closed no matter how old the record is.
  * - Otherwise -> `ok`.
  */
 export function computeClockSkew(hostNow: Date, newestDttm: string | undefined): ClockSkewResult {
@@ -210,9 +208,6 @@ export function computeClockSkew(hostNow: Date, newestDttm: string | undefined):
   const controllerClock = formatClockHMS(controllerDate);
   const offsetSeconds = Math.round((controllerDate.getTime() - hostNow.getTime()) / 1000);
   const skewSeconds = Math.abs(offsetSeconds);
-  if (skewSeconds > SKEW_STALE_SECONDS) {
-    return { status: 'stale', hostClock, controllerClock, skewSeconds, offsetSeconds };
-  }
   if (skewSeconds > SKEW_FAIL_SECONDS) {
     return { status: 'fail', hostClock, controllerClock, skewSeconds, offsetSeconds };
   }

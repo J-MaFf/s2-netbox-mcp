@@ -484,14 +484,11 @@ async function controllerClockCheck(client: NetboxClient): Promise<ClockSkewResu
       results.push({ name, pass: false, summary });
       info(line);
       log(`[FAIL] ${summary}`);
+      log('hint: if the site has simply been quiet, badge any reader and re-run');
     }
     return skew;
   }
-  const warnLine =
-    skew.status === 'stale'
-      ? `stale controller clock estimate: newest access record (${skew.controllerClock}) is more than 10 minutes old by the host clock (${skew.hostClock}); skipping the skew gate`
-      : `no access history record was available to estimate the controller clock; skipping the skew gate`;
-  log(`[WARN] ${warnLine}`);
+  log(`[WARN] no access history record was available to estimate the controller clock; skipping the skew gate`);
   return skew;
 }
 
