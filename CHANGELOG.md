@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-15
+
+### Added
+- Published to the npm registry: `"private"` flipped to `false`, and `repository`, `bugs`,
+  `homepage`, and `keywords` added to `package.json` for npm search/discoverability
+  ([#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27)).
+- `bin` entry (`s2-netbox-mcp` → `dist/index.js`) plus a `#!/usr/bin/env node` shebang on
+  `src/index.ts`, so `npm install -g s2-netbox-mcp` gives a directly runnable
+  `s2-netbox-mcp` command instead of requiring `node dist/index.js`
+  ([#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27)).
+- `files` field in `package.json` scoping the published tarball to `dist/`, `README.md`,
+  `LICENSE`, and `CHANGELOG.md` — verified via `npm pack --dry-run` (33 files, no `src/`,
+  `scripts/`, `specs/`, or `.env`) ([#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27)).
+- README "Setup" section documents the npm install path as an alternative to clone-and-build
+  ([#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27)).
+
+### Changed
+- `package.json`'s `description` no longer says "Claude-callable tools" — this server has been
+  verified working with Gemini/Antigravity too, so the description now says "MCP tools usable
+  from any MCP-compatible client" ([#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27)).
+
 ## [0.2.0] — 2026-09-15
 
 ### Added
