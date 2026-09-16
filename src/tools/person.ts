@@ -179,6 +179,18 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
       LASTNAME: z.string().optional().describe("Optional. Match on the person's last name."),
       FIRSTNAME: z.string().optional().describe("Optional. Match on the person's first name."),
       MIDDLENAME: z.string().optional().describe("Optional. Match on the person's middle name."),
+      CONTACTEMAIL: z.string().optional().describe("Optional. Match on the person's office email address."),
+      MOBILEPHONE: z.string().optional().describe("Optional. Match on the person's mobile phone number."),
+      CARDFORMAT: z.string().optional().describe('Optional. Match persons holding a card in this card format.'),
+      CARDSTATUS: z.string().optional().describe('Optional. Match persons holding a card with this card status name.'),
+      MSUENABLED: z.string().optional().describe('Optional. Match on whether MSU mobile credentials are enabled ("TRUE"/"FALSE").'),
+      BLUEDIAMONDENABLED: z
+        .string()
+        .optional()
+        .describe('Optional. Match on whether BlueDiamond mobile credentials are enabled ("TRUE"/"FALSE").'),
+      NOTES: z.string().optional().describe("Optional. Match on the person record's notes text."),
+      VEHICLELICNUM: z.string().optional().describe('Optional. Match on a vehicle license plate number.'),
+      VEHICLETAGNUM: z.string().optional().describe('Optional. Match on a vehicle tag number.'),
       ...udfSearchFields,
       HOTSTAMP: z.string().optional().describe('Optional. Match on a card hot-stamp number.'),
       WANTCREDENTIALID: z.string().optional().describe('Optional. Include CREDENTIALID values on returned access cards.'),

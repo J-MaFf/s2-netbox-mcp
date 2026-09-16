@@ -90,6 +90,15 @@ describe('registerPersonTools', () => {
       'LASTNAME',
       'FIRSTNAME',
       'MIDDLENAME',
+      'CONTACTEMAIL',
+      'MOBILEPHONE',
+      'CARDFORMAT',
+      'CARDSTATUS',
+      'MSUENABLED',
+      'BLUEDIAMONDENABLED',
+      'NOTES',
+      'VEHICLELICNUM',
+      'VEHICLETAGNUM',
       'HOTSTAMP',
       'WANTCREDENTIALID',
       'ACCESSLEVEL',
@@ -121,6 +130,25 @@ describe('registerPersonTools', () => {
       PERSONID: undefined,
     });
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.SEARCH_PERSON_DATA, params: { FIRSTNAME: 'Jane' } }]);
+  });
+
+  it('search_person_data forwards CONTACTEMAIL/MOBILEPHONE/CARDFORMAT/CARDSTATUS/MSUENABLED/BLUEDIAMONDENABLED/NOTES/VEHICLELICNUM/VEHICLETAGNUM', async () => {
+    const server = new FakeServer();
+    const { client, calls } = fakeClient();
+    registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+    const args = {
+      CONTACTEMAIL: 'jane@example.com',
+      MOBILEPHONE: '555-0100',
+      CARDFORMAT: '26 bit',
+      CARDSTATUS: 'Active',
+      MSUENABLED: 'TRUE',
+      BLUEDIAMONDENABLED: 'FALSE',
+      NOTES: 'VIP',
+      VEHICLELICNUM: 'ABC123',
+      VEHICLETAGNUM: 'TAG9',
+    };
+    await byName(server, 'search_person_data').handler(args);
+    expect(calls).toEqual([{ command: NBAPI_COMMANDS.SEARCH_PERSON_DATA, params: args }]);
   });
 
   it('get_card_access_details schema requires ENCODEDNUM + CARDFORMAT, not PERSONID', () => {
