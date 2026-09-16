@@ -37,12 +37,14 @@ describe('registerHolidayTools (R8 reads)', () => {
 });
 
 describe('R12: holiday write tools', () => {
-  it('add_holiday requires HOLIDAYNAME/STARTDATE/ENDDATE, HOLIDAYGROUPS optional, and describes ENDDATE as exclusive', () => {
+  it('add_holiday requires HOLIDAYNAME/STARTDATE/ENDDATE/HOLIDAYGROUPS, and describes ENDDATE as exclusive', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerHolidayTools(server as unknown as McpServer, client, WRITES_ON);
     const reg = byName(server, 'add_holiday');
-    expect(Object.keys(reg.schema).sort()).toEqual(['HOLIDAYNAME', 'STARTDATE', 'ENDDATE', 'HOLIDAYGROUPS'].sort());
+    const schema = reg.schema as Record<string, { isOptional: () => boolean }>;
+    expect(Object.keys(schema).sort()).toEqual(['HOLIDAYNAME', 'STARTDATE', 'ENDDATE', 'HOLIDAYGROUPS'].sort());
+    expect(schema.HOLIDAYGROUPS.isOptional()).toBe(false);
     expect(reg.description).toContain('exclusive');
     expect(reg.description.startsWith('WRITE:')).toBe(true);
   });
@@ -51,11 +53,16 @@ describe('R12: holiday write tools', () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerHolidayTools(server as unknown as McpServer, client, WRITES_ON);
-    await byName(server, 'add_holiday').handler({ HOLIDAYNAME: 'GRAND OPENING', STARTDATE: '2026-09-11 00:00', ENDDATE: '2026-09-21 00:00' });
+    await byName(server, 'add_holiday').handler({
+      HOLIDAYNAME: 'GRAND OPENING',
+      STARTDATE: '2026-09-11 00:00',
+      ENDDATE: '2026-09-21 00:00',
+      HOLIDAYGROUPS: '1',
+    });
     expect(calls).toEqual([
       {
         command: NBAPI_COMMANDS.ADD_HOLIDAY,
-        params: { HOLIDAYNAME: 'GRAND OPENING', STARTDATE: '2026-09-11 00:00', ENDDATE: '2026-09-21 00:00' },
+        params: { HOLIDAYNAME: 'GRAND OPENING', STARTDATE: '2026-09-11 00:00', ENDDATE: '2026-09-21 00:00', HOLIDAYGROUPS: '1' },
       },
     ]);
   });

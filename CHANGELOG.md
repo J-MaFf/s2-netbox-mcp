@@ -142,6 +142,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   level groups exists in this server's command surface at all
   ([#61](https://github.com/J-MaFf/s2-netbox-mcp/issues/61)).
 
+### Changed
+- `add_holiday`'s `HOLIDAYGROUPS` is now a required field (previously optional). Doc p.90 marks it
+  required with no "(optional)" tag, and a live-controller probe confirmed it: `AddHoliday` without
+  `HOLIDAYGROUPS` fails with "At least one holiday group must be selected."
+  ([#85](https://github.com/J-MaFf/s2-netbox-mcp/issues/85)).
+
 ### Fixed
 - `get_reader_access_history` no longer drops the native `PORTALNAME` field that
   `GetAccessHistory` already returns on every record -- `PORTALKEY` was kept but `PORTALNAME` was

@@ -599,7 +599,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `modify_time_spec_group`      | `ModifyTimeSpecGroup`      | `TIMESPECGROUPKEY`                               | write       |
 | `delete_time_spec`            | `DeleteTimeSpec`           | `TIMESPECKEY`                                    | destructive |
 | `delete_time_spec_group`      | `DeleteTimeSpecGroup`      | `TIMESPECGROUPKEY`                               | destructive |
-| `add_holiday`                 | `AddHoliday`               | `HOLIDAYNAME`, `STARTDATE`, `ENDDATE`             | write       |
+| `add_holiday`                 | `AddHoliday`               | `HOLIDAYNAME`, `STARTDATE`, `ENDDATE`, `HOLIDAYGROUPS` | write       |
 | `modify_holiday`              | `ModifyHoliday`            | `HOLIDAYKEY`                                     | write       |
 | `delete_holiday`              | `DeleteHoliday`            | `HOLIDAYKEY`                                     | destructive |
 | `add_portal_group`            | `AddPortalGroup`           | `NAME`, `PORTALKEYS`                             | write       |

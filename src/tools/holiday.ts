@@ -37,7 +37,12 @@ export function registerHolidayTools(server: McpServer, client: NetboxClient, ga
         HOLIDAYNAME: z.string().describe('Required. Name of the new holiday (max 64 characters).'),
         STARTDATE: z.string().describe('Required. Start date/time (inclusive).'),
         ENDDATE: z.string().describe('Required. End date/time (exclusive).'),
-        HOLIDAYGROUPS: z.string().optional().describe('Optional. Comma-separated list of holiday group numbers (1-8) this holiday belongs to.'),
+        HOLIDAYGROUPS: z
+          .string()
+          .describe(
+            'Required. Comma-separated list of holiday group numbers (1-8) this holiday belongs to. A live ' +
+              'controller rejected AddHoliday without it ("At least one holiday group must be selected.").'
+          ),
       },
       async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_HOLIDAY, mergeParams(args), formatWriteSuccess)
     );
