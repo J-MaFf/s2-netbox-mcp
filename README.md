@@ -9,6 +9,10 @@ partitions/UDF lists — as MCP tools usable from any MCP-compatible client
 > **Not** the open-source netboxlabs.com "NetBox" DCIM/IPAM tool. This targets
 > LenelS2's **S2 NetBox** physical access-control appliance and its NBAPI
 > (`Web-Based API for S2 NetBox and S2 Global`, LenelS2 doc #API-UG-14).
+> Newer NBAPI **v1** (doc #API-UG-22, April 2024) and **v2** (doc #API2-UG-8,
+> April 2025) guides also exist — see [`docs/reference/`](docs/reference/)
+> for reference copies; this server's tools were built against the original
+> 2020 v1 doc and have not yet been diffed against either newer edition.
 
 > [!WARNING]
 > **This connects to a real physical security system.** With the wrong
