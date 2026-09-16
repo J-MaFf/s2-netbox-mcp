@@ -4,18 +4,23 @@
 
 A local MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access
 levels, portals/readers/outputs, time specs, holidays, portal/reader groups, threat levels,
-events/activity, partitions/UDF lists) as Claude-callable tools, so NetBox data can be queried —
-and, when explicitly enabled, changed — conversationally instead of via hand-built XML/HTTP calls.
-Node/TypeScript, stdio transport, session-login auth only. Read-only by default; write tools are
-gated behind `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` (see README "Write access"). On top
-of the pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, a
-managed unlock window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`),
-and a managed **daily recurring** unlock window (`schedule_daily_unlock_window` /
-`cancel_daily_unlock_window` / `get_daily_unlock_window`) — both enforced by the controller itself
-(README "Scheduled unlock windows" / "Scheduled daily unlock windows"). See
-`specs/archive/s2-netbox-mcp-write.md` for the write-tools spec (archived
-`specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all its acceptance criteria
-passed).
+events/activity, partitions/UDF lists) as MCP tools usable from any MCP-compatible client (Claude,
+Gemini/Antigravity, etc.), so NetBox data can be queried — and, when explicitly enabled, changed —
+conversationally instead of via hand-built XML/HTTP calls. Node/TypeScript, stdio transport,
+session-login auth only. Read-only by default; write tools are gated behind
+`NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` (see README "Write access"). On top of the
+pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, a managed unlock
+window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`), and a managed
+**daily recurring** unlock window (`schedule_daily_unlock_window` / `cancel_daily_unlock_window` /
+`get_daily_unlock_window`) — both enforced by the controller itself (README "Scheduled unlock
+windows" / "Scheduled daily unlock windows"). See `specs/archive/s2-netbox-mcp-write.md` for the
+write-tools spec (archived `specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all
+its acceptance criteria passed).
+
+Published on [npm](https://www.npmjs.com/package/s2-netbox-mcp) and the [official MCP
+Registry](https://registry.modelcontextprotocol.io) as `io.github.J-MaFf/s2-netbox-mcp`; submitted
+to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Trusted Publishing
+(OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again.
 
 ## Current State — 2026-09-15
 
@@ -99,6 +104,46 @@ that run: on this host's PowerShell, `npm run test:live:write:daily -- --go` sil
 --go` is the reliable invocation (now documented in README, and the same caveat applies to the
 continuous feature's `npm run test:live:write -- --go`).
 
+### Growth & adoption (`v0.2.1`–`v0.2.3`, milestone closed)
+
+A five-part push to make the server installable and findable by people other than the maintainer,
+tracked as the GitHub milestone "Growth & adoption (v1)" (11/11 issues closed, now closed):
+
+1. **Release hygiene** — `v0.2.0` through `v0.2.3` tagged and released, each with a CHANGELOG entry.
+2. **npm** — `package.json` flipped `private: false`, `bin`/`files`/`repository`/`keywords` added, a
+   `#!/usr/bin/env node` shebang added to `src/index.ts` so `npm install -g` gives a runnable
+   `s2-netbox-mcp` command. First publish had to go through `npm publish` from a real interactive
+   terminal (npm's 2FA/OTP web-confirmation URL is deliberately redacted from any non-TTY output,
+   so it can't be completed through an automated/piped session).
+3. **CI + contribution scaffolding** — `.github/workflows/ci.yml` (typecheck/test/build on every
+   push/PR, now a required status check on the Main Branch Ruleset), `CONTRIBUTING.md`, issue/PR
+   templates. `package-lock.json` is now tracked (was silently excluded by a machine-wide global
+   gitignore rule, not this repo's own).
+4. **npm Trusted Publishing** — `.github/workflows/publish.yml` publishes to npm via OIDC on every
+   `v*` tag push (npm CLI >=11.5.1, Node >=22.14 in the workflow). Configured on npmjs.com's package
+   Settings -> Trusted Publisher (org `J-MaFf`, repo `s2-netbox-mcp`, workflow `publish.yml`,
+   "Allow npm publish" checked). Every version published this way gets an automatic SLSA
+   provenance attestation. `Publishing access` on npmjs.com is set to "Require two-factor
+   authentication and disallow bypass 2fa tokens."
+5. **MCP directory listings** — `server.json` added (npm's `mcpName` field cross-references it);
+   published to the official MCP Registry as `io.github.J-MaFf/s2-netbox-mcp` via the
+   `mcp-publisher` CLI (GitHub device-code auth, re-run after every version bump to keep the
+   registry's version pointer current). Submitted to mcp.so
+   ([chatmcp/mcpso#4163](https://github.com/chatmcp/mcpso/issues/4163)). PulseMCP has new
+   submissions paused platform-wide; Glama appears to auto-crawl GitHub topics (no action taken);
+   Smithery requires the maintainer's own GitHub OAuth connection through their dashboard (not
+   done).
+6. **Security posture** — `SECURITY.md` (private vulnerability reporting + physical-safety blast
+   radius by config level), a `> [!WARNING]` callout near the top of README.md, and three repo
+   settings turned on that were previously off: GitHub private vulnerability reporting, secret
+   scanning, and secret scanning push protection (Dependabot security updates was already on).
+
+Two follow-on patch releases (`v0.2.2`, `v0.2.3`) were version-only: one to add npm's required
+`mcpName` field, one purely to refresh npm's published README after a couple of unrelated wording
+fixes ([#38](https://github.com/J-MaFf/s2-netbox-mcp/issues/38),
+[#40](https://github.com/J-MaFf/s2-netbox-mcp/issues/40)) — npm snapshots the README at publish
+time and has no live sync from GitHub, so any README-only change needs a new version to reach npm.
+
 ### Components
 
 | File | Description |
@@ -125,6 +170,11 @@ continuous feature's `npm run test:live:write -- --go`).
 | `scripts/live-check-write.ts`, `scripts/liveCheckWriteHelpers.ts` | Opt-in live write smoke test (`npm run test:live:write`) and its unit-tested pure helpers |
 | `scripts/live-check-write-daily.ts` | Opt-in live write smoke test for the daily window (`npm run test:live:write:daily`) |
 | `test/fakeNetbox.ts` | Stateful in-memory controller double for the composite tools' tests (reproduces the live 6.2.0 quirks) |
+| `server.json` | Official MCP Registry metadata (`io.github.J-MaFf/s2-netbox-mcp`); version kept in sync with `package.json` |
+| `.github/workflows/ci.yml` | Typecheck/test/build on every push/PR against `main`; a required status check |
+| `.github/workflows/publish.yml` | Publishes to npm via OIDC Trusted Publishing on every `v*` tag push |
+| `CONTRIBUTING.md` | Issue-first workflow, branch naming, PR conventions for outside contributors |
+| `SECURITY.md` | Private vulnerability reporting instructions; physical-safety blast radius by config level |
 
 ### Resolved Issues
 
@@ -137,26 +187,43 @@ continuous feature's `npm run test:live:write -- --go`).
 | [#9](https://github.com/J-MaFf/s2-netbox-mcp/issues/9) | Managed unlock windows, `set_portals_state`, live write smoke test (stage 2); live door test passed | [#11](https://github.com/J-MaFf/s2-netbox-mcp/pull/11) |
 | [#12](https://github.com/J-MaFf/s2-netbox-mcp/issues/12) | Track live-verification status of every MCP tool; added `trigger_event_activate`/`trigger_event_deactivate` supervised actions | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
 | [#13](https://github.com/J-MaFf/s2-netbox-mcp/issues/13) | Live round-trips for people, credentials, access levels, threat levels, activity, UDF, partitions in `test:live:write` | [#14](https://github.com/J-MaFf/s2-netbox-mcp/pull/14) |
+| [#15](https://github.com/J-MaFf/s2-netbox-mcp/issues/15) | Prepare and publish the first tagged release (`v0.1.0`) | [#16](https://github.com/J-MaFf/s2-netbox-mcp/pull/16) |
 | [#17](https://github.com/J-MaFf/s2-netbox-mcp/issues/17) | README leaked maintainer's personal Windows path in the MCP config example | [#18](https://github.com/J-MaFf/s2-netbox-mcp/pull/18) |
 | [#19](https://github.com/J-MaFf/s2-netbox-mcp/issues/19) | Add LICENSE (MIT); redact local Windows username from archived specs | [#20](https://github.com/J-MaFf/s2-netbox-mcp/pull/20) |
 | [#21](https://github.com/J-MaFf/s2-netbox-mcp/issues/21) | Cut v0.1.1 (LICENSE + archived-spec path redaction) | [#22](https://github.com/J-MaFf/s2-netbox-mcp/pull/22) |
 | [#23](https://github.com/J-MaFf/s2-netbox-mcp/issues/23) | Daily recurring unlock window (`schedule_daily_unlock_window`/`cancel_daily_unlock_window`/`get_daily_unlock_window`); live door test passed | [#24](https://github.com/J-MaFf/s2-netbox-mcp/pull/24) |
+| [#26](https://github.com/J-MaFf/s2-netbox-mcp/issues/26) | Tag and publish v0.2.0 | [#31](https://github.com/J-MaFf/s2-netbox-mcp/pull/31) |
+| [#27](https://github.com/J-MaFf/s2-netbox-mcp/issues/27) | Make s2-netbox-mcp installable via npm | [#32](https://github.com/J-MaFf/s2-netbox-mcp/pull/32) |
+| [#28](https://github.com/J-MaFf/s2-netbox-mcp/issues/28) | CI + CONTRIBUTING.md + issue/PR templates | [#35](https://github.com/J-MaFf/s2-netbox-mcp/pull/35) |
+| [#29](https://github.com/J-MaFf/s2-netbox-mcp/issues/29) | Submit to MCP server directories (official Registry, mcp.so) | [#36](https://github.com/J-MaFf/s2-netbox-mcp/pull/36) |
+| [#33](https://github.com/J-MaFf/s2-netbox-mcp/issues/33) | npm Trusted Publishing via GitHub Actions | [#34](https://github.com/J-MaFf/s2-netbox-mcp/pull/34) |
+| [#38](https://github.com/J-MaFf/s2-netbox-mcp/issues/38) | Improve README read-only tools list readability | [#37](https://github.com/J-MaFf/s2-netbox-mcp/pull/37) |
+| [#40](https://github.com/J-MaFf/s2-netbox-mcp/issues/40) | Fix write and destructive tools section wording in README | [#39](https://github.com/J-MaFf/s2-netbox-mcp/pull/39) |
+| [#41](https://github.com/J-MaFf/s2-netbox-mcp/issues/41) | Cut v0.2.3 to sync npm's published README | [#42](https://github.com/J-MaFf/s2-netbox-mcp/pull/42) |
+| [#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30) | SECURITY.md + physical-safety README messaging + repo security settings | [#43](https://github.com/J-MaFf/s2-netbox-mcp/pull/43) |
 
 ### Open Issues
 
-None.
+None on GitHub. One tracked in `bd` only (not a shippable code unit): setting up the Antigravity
+desktop app + `s2-netbox-mcp` for a second user (Angela) — her NetBox operator account already has
+the same `full system setup` role as the maintainer's, so the write/destructive gating has to be
+enforced client-side via her `mcp_config.json`, not by the NetBox account itself.
 
 ## Natural Next Steps
 
-1. Tag and publish a `v0.2.0` GitHub release now that the daily-unlock-window work (`v0.1.1` ->
-   `0.2.0` in `package.json`) is merged and live-verified.
-2. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
-3. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
+1. If you want Smithery listed too, it requires connecting the maintainer's own GitHub account
+   through Smithery's dashboard (OAuth) — not something automatable from here.
+2. Elevators/floors (`GetElevators`/`GetFloors`) have no add/modify/delete tools, and it's not
+   confirmed whether that's because the vendor NBAPI has no write commands for them (as is
+   confirmed true for threat levels — see README's `GetThreatLevel` note) or whether it's simply
+   unexplored. Worth checking against LenelS2 doc #API-UG-14 if that matters for your use case.
+3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
+4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
 
 ## Prerequisites to Run
 
-1. `npm install`
+1. `npm install -g s2-netbox-mcp` (published package), or `npm install` in a clone for local dev
 2. Copy `.env.example` to `.env` and fill in `NETBOX_BASE_URL`, `NETBOX_USERNAME`,
    `NETBOX_PASSWORD` for a NetBox controller configured per README's "Controller prerequisites".
    Set `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` only if you want the write tools — the
