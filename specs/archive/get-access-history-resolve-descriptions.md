@@ -1,7 +1,7 @@
 # Spec: `RESOLVEDESCRIPTIONS` reader-description enrichment for the access-record tools
 
-> **Archived, 2026-09-16.** Built via the forge skill in PR (see the PR that merges this file's
-> move — filled in below once opened), `Fixes #53`. Took 2 rounds: round 1 passed the rubric's
+> **Archived, 2026-09-16.** Built via the forge skill in
+> [PR #54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54) (`Fixes #53`). Took 2 rounds: round 1 passed the rubric's
 > literal text but the blind evaluator's own evidence surfaced a real bug the wording let through
 > — `get_reader_access_history` called `fetchReaderDescriptions` directly (bypassing
 > `enrichWithReaderDescriptions`'s failure catch) and would throw, losing its primary access-history
