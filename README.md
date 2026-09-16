@@ -207,12 +207,32 @@ suffices only for the read tools.
   you're on 6.x and still see this, double-check `NETBOX_API_PATH` isn't set
   to something else by mistake.
 
-## Registering with Claude Code
+## Registering with an MCP client
 
-Add this to your Claude Code MCP server configuration (e.g. via
-`claude mcp add-json s2-netbox-mcp '<json>'`, or directly in your
-`.mcp.json` / `claude_desktop_config.json`-style config file under
-`mcpServers`):
+This server works with any MCP client that speaks the standard `mcpServers`
+stdio config shape — Claude Code, Antigravity, and Gemini CLI have all been
+verified against it directly. Which JSON to use depends on which **Setup**
+option you picked above:
+
+**If you installed via npm (Setup Option A):**
+
+```json
+{
+  "mcpServers": {
+    "s2-netbox-mcp": {
+      "command": "s2-netbox-mcp",
+      "env": {
+        "NETBOX_BASE_URL": "https://netbox.example.internal",
+        "NETBOX_USERNAME": "svc-account",
+        "NETBOX_PASSWORD": "REPLACE_ME",
+        "NETBOX_ALLOW_INSECURE_TLS": "false"
+      }
+    }
+  }
+}
+```
+
+**If you cloned and built locally (Setup Option B):**
 
 ```json
 {
@@ -236,6 +256,17 @@ your machine, and replace the `env` values with your real controller details
 (or omit `env` entirely and rely on a `.env` file next to the project if you
 prefer — either works, since `src/index.ts` loads `.env` via `dotenv` before
 reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
+
+Where to put that JSON depends on the client:
+
+| Client | Config file | Notes |
+| --- | --- | --- |
+| Claude Code | `.mcp.json` in your project, or `claude_desktop_config.json` | Or add non-interactively via `claude mcp add-json s2-netbox-mcp '<json>'` |
+| Antigravity | `~/.gemini/config/mcp_config.json` (Windows: `%USERPROFILE%\.gemini\config\mcp_config.json`) | Global — applies to every Antigravity session |
+| Gemini CLI | `~/.gemini/settings.json`, under its own `mcpServers` key | Or add non-interactively via `gemini mcp add s2-netbox-mcp <command> [args] -e KEY=value` |
+
+All three use the identical `mcpServers` object shape shown above — only the
+surrounding file and location differ.
 
 ## Tools exposed
 

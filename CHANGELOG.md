@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- README's client registration section, previously "Registering with Claude Code" and
+  clone-only, is now "Registering with an MCP client": adds the npm-install JSON variant
+  alongside the existing clone-based one, and a table of known client config file locations
+  (Claude Code, Antigravity, Gemini CLI) -- all verified working with this server this session
+  ([#49](https://github.com/J-MaFf/s2-netbox-mcp/issues/49)).
+
 ### Added
 - `get_reader_access_history` tool: a single reader's access (grant/deny) history, filtered
   client-side (`GetAccessHistory` has no `READERKEY`/`PORTALKEY` filter) over a bounded
