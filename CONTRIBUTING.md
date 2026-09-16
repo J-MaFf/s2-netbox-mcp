@@ -65,3 +65,6 @@ contributors — don't let SSH/GPG signing setup be a barrier to contributing.
 This server can lock/unlock doors and delete access-control objects on a real physical
 security controller when write/destructive tools are enabled. If your change touches a write
 or destructive tool, call that out explicitly in the PR description.
+
+Found an actual security vulnerability rather than a PR-worthy change? See `SECURITY.md` —
+please report it privately rather than opening a public issue or PR.
