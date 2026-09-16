@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
+  same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
+  below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,
+  every returned group's bare `UNLOCKTIMESPECGROUPKEY` foreign key is resolved into a new sibling
+  `UNLOCKTIMESPECGROUPNAME` field, reusing `src/timeSpecGroupNames.ts`'s `fetchTimeSpecGroupNames`
+  as-is. Unlike the singular tool's at-most-one-conditional-fetch shape (a single group carries
+  exactly one key), this plural tool builds the `fetchTimeSpecGroupNames` map **once per call**,
+  only if at least one group on the page carries a non-empty `UNLOCKTIMESPECGROUPKEY` (zero
+  `GetTimeSpecGroups` calls if every key on the page is empty), then looks every group up against
+  that same shared map -- the same one-shared-fetch-per-page cost shape as `get_time_spec_groups`'s
+  own `RESOLVEMEMBERNAMES`, never one fetch per group. `GetPortalGroups`' list items are already
+  flat (`DETAILS.PORTALGROUPS.PORTALGROUP[]`, no per-item `PORTALGROUP` wrapper -- that quirk
+  belongs only to the singular `GetPortalGroup` command's own response envelope), so no per-item
+  unwrap is applied. The already-human-readable `PORTALS` sub-list (`{PORTALKEY, NAME}` per portal)
+  is left completely unchanged on every group. A `GetTimeSpecGroups` fetch failure yields `''` for
+  every group's name while every other field (including `PORTALS`) stays intact
+  ([#69](https://github.com/J-MaFf/s2-netbox-mcp/issues/69)).
 - `get_portal_group` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as `get_access_level`'s own `RESOLVEGROUPNAMES` below,
   since it is the identical kind of lookup against the same `GetTimeSpecGroups` table): unless

@@ -301,7 +301,7 @@ surrounding file and location differ.
 | `get_holiday`                | `GetHoliday`             | `HOLIDAYKEY`                  |
 | `get_holidays`               | `GetHolidays`            | — (optional `STARTFROMKEY`)   |
 | `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY` (optional `RESOLVEGROUPNAMES`) |
-| `get_portal_groups`          | `GetPortalGroups`        | — (optional `STARTFROMKEY`)   |
+| `get_portal_groups`          | `GetPortalGroups`        | — (optional `STARTFROMKEY`/`RESOLVEGROUPNAMES`) |
 | `get_reader_group`           | `GetReaderGroup`         | `READERGROUPKEY`              |
 | `get_reader_groups`          | `GetReaderGroups`        | — (optional `STARTFROMKEY`)   |
 | `get_partitions`             | `GetPartitions`          | —                             |
@@ -495,6 +495,37 @@ empty/absent `UNLOCKTIMESPECGROUPKEY` skips the fetch entirely and yields
 the primary `GetPortalGroup` data (including `PORTALS`) intact. Set
 `RESOLVEGROUPNAMES: false` to skip the fetch and get the response back
 exactly as `GetPortalGroup` provides it.
+
+`get_portal_groups` accepts the same `RESOLVEGROUPNAMES` flag (default
+**`true`**, same opt-*out* default and field name as the singular
+`get_portal_group` above — this is its explicitly-planned follow-on):
+unless explicitly set to `false`, it resolves every returned group's bare
+`UNLOCKTIMESPECGROUPKEY` foreign key into a new sibling
+`UNLOCKTIMESPECGROUPNAME` field, reusing the same
+`src/timeSpecGroupNames.ts` helper. Unlike the singular tool (whose response
+carries exactly one `UNLOCKTIMESPECGROUPKEY`, so it does at most one
+*conditional* fetch), this plural tool builds the
+`fetchTimeSpecGroupNames` map **once per call** — only if at least one group
+on the page carries a non-empty `UNLOCKTIMESPECGROUPKEY` (zero
+`GetTimeSpecGroups` calls if every group's key on the page is empty) — then
+looks every group up against that same shared map, the same one-fetch-per-
+page cost shape as `get_time_spec_groups`'s own `RESOLVEMEMBERNAMES` above,
+never one fetch per group. Unlike `GetPortalGroup` (singular), `GetPortalGroups`'
+response is already flat per item — `DETAILS.PORTALGROUPS.PORTALGROUP[]`, no
+per-item `PORTALGROUP` wrapper — so no per-item unwrap is applied; that
+wrapper quirk belongs only to the singular command's own response envelope.
+The already-human-readable `PORTALS` sub-list (`{PORTALKEY, NAME}` per
+portal) is left completely unchanged on every group.
+`THREATLEVELGROUPKEY` is **never** resolved — no NBAPI read command for
+threat level groups exists in this server's command surface. A group with an
+empty/absent `UNLOCKTIMESPECGROUPKEY` gets `UNLOCKTIMESPECGROUPNAME: ''`
+without needing a match; a group whose key has no match in the fetched map
+also gets `''`. If the underlying `GetTimeSpecGroups` fetch itself fails,
+every group's `UNLOCKTIMESPECGROUPNAME` resolves to `''` and the call still
+succeeds with every group's other fields (including `PORTALS`) intact — an
+enrichment failure never loses the primary data. Set `RESOLVEGROUPNAMES:
+false` to skip the fetch and get groups back exactly as `GetPortalGroups`
+provides them.
 
 `list_events` accepts `RESOLVEPARTITIONNAMES` (default **`true`** — on by
 default, the same opt-*out* default as the other `RESOLVE*` flags above):

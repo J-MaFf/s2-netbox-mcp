@@ -13,7 +13,7 @@ import {
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
-import { asRecord, text } from '../paging.js';
+import { asRecord, asRecordList, text } from '../paging.js';
 import { fetchTimeSpecGroupNames } from '../timeSpecGroupNames.js';
 
 /**
@@ -54,6 +54,25 @@ import { fetchTimeSpecGroupNames } from '../timeSpecGroupNames.js';
  * from, and UNLOCKTIMESPECGROUPNAME is added onto, the actual inner record
  * — not a sibling of the outer `PORTALGROUP` wrapper — while leaving the
  * overall response shape (wrapped or not) exactly as GetPortalGroup gave it.
+ *
+ * get_portal_groups's own RESOLVEGROUPNAMES (specs/portal-groups-resolve-
+ * group-names.md) is the explicitly-planned follow-on to the singular
+ * tool's RESOLVEGROUPNAMES above, for the plural GetPortalGroups list.
+ * Unlike GetPortalGroup (singular), GetPortalGroups' response is documented
+ * as DETAILS.PORTALGROUPS.PORTALGROUP[] — each list item is already flat,
+ * with no per-item PORTALGROUP wrapper (that quirk is specific to the
+ * singular command's own response envelope), so this must NOT apply the
+ * singular tool's `'PORTALGROUP' in details` unwrap to list items. Also
+ * unlike the singular tool's own at-most-one-conditional-fetch shape (a
+ * single group carries exactly one UNLOCKTIMESPECGROUPKEY), this builds the
+ * fetchTimeSpecGroupNames map **once per call**, only if at least one group
+ * on the page has a non-empty UNLOCKTIMESPECGROUPKEY (zero calls if every
+ * key on the page is empty), then looks every group up against that same
+ * map — mirroring get_time_spec_groups's RESOLVEMEMBERNAMES precedent of
+ * one shared fetch serving every item on the page (src/tools/timeSpec.ts),
+ * not get_access_level's per-key-conditional pattern. THREATLEVELGROUPKEY
+ * and the already-human-readable PORTALS sub-list are both left unchanged —
+ * same reasoning as the singular tool.
  */
 export function registerPortalGroupTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
@@ -109,9 +128,64 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
 
   server.tool(
     'get_portal_groups',
-    'Lists portal groups configured on the NetBox system (wraps NBAPI GetPortalGroups).',
-    { STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.') },
-    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_GROUPS, mergeParams({ STARTFROMKEY }))
+    'Lists portal groups configured on the NetBox system (wraps NBAPI GetPortalGroups). ' +
+      'RESOLVEGROUPNAMES defaults to true — an inverted, opt-*out* default (unlike most optional booleans in this ' +
+      "codebase): each returned group's UNLOCKTIMESPECGROUPKEY is a bare foreign key, so this resolves it into a " +
+      'new sibling UNLOCKTIMESPECGROUPNAME field on every group. Costs at most one full-table GetTimeSpecGroups ' +
+      'fetch per call — not per group — built once and skipped entirely when every group on the page has an ' +
+      'empty/absent UNLOCKTIMESPECGROUPKEY. THREATLEVELGROUPKEY is never resolved (no NBAPI read command exists ' +
+      'for threat level groups). Set RESOLVEGROUPNAMES: false to skip the fetch and return groups exactly as ' +
+      'GetPortalGroups provides them.',
+    {
+      STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.'),
+      RESOLVEGROUPNAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            "default). Resolves each group's UNLOCKTIMESPECGROUPKEY bare foreign key into a new sibling " +
+            'UNLOCKTIMESPECGROUPNAME field, via at most one full-table GetTimeSpecGroups fetch per call (not per ' +
+            'group) — built once and skipped entirely when every group on the page has an empty/absent ' +
+            "UNLOCKTIMESPECGROUPKEY, yielding '' for the name. THREATLEVELGROUPKEY is never resolved — no NBAPI " +
+            'read command exists for threat level groups. Set to false to skip the fetch and return groups ' +
+            'exactly as GetPortalGroups provides them.'
+        ),
+    },
+    async ({ STARTFROMKEY, RESOLVEGROUPNAMES }): Promise<ToolTextResult> => {
+      if (RESOLVEGROUPNAMES === false) {
+        return runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_GROUPS, mergeParams({ STARTFROMKEY }));
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.GET_PORTAL_GROUPS, mergeParams({ STARTFROMKEY }));
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const groupsWrapper = asRecord(details.PORTALGROUPS);
+        const rawGroups = asRecordList(groupsWrapper.PORTALGROUP);
+        // R2/R4: build the shared fetchTimeSpecGroupNames map once per call,
+        // only if at least one group on the page carries a non-empty
+        // UNLOCKTIMESPECGROUPKEY — zero GetTimeSpecGroups calls otherwise.
+        // Mirrors get_time_spec_groups's RESOLVEMEMBERNAMES (one shared
+        // fetch serving every item on the page), not get_access_level's
+        // per-key-conditional fetch.
+        const hasAnyKey = rawGroups.some((group) => text(group.UNLOCKTIMESPECGROUPKEY) !== '');
+        const namesByTimeSpecGroupKey = hasAnyKey ? await fetchTimeSpecGroupNames(client) : new Map<string, string>();
+        // Each list item is already flat (no per-item PORTALGROUP wrapper —
+        // that quirk is specific to the singular GetPortalGroup's own
+        // response envelope), so no unwrap is applied here.
+        const groups = rawGroups.map((group) => {
+          const unlockTimeSpecGroupKey = text(group.UNLOCKTIMESPECGROUPKEY);
+          const unlockTimeSpecGroupName =
+            unlockTimeSpecGroupKey === '' ? '' : (namesByTimeSpecGroupKey.get(unlockTimeSpecGroupKey) ?? '');
+          return { ...group, UNLOCKTIMESPECGROUPNAME: unlockTimeSpecGroupName };
+        });
+        const responseData = { ...details, PORTALGROUPS: { ...groupsWrapper, PORTALGROUP: groups } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   if (gate.writesEnabled) {
