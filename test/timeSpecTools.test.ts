@@ -268,13 +268,25 @@ describe('R11: time spec write tools', () => {
     ]);
   });
 
-  it('modify_time_spec requires TIMESPECKEY instead of NAME', () => {
+  it('modify_time_spec requires TIMESPECKEY and accepts an optional NAME to rename the time spec', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerTimeSpecTools(server as unknown as McpServer, client, WRITES_ON);
-    const keys = Object.keys(byName(server, 'modify_time_spec').schema);
-    expect(keys).toContain('TIMESPECKEY');
-    expect(keys).not.toContain('NAME');
+    const schema = byName(server, 'modify_time_spec').schema as Record<string, { isOptional: () => boolean }>;
+    expect(Object.keys(schema)).toContain('TIMESPECKEY');
+    expect(schema.TIMESPECKEY.isOptional()).toBe(false);
+    expect(Object.keys(schema)).toContain('NAME');
+    expect(schema.NAME.isOptional()).toBe(true);
+  });
+
+  it('modify_time_spec forwards NAME to ModifyTimeSpec', async () => {
+    const server = new FakeServer();
+    const { client, calls } = fakeClient();
+    registerTimeSpecTools(server as unknown as McpServer, client, WRITES_ON);
+    await byName(server, 'modify_time_spec').handler({ TIMESPECKEY: '8', NAME: 'Renamed Hours' });
+    expect(calls).toEqual([
+      { command: NBAPI_COMMANDS.MODIFY_TIME_SPEC, params: { TIMESPECKEY: '8', NAME: 'Renamed Hours' } },
+    ]);
   });
 
   it('add_time_spec_group requires NAME, DESCRIPTION optional', () => {

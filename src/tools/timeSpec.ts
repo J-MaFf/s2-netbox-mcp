@@ -137,7 +137,11 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
     server.tool(
       'modify_time_spec',
       'WRITE: Modifies an existing time spec (wraps NBAPI ModifyTimeSpec). The built-in Always/Never time specs cannot be modified.',
-      { TIMESPECKEY: z.string().describe('Required. The TIMESPECKEY of the time spec to modify.'), ...timeSpecWriteFields },
+      {
+        TIMESPECKEY: z.string().describe('Required. The TIMESPECKEY of the time spec to modify.'),
+        NAME: z.string().optional().describe('Optional. New name for the time spec.'),
+        ...timeSpecWriteFields,
+      },
       async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_TIME_SPEC, mergeParams(args), formatWriteSuccess)
     );
 
