@@ -87,6 +87,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   level groups exists in this server's command surface at all
   ([#61](https://github.com/J-MaFf/s2-netbox-mcp/issues/61)).
 
+### Fixed
+- `get_reader_access_history` no longer drops the native `PORTALNAME` field that
+  `GetAccessHistory` already returns on every record -- `PORTALKEY` was kept but `PORTALNAME` was
+  silently discarded by this tool's own record transform, unlike `get_access_history`/
+  `get_card_access_details`, which already pass it through untouched
+  ([#70](https://github.com/J-MaFf/s2-netbox-mcp/issues/70)).
+
 ## [0.3.0] — 2026-09-16
 
 ### Changed

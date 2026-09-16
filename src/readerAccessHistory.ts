@@ -62,6 +62,7 @@ export interface AccessHistoryRecord {
   READER: string;
   READERKEY: string;
   PORTALKEY: string;
+  PORTALNAME: string;
   DTTM: string;
   NODEDTTM: string;
   TYPE: string;
@@ -77,6 +78,7 @@ function toAccessHistoryRecord(raw: XmlRecord): AccessHistoryRecord {
     READER: text(raw.READER),
     READERKEY: text(raw.READERKEY),
     PORTALKEY: text(raw.PORTALKEY),
+    PORTALNAME: text(raw.PORTALNAME),
     DTTM: text(raw.DTTM),
     NODEDTTM: text(raw.NODEDTTM),
     TYPE: text(raw.TYPE),
