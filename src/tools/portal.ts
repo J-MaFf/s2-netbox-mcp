@@ -7,12 +7,15 @@ import {
   mergeParams,
   formatAsJson,
   formatWriteSuccess,
+  notFoundResult,
   toolErrorResult,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
 import { findPortals } from '../portalSearch.js';
 import { PORTAL_STATE_ACTIONS, setPortalsState } from '../portalState.js';
+import { asRecord, asRecordList, text } from '../paging.js';
+import { fetchReaderDescriptions } from '../readerDescriptions.js';
 
 /**
  * Portal/reader/output tools: GetPortals, GetReader, GetReaders, GetOutputs
@@ -32,19 +35,75 @@ import { PORTAL_STATE_ACTIONS, setPortalsState } from '../portalState.js';
  * GetPortals nor GetReaders takes a filter: it reads both in full and matches
  * the joined names and reader descriptions client-side (see portalSearch.ts),
  * issuing no commands beyond those two.
+ *
+ * `get_portals`'s RESOLVEDESCRIPTIONS (specs/get-portals-resolve-
+ * descriptions.md) fills in each nested reader's own DESCRIPTION field —
+ * GetPortals never populates it (only READERKEY/NAME/PORTALORDER), and
+ * DESCRIPTION is that reader's own native GetReaders field, so this fills it
+ * in directly rather than adding a differently-named sibling field the way
+ * get_access_history's RESOLVEDESCRIPTIONS adds READERDESCRIPTION onto its
+ * flat ACCESS records. It reuses src/readerDescriptions.ts's
+ * fetchReaderDescriptions (one full-table GetReaders fetch per call, never
+ * per portal/reader) and, like every other RESOLVEDESCRIPTIONS flag in this
+ * codebase, defaults to true (opt-out) since that fetch has a fixed cost
+ * that doesn't scale with how many portals/readers are on the page.
+ * fast-xml-parser collapses a one-child READERS/PORTAL collection to a bare
+ * object rather than a list, so this bypasses runNbapiTool (whose
+ * formatSuccess callback is synchronous) and normalizes both PORTAL and
+ * nested READER lists via src/paging.ts's asRecordList — the same
+ * normalization portalSearch.ts already relies on — before re-wrapping them.
  */
 export function registerPortalTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
     'get_portals',
     'Lists portals (doors) configured on the NetBox system, each with its nested readers ' +
-      '(wraps NBAPI GetPortals, paginated via STARTFROMKEY/NEXTKEY — there is no single-portal filter).',
+      '(wraps NBAPI GetPortals, paginated via STARTFROMKEY/NEXTKEY — there is no single-portal filter). ' +
+      'RESOLVEDESCRIPTIONS defaults to true — an inverted, opt-*out* default (unlike most optional booleans in ' +
+      "this codebase): GetPortals never populates a nested reader's own DESCRIPTION field (only READERKEY/NAME/" +
+      'PORTALORDER), so this fills it in directly on each nested reader via one GetReaders full-table fetch per ' +
+      'call (not per portal/reader). Set RESOLVEDESCRIPTIONS: false to return readers exactly as GetPortals ' +
+      'provides them, with no DESCRIPTION field and no GetReaders call.',
     {
       STARTFROMKEY: z
         .string()
         .optional()
         .describe('Optional. Pagination cursor — the NEXTKEY from a previous call, to continue listing.'),
+      RESOLVEDESCRIPTIONS: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            "default). Fills in each nested reader's own DESCRIPTION field (GetPortals leaves it unpopulated) " +
+            'via one GetReaders full-table fetch per call (not per portal/reader). Set to false to skip it and ' +
+            'return readers exactly as GetPortals provides them.'
+        ),
     },
-    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTALS, mergeParams({ STARTFROMKEY }))
+    async ({ STARTFROMKEY, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
+      if (RESOLVEDESCRIPTIONS === false) {
+        return runNbapiTool(client, NBAPI_COMMANDS.GET_PORTALS, mergeParams({ STARTFROMKEY }));
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.GET_PORTALS, mergeParams({ STARTFROMKEY }));
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const portalsWrapper = asRecord(details.PORTALS);
+        const descriptionsByReaderKey = await fetchReaderDescriptions(client);
+        const portals = asRecordList(portalsWrapper.PORTAL).map((portal) => {
+          const readersWrapper = asRecord(portal.READERS);
+          const readers = asRecordList(readersWrapper.READER).map((reader) => ({
+            ...reader,
+            DESCRIPTION: descriptionsByReaderKey.get(text(reader.READERKEY)) ?? '',
+          }));
+          return { ...portal, READERS: { ...readersWrapper, READER: readers } };
+        });
+        const responseData = { ...details, PORTALS: { ...portalsWrapper, PORTAL: portals } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   server.tool(

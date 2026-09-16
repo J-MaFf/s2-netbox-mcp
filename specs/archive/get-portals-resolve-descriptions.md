@@ -1,5 +1,10 @@
 # Spec: `RESOLVEDESCRIPTIONS` reader-description enrichment for `get_portals`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 9 acceptance criteria
+> (C1-C8, C-final) passed cleanly, including the fast-xml-parser bare-object single-reader
+> edge case. This was the last of four sequential RESOLVENAMES/RESOLVEDESCRIPTIONS enrichment
+> specs. Shipped in [PR #58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58).
+
 ## Goal
 
 Let `get_portals` fill in each nested reader's human-readable `DESCRIPTION` by default, instead of
