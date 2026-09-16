@@ -7,14 +7,22 @@ import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, type ToolGateF
 const COLOR_ENUM = z.enum(['White', 'Green', 'Blue', 'Yellow', 'Orange', 'Red']);
 
 /**
- * Threat level tools (R18): SetThreatLevel, AddThreatLevel,
- * ModifyThreatLevel, RemoveThreatLevel, AddThreatLevelGroup,
- * ModifyThreatLevelGroup, RemoveThreatLevelGroup. No read command for
- * threat levels/groups exists in the Command reference, so this module is
- * write-only. Field names are copied verbatim from the spec's Command
- * reference.
+ * Threat level tools (R18): GetThreatLevels (read, always registered) plus
+ * the write tools SetThreatLevel, AddThreatLevel, ModifyThreatLevel,
+ * RemoveThreatLevel, AddThreatLevelGroup, ModifyThreatLevelGroup,
+ * RemoveThreatLevelGroup. No read command for threat level *groups*
+ * specifically exists in the Command reference — only for individual
+ * levels (GetThreatLevels) — so group membership stays write-only. Field
+ * names are copied verbatim from the spec's Command reference.
  */
 export function registerThreatLevelTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
+  server.tool(
+    'get_threat_levels',
+    'Lists threat levels configured on the NetBox system, optionally filtered (wraps NBAPI GetThreatLevels).',
+    { ALLPARTITIONS: z.string().optional().describe('Optional. Per NBAPI GetThreatLevels filter.') },
+    async ({ ALLPARTITIONS }) => runNbapiTool(client, NBAPI_COMMANDS.GET_THREAT_LEVELS, mergeParams({ ALLPARTITIONS }))
+  );
+
   if (!gate.writesEnabled) return;
 
   server.tool(

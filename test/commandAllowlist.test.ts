@@ -8,7 +8,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC_DIR = join(ROOT, 'src');
 const SCRIPTS_DIR = join(ROOT, 'scripts');
 
-// R4: the exact 80-command closed set. Confined to src/commands.ts only.
+// R4: the exact 81-command closed set. Confined to src/commands.ts only.
 const EXPECTED_COMMANDS = [
   // Session lifecycle + v0.2.0 reads (17)
   'Login',
@@ -47,6 +47,7 @@ const EXPECTED_COMMANDS = [
   'GetElevators',
   'GetFloors',
   'PingApp',
+  'GetThreatLevels',
   // Actions (7)
   'ActivateOutput',
   'DeactivateOutput',
@@ -132,12 +133,12 @@ function listTsFiles(dir: string): string[] {
   return out;
 }
 
-describe('R4: 80-command NBAPI allowlist', () => {
-  it('NBAPI_COMMANDS contains exactly the 80 documented commands, no more, no less', () => {
+describe('R4: 81-command NBAPI allowlist', () => {
+  it('NBAPI_COMMANDS contains exactly the 81 documented commands, no more, no less', () => {
     const values = Object.values(NBAPI_COMMANDS).sort();
     expect(values).toEqual([...EXPECTED_COMMANDS].sort());
-    expect(values).toHaveLength(80);
-    expect(new Set(values).size).toBe(80); // no duplicates
+    expect(values).toHaveLength(81);
+    expect(new Set(values).size).toBe(81); // no duplicates
   });
 
   it('no forbidden (out-of-scope/deprecated) command literal appears anywhere in src/ or scripts/', () => {

@@ -80,9 +80,12 @@ and [#44](https://github.com/J-MaFf/s2-netbox-mcp/issues/44) (this file's previo
 [PR #45](https://github.com/J-MaFf/s2-netbox-mcp/pull/45)) landed alongside them. `get_reader_access_history`
 is the only new tool name; every other change is an additive optional field on an existing tool.
 
-Tool surface on `main` now: **37** read tools with writes off; **76** with `NETBOX_ENABLE_WRITES`;
-**87** with `NETBOX_ENABLE_DESTRUCTIVE` as well (up from 36/75/86 for the one new tool).
-607 unit tests pass (30 files), `npm run typecheck` and `npm run build` are clean, and
+Tool surface on `main` now: **38** read tools with writes off; **77** with `NETBOX_ENABLE_WRITES`;
+**88** with `NETBOX_ENABLE_DESTRUCTIVE` as well (up from 37/76/87 for the new `get_threat_levels`
+read tool — issue [#77](https://github.com/J-MaFf/s2-netbox-mcp/issues/77), added after a full
+conformance review against the vendor's April-2025 NBAPI v2 doc found the command was documented
+but never wired into the 80-command allowlist; see `docs/reference/NetBox_API_V2.pdf`).
+659 unit tests pass (33 files), `npm run typecheck` and `npm run build` are clean, and
 `npm run test:live` (39/39) has verified every enrichment path against the real controller.
 
 ## Previous State — 2026-09-15
@@ -227,7 +230,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `src/tools/dailyUnlockWindow.ts` | Registers `get_daily_unlock_window` (always) and `schedule_daily_unlock_window` / `cancel_daily_unlock_window` (writes on) |
 | `src/netboxClient.ts` | NBAPI XML client: session login/logout, retry-once-on-expiry, error mapping, per-command request path, RESPONSE-level field merge |
 | `src/config.ts` | Environment-variable configuration, including the write-tool gates and the unlock-window variables |
-| `src/commands.ts` | The closed 80-command NBAPI allowlist |
+| `src/commands.ts` | The closed 81-command NBAPI allowlist |
 | `src/xml.ts` | NBAPI XML request building (nested/array PARAMS) / response parsing |
 | `src/errors.ts` | APIERROR code descriptions, `NbapiApiError`/`NbapiFailError` |
 | `src/toolHelpers.ts` | `runNbapiTool`, `ToolGateFlags`, `formatWriteSuccess`, `clientGuardError`/`destructiveFlagRequired`, `wrapList` |
@@ -287,9 +290,11 @@ enforced client-side via her `mcp_config.json`, not by the NetBox account itself
 1. If you want Smithery listed too, it requires connecting the maintainer's own GitHub account
    through Smithery's dashboard (OAuth) — not something automatable from here.
 2. Elevators/floors (`GetElevators`/`GetFloors`) have no add/modify/delete tools, and it's not
-   confirmed whether that's because the vendor NBAPI has no write commands for them (as is
-   confirmed true for threat levels — see README's `GetThreatLevel` note) or whether it's simply
-   unexplored. Worth checking against LenelS2 doc #API-UG-14 if that matters for your use case.
+   confirmed whether that's because the vendor NBAPI has no write commands for them or whether
+   it's simply unexplored. (Threat levels turned out to be the opposite asymmetry — a documented
+   `GetThreatLevels` read command existed in the vendor doc all along but was never wired in; now
+   fixed by `get_threat_levels`, issue [#77](https://github.com/J-MaFf/s2-netbox-mcp/issues/77).)
+   Worth checking against LenelS2 doc #API-UG-14 if that matters for your use case.
 3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
 4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
