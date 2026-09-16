@@ -285,9 +285,9 @@ surrounding file and location differ.
 | `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
 | `get_card_formats`           | `GetCardFormats`         | —                             |
 | `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY` (optional `RESOLVEGROUPNAMES`) |
-| `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
+| `get_access_levels`          | `GetAccessLevels`        | — (optional `PARTITIONKEY`/`STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
 | `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPKEY`          |
-| `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`)   |
+| `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`/`PARTITIONKEY`) |
 | `get_access_level_names`     | `GetAccessLevelNames`    | — (optional `PARTITIONKEY`/`STARTFROMNAME`) |
 | `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`/`RESOLVEDESCRIPTIONS`; no single-portal filter — returns each portal with its nested readers) |
 | `get_reader`                 | `GetReader`              | `READERKEY`                   |

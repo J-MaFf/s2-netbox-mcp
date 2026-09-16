@@ -55,6 +55,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   need a follow-up `modify_time_spec_group` call just to add members. Wrapped the same way
   `modify_time_spec_group` already wraps it (`<TIMESPECKEYS><TIMESPECKEY>...`)
   ([#81](https://github.com/J-MaFf/s2-netbox-mcp/issues/81)).
+- `get_access_levels`/`get_access_level_groups` gain an optional `PARTITIONKEY` filter, documented
+  for both commands (doc pp.136/130) for retrieving a multi-partition list including each access
+  level's `PARTITIONKEY` (only `"0"` is a valid value; any other value fails the command). Both
+  tools previously omitted it while the sibling `get_access_level_names` already had it —
+  inconsistent within the same file
+  ([#82](https://github.com/J-MaFf/s2-netbox-mcp/issues/82)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,
