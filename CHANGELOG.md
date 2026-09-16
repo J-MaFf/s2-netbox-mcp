@@ -31,6 +31,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   above -- this repo's original implementation was written against an older Feb-2020 NBAPI v1 doc
   revision that didn't yet document these fields
   ([#78](https://github.com/J-MaFf/s2-netbox-mcp/issues/78)).
+- `add_person`/`modify_person` gain seven fields documented for NBAPI `AddPerson`/`ModifyPerson`
+  (doc pp.89/235) but previously entirely absent: `USERNAME`, `PASSWORD`, `ROLE`, `AUTHTYPE`
+  (closed enum `DB`/`LDAP`/`SSO`), `MOBILEPHONE`, `MSUENABLED`, `BLUEDIAMONDENABLED`. The doc marks
+  `USERNAME`/`ROLE`/`AUTHTYPE` "required," and `AddPerson`'s own FAIL list confirms it — but
+  `scripts/live-check-write.ts`'s `AddPerson` round-trip already succeeds against a real NetBox
+  6.2.0 controller without them, and `ModifyPerson`'s FAIL list has no matching error. All seven
+  are modeled as optional (closing the "can't set them at all" gap) rather than required, pending
+  live confirmation of when the requirement actually applies — most likely only once `USERNAME` is
+  set, i.e. only for a person who should also get a NetBox login account
+  ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,
