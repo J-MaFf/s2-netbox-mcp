@@ -1,5 +1,13 @@
 # Spec: `RESOLVEMEMBERNAMES` member-name enrichment for `get_time_spec_groups`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 10 acceptance criteria
+> (C1-C9, C-final) passed cleanly, including the `keyList` relocation's full pre-existing
+> `src/unlockWindow/*` test coverage staying green. Built in parallel with the sibling specs
+> `portal-group-resolve-group-names.md` and `list-events-resolve-partition-names.md`, each in
+> its own isolated git worktree. This is the 3rd of 4 specs in a new enrichment batch following
+> on from the `RESOLVENAMES`/`RESOLVEDESCRIPTIONS` work shipped in `v0.3.0`. Shipped in
+> [PR #68](https://github.com/J-MaFf/s2-netbox-mcp/pull/68).
+
 ## Goal
 
 Let `get_time_spec_groups` resolve each group's bare `TIMESPECKEYS` member list into named entries
