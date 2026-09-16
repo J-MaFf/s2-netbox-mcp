@@ -27,7 +27,7 @@ to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Tr
 
 ## Current State — 2026-09-16
 
-### Person/reader-description enrichment across access-record tools
+### Person/reader-description enrichment across access-record tools (`v0.3.0`)
 
 A five-part sequential push (spec -> forge loop per part, one PR each) making every read tool
 that returns a bare `PERSONID` or `READERKEY` optionally resolve it to a human-readable name,
