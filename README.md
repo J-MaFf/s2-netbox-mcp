@@ -3,11 +3,22 @@
 A local MCP server that exposes LenelS2 S2 NetBox NBAPI operations —
 persons/credentials, access levels, portals/readers/outputs, time specs,
 holidays, portal/reader groups, threat levels, events/activity, and
-partitions/UDF lists — as Claude-callable tools.
+partitions/UDF lists — as MCP tools usable from any MCP-compatible client
+(Claude, Gemini/Antigravity, etc.).
 
 > **Not** the open-source netboxlabs.com "NetBox" DCIM/IPAM tool. This targets
 > LenelS2's **S2 NetBox** physical access-control appliance and its NBAPI
 > (`Web-Based API for S2 NetBox and S2 Global`, LenelS2 doc #API-UG-14).
+
+> [!WARNING]
+> **This connects to a real physical security system.** With the wrong
+> configuration, an AI agent using this server could unlock doors or modify
+> access-control data on a live building. It is **read-only by default** —
+> writes and destructive operations (lock/unlock, add/modify/delete) each
+> require their own explicit opt-in environment variable (see **Write
+> access** below) — but you are responsible for what you enable and which
+> MCP client/model you point at it. See `SECURITY.md` before deploying
+> anything beyond read-only against a production controller.
 
 **Read-only by default.** With no write-related environment variables set,
 this server registers only query/read NBAPI commands:
@@ -855,3 +866,8 @@ including live verification).
 Bug reports, feature requests, and PRs are welcome — see `CONTRIBUTING.md` for the
 workflow (issue first, branch naming, PR conventions) and the physical-safety note that
 applies to any change touching write/destructive tools.
+
+## Security
+
+Found a vulnerability? See `SECURITY.md` for how to report it privately and what the
+physical-safety blast radius looks like at each configuration level.

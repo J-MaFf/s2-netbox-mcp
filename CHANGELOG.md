@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `SECURITY.md`: private vulnerability reporting instructions (via GitHub's private
+  advisory reporting, now enabled on the repo) and a plain statement of the physical-safety
+  blast radius at each configuration level ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+- A prominent `> [!WARNING]` callout near the top of README.md: this connects to a real
+  physical security system, read-only by default, writes/destructive are explicit opt-in
+  ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+- Enabled secret scanning + push protection on the repo (previously off; Dependabot security
+  updates were already on) ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+
+### Fixed
+- README's intro paragraph still said "Claude-callable tools" -- fixed to match the
+  client-agnostic wording used everywhere else ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+
 ## [0.2.3] — 2026-09-15
 
 ### Changed
