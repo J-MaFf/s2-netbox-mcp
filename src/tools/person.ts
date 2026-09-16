@@ -96,9 +96,34 @@ const vehiclesModifyField = z
   .optional()
   .describe('Optional. Vehicles to add/update (or remove, with DELETE="1") for this person.');
 
+// AddPerson/ModifyPerson both mark USERNAME/ROLE/AUTHTYPE "required" (doc pp.89/235), and
+// AddPerson's own FAIL list confirms it ("ROLE is a mandatory field for AddPerson.", "Missing
+// ROLE.", "Missing AUTHTYPE."). But live-check-write.ts's AddPerson round-trip already succeeds
+// against a real NetBox 6.2.0 controller with only LASTNAME/FIRSTNAME/NOTES, and ModifyPerson's
+// own FAIL list has no missing-ROLE/AUTHTYPE error at all — so these fields are modeled as
+// optional here (closing the "can't set them at all" gap) rather than required, pending live
+// confirmation of when the requirement actually bites (most likely: only once USERNAME is set,
+// i.e. only for a person who should also get a NetBox login account, not every person record).
+const AUTHTYPE_ENUM = z.enum(['DB', 'LDAP', 'SSO']);
+
 const personCommonOptionalFields = {
   FIRSTNAME: z.string().optional().describe("Optional. The person's first name."),
   MIDDLENAME: z.string().optional().describe("Optional. The person's middle name."),
+  USERNAME: z.string().optional().describe("Optional. Username for the person's NetBox login account."),
+  PASSWORD: z
+    .string()
+    .optional()
+    .describe('Optional. Password for the NetBox login account. Only applicable when AUTHTYPE is "DB" — leave unset for "SSO"/"LDAP".'),
+  ROLE: z.string().optional().describe("Optional. Role for the person's NetBox login account (e.g. \"full system setup\")."),
+  AUTHTYPE: AUTHTYPE_ENUM.optional().describe('Optional. Authorization type for the NetBox login account.'),
+  MOBILEPHONE: z.string().optional().describe("Optional. The person's mobile phone number."),
+  MSUENABLED: z
+    .string()
+    .optional()
+    .describe(
+      'Optional. Enables Mobile Security User (MSU) mobile credentials ("TRUE"/"FALSE"). Requires CONTACTEMAIL or MOBILEPHONE.'
+    ),
+  BLUEDIAMONDENABLED: z.string().optional().describe('Optional. Enables BlueDiamond mobile credentials ("TRUE"/"FALSE").'),
   NOTES: z.string().optional().describe('Optional. Free-text notes on the person record.'),
   EXPDATE: z.string().optional().describe('Optional. Date/time the person record expires.'),
   ACTDATE: z.string().optional().describe('Optional. Date/time the person record activates.'),
