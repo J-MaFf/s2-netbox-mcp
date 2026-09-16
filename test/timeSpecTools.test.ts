@@ -289,11 +289,26 @@ describe('R11: time spec write tools', () => {
     ]);
   });
 
-  it('add_time_spec_group requires NAME, DESCRIPTION optional', () => {
+  it('add_time_spec_group requires NAME, DESCRIPTION/TIMESPECKEYS optional', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerTimeSpecTools(server as unknown as McpServer, client, WRITES_ON);
-    expect(Object.keys(byName(server, 'add_time_spec_group').schema).sort()).toEqual(['NAME', 'DESCRIPTION'].sort());
+    expect(Object.keys(byName(server, 'add_time_spec_group').schema).sort()).toEqual(
+      ['NAME', 'DESCRIPTION', 'TIMESPECKEYS'].sort()
+    );
+  });
+
+  it('add_time_spec_group wraps TIMESPECKEYS as <TIMESPECKEYS><TIMESPECKEY>... to seed initial membership', async () => {
+    const server = new FakeServer();
+    const { client, calls } = fakeClient();
+    registerTimeSpecTools(server as unknown as McpServer, client, WRITES_ON);
+    await byName(server, 'add_time_spec_group').handler({ NAME: 'Maintenance Staff', TIMESPECKEYS: ['1', '2', '3'] });
+    expect(calls).toEqual([
+      {
+        command: NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP,
+        params: { NAME: 'Maintenance Staff', TIMESPECKEYS: { TIMESPECKEY: ['1', '2', '3'] } },
+      },
+    ]);
   });
 
   it('modify_time_spec_group wraps TIMESPECKEYS as <TIMESPECKEYS><TIMESPECKEY>...', async () => {

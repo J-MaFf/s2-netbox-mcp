@@ -151,8 +151,15 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
       {
         NAME: z.string().describe('Required. Name of the new time spec group.'),
         DESCRIPTION: z.string().optional().describe('Optional. Description of the time spec group.'),
+        TIMESPECKEYS: z.array(z.string()).optional().describe('Optional. Initial member TIMESPECKEY values for the new group.'),
       },
-      async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP, mergeParams(args), formatWriteSuccess)
+      async ({ TIMESPECKEYS, ...rest }) =>
+        runNbapiTool(
+          client,
+          NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP,
+          mergeParams({ ...rest, ...wrapList('TIMESPECKEYS', 'TIMESPECKEY', TIMESPECKEYS) }),
+          formatWriteSuccess
+        )
     );
 
     server.tool(
