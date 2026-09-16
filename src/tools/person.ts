@@ -5,12 +5,18 @@ import { NBAPI_COMMANDS } from '../commands.js';
 import {
   runNbapiTool,
   mergeParams,
+  formatAsJson,
   formatWriteSuccess,
   clientGuardError,
   destructiveFlagRequired,
+  notFoundResult,
+  toolErrorResult,
   wrapList,
+  type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
+import { asRecord, asRecordList, text, type XmlRecord } from '../paging.js';
+import { enrichWithReaderDescriptions } from '../readerDescriptions.js';
 
 // SearchPersonData supports UDF1-UDF20 as search filters (per the Command
 // reference). Generated rather than hand-typed twenty times over.
@@ -115,7 +121,22 @@ const personCommonOptionalFields = {
  * the spec's "Command reference" section. `PICTURE`/`PICTUREEXT`/
  * `PICTUREURL` and the S2-Global-only `PARTITIONKEY` are deliberately not
  * exposed (R16 / spec Out of scope).
+ *
+ * get_card_access_details's RESOLVEDESCRIPTIONS (specs/get-access-history-
+ * resolve-descriptions.md, R3) enriches each returned ACCESS record's
+ * READERKEY with a human-readable READERDESCRIPTION, reusing
+ * src/readerDescriptions.ts's enrichWithReaderDescriptions -- the same
+ * shared helper get_access_history uses. Defaults to true (opt-out, not
+ * opt-in), since the underlying GetReaders fetch is a single small
+ * full-table read whose cost doesn't scale with the number of ACCESS
+ * records returned. Bypasses runNbapiTool for the same reason
+ * get_access_history's RESOLVENAMES path does: the async enrichment can't
+ * run inside runNbapiTool's synchronous formatSuccess callback.
  */
+function withStringReaderKey(raw: XmlRecord): XmlRecord & { READERKEY: string } {
+  return { ...raw, READERKEY: text(raw.READERKEY) };
+}
+
 export function registerPersonTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
     'get_person',
@@ -162,19 +183,51 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
   server.tool(
     'get_card_access_details',
     'Returns card/credential access details for a given card (wraps NBAPI GetCardAccessDetails). ' +
-      'Identifies the card by ENCODEDNUM + CARDFORMAT, not PERSONID — GetCardAccessDetails has no PERSONID parameter.',
+      'Identifies the card by ENCODEDNUM + CARDFORMAT, not PERSONID — GetCardAccessDetails has no PERSONID ' +
+      'parameter. RESOLVEDESCRIPTIONS defaults to true — an inverted, opt-*out* default (unlike most optional ' +
+      "booleans in this codebase): each returned ACCESS record is enriched with the reader's human-readable " +
+      'READERDESCRIPTION via one GetReaders full-table fetch per call (not per record); set ' +
+      'RESOLVEDESCRIPTIONS: false to skip it.',
     {
       ENCODEDNUM: z.string().describe('Required. The encoded card number whose access details should be retrieved.'),
       CARDFORMAT: z.string().describe('Required. The card format of ENCODEDNUM.'),
       MAXRECORDS: z.string().optional().describe('Optional. Maximum number of access records to return.'),
       OLDESTDTTM: z.string().optional().describe('Optional. Oldest date/time to include in the returned access records.'),
+      RESOLVEDESCRIPTIONS: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            "default). Enrich each returned ACCESS record with the reader's human-readable READERDESCRIPTION " +
+            'via one GetReaders full-table fetch per call (not per record). Set to false to skip it.'
+        ),
     },
-    async ({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM }) =>
-      runNbapiTool(
-        client,
-        NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS,
-        mergeParams({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM })
-      )
+    async ({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
+      if (RESOLVEDESCRIPTIONS === false) {
+        return runNbapiTool(
+          client,
+          NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS,
+          mergeParams({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM })
+        );
+      }
+      try {
+        const result = await client.call(
+          NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS,
+          mergeParams({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM })
+        );
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const accesses = asRecord(details.ACCESSES);
+        const records = asRecordList(accesses.ACCESS).map(withStringReaderKey);
+        const enriched = await enrichWithReaderDescriptions(client, records);
+        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: enriched } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   server.tool(

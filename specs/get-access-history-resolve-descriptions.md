@@ -86,6 +86,20 @@ code-like `NAME` (as `READER` or `PORTALNAME` depending on the tool):
   records (some sharing `READERKEY`s) asserts exactly one `GetReaders` fetch (i.e., exactly one
   full paginated walk, not one per record); a unit test with a record whose `READERKEY` isn't in
   the fetched set asserts `READERDESCRIPTION: ''` for that record and does not throw]
+- R2b. **Resolved ambiguity, added after round 1 generation:** if `fetchReaderDescriptions`'s
+  `GetReaders` call itself throws (e.g. a transient/permissions failure — distinct from R2's
+  per-record "no match in the map" case, which isn't a failure at all), `enrichWithReaderDescriptions`
+  must **not** propagate that error. It must catch it and return every input record with
+  `READERDESCRIPTION: ''`, exactly as if every `READERKEY` were simply unmatched. Rationale:
+  `RESOLVEDESCRIPTIONS` defaults to `true` (R3/R4), so an enrichment hiccup must never silently
+  break the primary call for every caller who didn't even explicitly ask for descriptions — this
+  mirrors `enrichWithPersonNames`'s existing per-`PERSONID` failure isolation, generalized to a
+  single all-or-nothing fetch (there's no smaller unit to isolate a failure to here, so the whole
+  fetch degrades together rather than throwing). [verify: a unit test where the `GetReaders` call
+  is scripted to throw asserts `enrichWithReaderDescriptions` does not throw and returns every
+  record with `READERDESCRIPTION: ''`; a further unit test confirms this propagates correctly
+  through all three tools — `RESOLVEDESCRIPTIONS` true with a failing `GetReaders` still returns
+  the primary data (access records / card details) successfully, just without descriptions]
 - R3. `get_access_history` and `get_card_access_details` each gain `RESOLVEDESCRIPTIONS:
   z.boolean().optional()`, **defaulting to `true`** when omitted (opt-*out*, not opt-in — the
   first boolean param in this codebase with that default; call this out explicitly in both tool
@@ -164,6 +178,10 @@ code-like `NAME` (as `READER` or `PORTALNAME` depending on the tool):
   multi-page scripted response.
 - C2 (from R2): PASS iff tests prove single-fetch-regardless-of-record-count and graceful handling
   of an unmatched `READERKEY`.
+- C2b (from R2b): PASS iff a test proves a thrown `GetReaders` failure does not propagate out of
+  `enrichWithReaderDescriptions` (every record gets `READERDESCRIPTION: ''` instead), and at least
+  one of the three tools' own tests confirms the primary data still returns successfully when the
+  description fetch fails.
 - C3 (from R3): PASS iff tests prove default-on behavior and explicit-`false` opt-out for both
   `get_access_history` and `get_card_access_details`.
 - C4 (from R4): PASS iff tests prove the top-level (not per-match) field placement and its

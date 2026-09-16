@@ -277,7 +277,7 @@ surrounding file and location differ.
 | `check_connection`           | `GetAPIVersion`          | —                             |
 | `get_person`                 | `GetPerson`              | `PERSONID`                    |
 | `search_person_data`         | `SearchPersonData`       | — (all filters optional)      |
-| `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT`    |
+| `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVEDESCRIPTIONS`) |
 | `get_card_formats`           | `GetCardFormats`         | —                             |
 | `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY`               |
 | `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
@@ -291,8 +291,8 @@ surrounding file and location differ.
 | `find_portals`               | `GetPortals` + `GetReaders` (composite) | `query` (search terms) |
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
-| `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`RESOLVENAMES`) |
-| `get_reader_access_history`  | `GetAccessHistory` + `GetPerson` (composite) | `READERKEY` (optional `SCANWINDOW`/`MAXMATCHES`) |
+| `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
+| `get_reader_access_history`  | `GetAccessHistory` + `GetPerson` + `GetReaders` (composite) | `READERKEY` (optional `SCANWINDOW`/`MAXMATCHES`/`RESOLVEDESCRIPTIONS`) |
 | `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
 | `get_time_specs`             | `GetTimeSpecs`           | — (optional `STARTFROMKEY`)   |
 | `get_time_spec_group`        | `GetTimeSpecGroup`       | `TIMESPECGROUPKEY`            |
@@ -372,7 +372,17 @@ keeping only the records whose `READERKEY` matches. Each matching record's
 per distinct person (a lookup failure — e.g. for an operator-style
 `PERSONID` — leaves those two fields blank rather than failing the call).
 The result is capped at `MAXMATCHES` (default 100, earliest matches first)
-with a `truncated` flag.
+with a `truncated` flag. `get_reader_access_history` also accepts
+`RESOLVEDESCRIPTIONS` (default **`true`** — on by default, the one
+opt-*out* boolean in this codebase; every other optional boolean flag
+defaults to off): unless explicitly set to `false`, it attaches a single
+top-level `READERDESCRIPTION` field — the human-readable description of the
+call's own `READERKEY` — via one `GetReaders` full-table fetch. It is
+deliberately **not** duplicated onto each `matches` entry, since every match
+already shares that identical `READERKEY` by construction. Set
+`RESOLVEDESCRIPTIONS: false` to omit the field entirely (not present at all,
+distinguishable from an unknown reader's `''`) and skip the `GetReaders`
+call.
 
 `get_access_history` optionally enriches each returned record with the
 badge-holder's name via `RESOLVENAMES: true` (default `false`): when set, it
@@ -392,6 +402,25 @@ the requested range, no error, just no effect. Renaming would have only
 traded a loud failure for a silently wrong one, so date-range filtering is
 dropped rather than fixed — the same reasoning already documented above for
 `get_reader_access_history`.
+
+`get_access_history` and `get_card_access_details` both also accept
+`RESOLVEDESCRIPTIONS` (default **`true`** — on by default; the same
+opt-*out* default as `get_reader_access_history`'s own `RESOLVEDESCRIPTIONS`
+above, and unlike `RESOLVENAMES`, which defaults to off): unless explicitly
+set to `false`, each returned record is enriched with the reader's
+human-readable `READERDESCRIPTION` alongside its existing `READER` (or
+`PORTALNAME`, for `get_card_access_details`) code, preserving every other
+field. Both tools share the same `src/readerDescriptions.ts` helper
+`get_reader_access_history` uses. It defaults to on rather than off because,
+unlike person-name enrichment, the underlying `GetReaders` fetch has a fixed
+cost — this controller's entire reader table (68 readers) fetches in exactly
+2 paginated calls regardless of how many result records are returned, so
+there's no scaling cost to make callers opt in to. Set
+`RESOLVEDESCRIPTIONS: false` to skip the `GetReaders` call and get the plain
+(unenriched) response. On `get_access_history`, `RESOLVENAMES` and
+`RESOLVEDESCRIPTIONS` are independent flags — either, both, or neither may
+be requested in the same call (`get_card_access_details` does not currently
+offer `RESOLVENAMES`; that is tracked separately).
 
 ### Write tools and Destructive tools
 

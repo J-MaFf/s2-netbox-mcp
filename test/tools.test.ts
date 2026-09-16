@@ -128,7 +128,9 @@ describe('registerPersonTools', () => {
     const { client } = fakeClient();
     registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_card_access_details');
-    expect(Object.keys(reg.schema).sort()).toEqual(['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS', 'OLDESTDTTM'].sort());
+    expect(Object.keys(reg.schema).sort()).toEqual(
+      ['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS', 'OLDESTDTTM', 'RESOLVEDESCRIPTIONS'].sort()
+    );
     expect(Object.keys(reg.schema)).not.toContain('PERSONID');
   });
 
@@ -136,10 +138,172 @@ describe('registerPersonTools', () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
-    await byName(server, 'get_card_access_details').handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' });
+    // RESOLVEDESCRIPTIONS: false keeps this test focused on plain param pass-through --
+    // its default-true behavior is covered separately below.
+    await byName(server, 'get_card_access_details').handler({
+      ENCODEDNUM: '0012345',
+      CARDFORMAT: 'Standard26',
+      RESOLVEDESCRIPTIONS: false,
+    });
     expect(calls).toEqual([
       { command: NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
     ]);
+  });
+
+  describe('get_card_access_details RESOLVEDESCRIPTIONS (spec: get-access-history-resolve-descriptions)', () => {
+    it('R3: RESOLVEDESCRIPTIONS omitted defaults to true: GetReaders is fetched once and every ACCESS record gains READERDESCRIPTION, preserving other top-level fields', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS]: [
+          {
+            notFound: false,
+            data: {
+              PERSONID: '_41',
+              DISABLED: '0',
+              EXPDATE: 'null',
+              ACCESSES: {
+                ACCESS: [
+                  { LOGID: '49809', DTTM: 'd', NODEDTTM: 'n', TYPE: '1', REASON: '', READERKEY: '52', PORTALKEY: '18', PORTALNAME: '02RB06' },
+                ],
+              },
+              NEXTLOGID: '49805',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          { notFound: false, data: { READERS: { READER: { READERKEY: '52', DESCRIPTION: 'HALLWAY TO ROUND BED AREA' } }, NEXTKEY: '-1' } },
+        ],
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' });
+
+      const readerCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS);
+      expect(readerCalls).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.PERSONID).toBe('_41');
+      expect(parsed.DISABLED).toBe('0');
+      expect(parsed.NEXTLOGID).toBe('49805');
+      expect(parsed.ACCESSES.ACCESS).toEqual([
+        {
+          LOGID: '49809',
+          DTTM: 'd',
+          NODEDTTM: 'n',
+          TYPE: '1',
+          REASON: '',
+          READERKEY: '52',
+          PORTALKEY: '18',
+          PORTALNAME: '02RB06',
+          READERDESCRIPTION: 'HALLWAY TO ROUND BED AREA',
+        },
+      ]);
+    });
+
+    it('R3: RESOLVEDESCRIPTIONS: false makes zero GetReaders calls and returns the plain (unenriched) response', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: { PERSONID: '_41', ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] }, NEXTLOGID: '2' },
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVEDESCRIPTIONS: false });
+
+      expect(calls).toEqual([
+        { command: NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
+      ]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('READERDESCRIPTION');
+    });
+
+    it('R2b: a failing GetReaders call does not break get_card_access_details -- the ACCESS records still return successfully, just without READERDESCRIPTION', async () => {
+      const server = new FakeServer();
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.GET_READERS) {
+            throw new Error('transient GetReaders failure');
+          }
+          return {
+            notFound: false,
+            data: {
+              PERSONID: '_41',
+              ACCESSES: {
+                ACCESS: [
+                  { LOGID: '49809', DTTM: 'd', NODEDTTM: 'n', TYPE: '1', REASON: '', READERKEY: '52', PORTALKEY: '18', PORTALNAME: '02RB06' },
+                ],
+              },
+              NEXTLOGID: '49805',
+            },
+          };
+        },
+      } as unknown as NetboxClient;
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' });
+
+      expect(calls.some((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.PERSONID).toBe('_41');
+      expect(parsed.ACCESSES.ACCESS).toEqual([
+        {
+          LOGID: '49809',
+          DTTM: 'd',
+          NODEDTTM: 'n',
+          TYPE: '1',
+          REASON: '',
+          READERKEY: '52',
+          PORTALKEY: '18',
+          PORTALNAME: '02RB06',
+          READERDESCRIPTION: '',
+        },
+      ]);
+    });
+
+    it('R5: RESOLVEDESCRIPTIONS true with a notFound GetCardAccessDetails response produces the same standard not-found text as RESOLVEDESCRIPTIONS: false would', async () => {
+      const server = new FakeServer();
+      const { client } = fakeClient({ notFound: true, data: undefined });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVEDESCRIPTIONS: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+    });
+
+    it('R5: RESOLVEDESCRIPTIONS true with a thrown NbapiFailError produces the same standard mapped error text as the plain path', async () => {
+      const server = new FakeServer();
+      const client = {
+        call: async () => {
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVEDESCRIPTIONS: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+    });
+
+    it('R6: description mentions RESOLVEDESCRIPTIONS and its default-true behavior', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      expect(reg.description).toContain('RESOLVEDESCRIPTIONS');
+      expect(reg.description.toLowerCase()).toContain('true');
+    });
   });
 
   describe('R16: add_person / modify_person / remove_person', () => {
@@ -665,7 +829,7 @@ describe('registerEventsTools', () => {
   });
 
   describe('get_access_history (spec: get-access-history-resolve-names)', () => {
-    it('R1: schema is exactly AFTERLOGID/CARDFORMAT/ENCODEDNUM/HOTSTAMP/MAXRECORDS/ORDER/RESOLVENAMES/STARTLOGID (the removed date-range fields are absent)', () => {
+    it('R1: schema is exactly AFTERLOGID/CARDFORMAT/ENCODEDNUM/HOTSTAMP/MAXRECORDS/ORDER/RESOLVENAMES/RESOLVEDESCRIPTIONS/STARTLOGID (the removed date-range fields are absent)', () => {
       const server = new FakeServer();
       const { client } = fakeClient();
       registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
@@ -677,7 +841,17 @@ describe('registerEventsTools', () => {
       // reference in get_card_access_details' schema test above, for a
       // different NBAPI command this spec does not touch.
       expect(Object.keys(reg.schema).sort()).toEqual(
-        ['AFTERLOGID', 'CARDFORMAT', 'ENCODEDNUM', 'HOTSTAMP', 'MAXRECORDS', 'ORDER', 'RESOLVENAMES', 'STARTLOGID'].sort()
+        [
+          'AFTERLOGID',
+          'CARDFORMAT',
+          'ENCODEDNUM',
+          'HOTSTAMP',
+          'MAXRECORDS',
+          'ORDER',
+          'RESOLVENAMES',
+          'RESOLVEDESCRIPTIONS',
+          'STARTLOGID',
+        ].sort()
       );
       expect(Object.keys(reg.schema)).not.toContain('STARTTIME');
       expect(Object.keys(reg.schema)).not.toContain('ENDTIME');
@@ -685,7 +859,7 @@ describe('registerEventsTools', () => {
       expect(Object.keys(reg.schema)).not.toContain('extraParams');
     });
 
-    it('R2: RESOLVENAMES omitted makes exactly one GetAccessHistory call, no GetPerson call, and returns the plain (unenriched) response', async () => {
+    it('R2: RESOLVENAMES omitted (and RESOLVEDESCRIPTIONS explicitly false) makes exactly one GetAccessHistory call, no GetPerson call, and returns the plain (unenriched) response', async () => {
       const server = new FakeServer();
       const { client, calls } = fakeClient({
         notFound: false,
@@ -694,7 +868,10 @@ describe('registerEventsTools', () => {
       registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
       const reg = byName(server, 'get_access_history');
 
-      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' });
+      // RESOLVEDESCRIPTIONS: false isolates this test to RESOLVENAMES's own
+      // plain-path behavior -- its default-true interaction is covered
+      // separately below (RESOLVEDESCRIPTIONS spec).
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVEDESCRIPTIONS: false });
 
       expect(calls).toEqual([
         { command: NBAPI_COMMANDS.GET_ACCESS_HISTORY, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
@@ -714,7 +891,7 @@ describe('registerEventsTools', () => {
       registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
       const reg = byName(server, 'get_access_history');
 
-      const result = await reg.handler({ RESOLVENAMES: false, ENCODEDNUM: '0012345' });
+      const result = await reg.handler({ RESOLVENAMES: false, RESOLVEDESCRIPTIONS: false, ENCODEDNUM: '0012345' });
 
       expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_HISTORY, params: { ENCODEDNUM: '0012345' } }]);
       expect(JSON.parse(result.content[0].text)).toEqual({
@@ -768,7 +945,10 @@ describe('registerEventsTools', () => {
       registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
       const reg = byName(server, 'get_access_history');
 
-      const result = await reg.handler({ RESOLVENAMES: true });
+      // RESOLVEDESCRIPTIONS: false isolates this test to RESOLVENAMES's own
+      // enrichment behavior -- their independence/combination is covered
+      // separately below (RESOLVEDESCRIPTIONS spec).
+      const result = await reg.handler({ RESOLVENAMES: true, RESOLVEDESCRIPTIONS: false });
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.NEXTLOGID).toBe('3');
@@ -848,6 +1028,143 @@ describe('registerEventsTools', () => {
 
       expect(reg.description).toContain('RESOLVENAMES');
       expect(reg.description).toContain('GetPerson');
+    });
+  });
+
+  describe('get_access_history RESOLVEDESCRIPTIONS (spec: get-access-history-resolve-descriptions)', () => {
+    it('R3: RESOLVEDESCRIPTIONS omitted defaults to true: GetReaders is fetched once and every ACCESS record gains READERDESCRIPTION, leaving other fields untouched', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+          {
+            notFound: false,
+            data: {
+              ACCESSES: {
+                ACCESS: [
+                  { LOGID: '1', PERSONID: '00208', READER: 'R1', READERKEY: '190', PORTALKEY: '57', DTTM: 'd1', NODEDTTM: 'n1', TYPE: '1', REASON: '' },
+                  { LOGID: '2', PERSONID: '00209', READER: 'R2', READERKEY: '190', PORTALKEY: '57', DTTM: 'd2', NODEDTTM: 'n2', TYPE: '1', REASON: '' },
+                ],
+              },
+              NEXTLOGID: '3',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          { notFound: false, data: { READERS: { READER: { READERKEY: '190', DESCRIPTION: 'HALLWAY TO ROUND BED AREA' } }, NEXTKEY: '-1' } },
+        ],
+      });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({});
+
+      // Two ACCESS records share READERKEY '190' -- exactly one GetReaders
+      // fetch proves the fixed-cost full-table fetch, not once per record.
+      const readerCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS);
+      expect(readerCalls).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.NEXTLOGID).toBe('3');
+      expect(parsed.ACCESSES.ACCESS[0]).toMatchObject({ LOGID: '1', READERKEY: '190', READERDESCRIPTION: 'HALLWAY TO ROUND BED AREA' });
+      expect(parsed.ACCESSES.ACCESS[1]).toMatchObject({ LOGID: '2', READERKEY: '190', READERDESCRIPTION: 'HALLWAY TO ROUND BED AREA' });
+    });
+
+    it('R3: RESOLVEDESCRIPTIONS: false makes zero GetReaders calls and returns the plain (unenriched) response', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: { ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '190' }] }, NEXTLOGID: '2' },
+      });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({ RESOLVEDESCRIPTIONS: false });
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_HISTORY, params: {} }]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('READERDESCRIPTION');
+    });
+
+    it('RESOLVENAMES and RESOLVEDESCRIPTIONS are independent: RESOLVENAMES true + RESOLVEDESCRIPTIONS false calls GetPerson but never GetReaders', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+          { notFound: false, data: { ACCESSES: { ACCESS: [{ LOGID: '1', PERSONID: '00208', READERKEY: '190' }] }, NEXTLOGID: '2' } },
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
+      });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({ RESOLVENAMES: true, RESOLVEDESCRIPTIONS: false });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toHaveLength(1);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(0);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ACCESSES.ACCESS[0]).toMatchObject({ FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' });
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('READERDESCRIPTION');
+    });
+
+    it('RESOLVENAMES and RESOLVEDESCRIPTIONS true together enrich each record with both', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+          { notFound: false, data: { ACCESSES: { ACCESS: [{ LOGID: '1', PERSONID: '00208', READERKEY: '190' }] }, NEXTLOGID: '2' } },
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          { notFound: false, data: { READERS: { READER: { READERKEY: '190', DESCRIPTION: 'HALLWAY' } }, NEXTKEY: '-1' } },
+        ],
+      });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({ RESOLVENAMES: true, RESOLVEDESCRIPTIONS: true });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toHaveLength(1);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ACCESSES.ACCESS[0]).toMatchObject({ FIRSTNAME: 'Joey', LASTNAME: 'Maffiola', READERDESCRIPTION: 'HALLWAY' });
+    });
+
+    it('R5: RESOLVEDESCRIPTIONS true with a notFound GetAccessHistory response produces the same standard not-found text as RESOLVEDESCRIPTIONS: false would', async () => {
+      const server = new FakeServer();
+      const { client } = fakeClient({ notFound: true, data: undefined });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({ RESOLVEDESCRIPTIONS: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+    });
+
+    it('R5: RESOLVEDESCRIPTIONS true with a thrown NbapiFailError produces the same standard mapped error text as the plain path', async () => {
+      const server = new FakeServer();
+      const client = {
+        call: async () => {
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({ RESOLVEDESCRIPTIONS: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+    });
+
+    it('R6: description mentions RESOLVEDESCRIPTIONS and its default-true behavior', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      expect(reg.description).toContain('RESOLVEDESCRIPTIONS');
+      expect(reg.description.toLowerCase()).toContain('true');
     });
   });
 

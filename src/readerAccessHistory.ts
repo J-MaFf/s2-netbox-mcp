@@ -2,6 +2,7 @@ import type { NetboxClient } from './netboxClient.js';
 import { NBAPI_COMMANDS } from './commands.js';
 import { asRecord, asRecordList, text, type XmlRecord } from './paging.js';
 import { enrichWithPersonNames, type PersonEnrichment } from './personEnrichment.js';
+import { fetchReaderDescriptions } from './readerDescriptions.js';
 
 /**
  * Reader access (grant/deny) history: composite read over the NBAPI's
@@ -171,6 +172,8 @@ export interface GetReaderAccessHistoryParams {
   READERKEY: string;
   SCANWINDOW?: string;
   MAXMATCHES?: string;
+  /** R4: defaults to `true` when omitted (opt-*out*, not opt-in). */
+  RESOLVEDESCRIPTIONS?: boolean;
 }
 
 export interface GetReaderAccessHistoryResult {
@@ -179,6 +182,14 @@ export interface GetReaderAccessHistoryResult {
   matchCount: number;
   truncated: boolean;
   matches: EnrichedAccessHistoryRecord[];
+  /** R4: the description for this result's own `READERKEY` -- a single
+   * top-level field, never duplicated onto each `matches` entry, since every
+   * match already shares this identical `READERKEY` by construction. Present
+   * (possibly `''` for an unknown/deleted reader) only when
+   * `RESOLVEDESCRIPTIONS` was effectively true; genuinely absent (not `''`)
+   * when explicitly `false`, so a caller can distinguish "not requested"
+   * from "requested but reader unknown". */
+  READERDESCRIPTION?: string;
 }
 
 /**
@@ -188,6 +199,14 @@ export interface GetReaderAccessHistoryResult {
  * `matches` is already ascending, so "first MAXMATCHES" is
  * `slice(0, MAXMATCHES)`), and enriches only the returned matches with
  * person names (R7).
+ *
+ * R4: when `RESOLVEDESCRIPTIONS` is effectively true (omitted or explicitly
+ * `true` -- the default), also looks up the description for the tool's own
+ * `READERKEY` input (not each match's, since every match already carries
+ * that identical `READERKEY` by construction) via `fetchReaderDescriptions`
+ * and attaches it as a single top-level `READERDESCRIPTION` field. When
+ * explicitly `false`, no reader-list call is made and the field is omitted
+ * entirely.
  */
 export async function getReaderAccessHistory(
   client: NetboxClient,
@@ -195,17 +214,25 @@ export async function getReaderAccessHistory(
 ): Promise<GetReaderAccessHistoryResult> {
   const scanWindow = params.SCANWINDOW !== undefined ? Number(params.SCANWINDOW) : DEFAULT_SCAN_WINDOW;
   const maxMatches = params.MAXMATCHES !== undefined ? Number(params.MAXMATCHES) : DEFAULT_MAXMATCHES;
+  const resolveDescriptions = params.RESOLVEDESCRIPTIONS !== false;
 
   const allMatches = await fetchReaderAccessHistory(client, params.READERKEY, { scanWindow, maxMatches });
 
   const truncated = allMatches.length > maxMatches;
   const limited = truncated ? allMatches.slice(0, maxMatches) : allMatches;
 
-  return {
+  const result: GetReaderAccessHistoryResult = {
     READERKEY: params.READERKEY,
     scanWindow,
     matchCount: limited.length,
     truncated,
     matches: await enrichWithPersonNames(client, limited),
   };
+
+  if (resolveDescriptions) {
+    const descriptionsByReaderKey = await fetchReaderDescriptions(client);
+    result.READERDESCRIPTION = descriptionsByReaderKey.get(params.READERKEY) ?? '';
+  }
+
+  return result;
 }

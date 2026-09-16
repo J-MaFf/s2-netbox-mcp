@@ -223,7 +223,7 @@ describe('getReaderAccessHistory', () => {
       [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     const personCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON);
     expect(personCalls).toHaveLength(1);
@@ -257,7 +257,7 @@ describe('getReaderAccessHistory', () => {
       },
     } as unknown as NetboxClient;
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.matches).toEqual([
       expect.objectContaining({ LOGID: '1', PERSONID: '_5', FIRSTNAME: '', LASTNAME: '' }),
@@ -274,7 +274,7 @@ describe('getReaderAccessHistory', () => {
       [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: true, data: undefined }],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.matches).toEqual([expect.objectContaining({ LOGID: '1', FIRSTNAME: '', LASTNAME: '' })]);
   });
@@ -286,7 +286,7 @@ describe('getReaderAccessHistory', () => {
       [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190', MAXMATCHES: '3' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', MAXMATCHES: '3', RESOLVEDESCRIPTIONS: false });
 
     expect(result.truncated).toBe(true);
     expect(result.matches.map((m) => m.LOGID)).toEqual(['1', '2', '3']);
@@ -299,7 +299,7 @@ describe('getReaderAccessHistory', () => {
       [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190', MAXMATCHES: '100' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', MAXMATCHES: '100', RESOLVEDESCRIPTIONS: false });
 
     expect(result.truncated).toBe(false);
     expect(result.matches).toHaveLength(2);
@@ -316,7 +316,7 @@ describe('getReaderAccessHistory', () => {
       ],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.matches).toHaveLength(1);
     const [match] = result.matches;
@@ -336,7 +336,7 @@ describe('getReaderAccessHistory', () => {
       [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.truncated).toBe(false);
     expect(result.matches).toHaveLength(3);
@@ -350,9 +350,79 @@ describe('getReaderAccessHistory', () => {
       ],
     });
 
-    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.scanWindow).toBe(2000);
+  });
+
+  describe('R4: RESOLVEDESCRIPTIONS (spec: get-access-history-resolve-descriptions)', () => {
+    it('RESOLVEDESCRIPTIONS omitted defaults to true: fetches GetReaders once and attaches a single top-level READERDESCRIPTION, not one per match', async () => {
+      const { client, calls } = scriptedClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+          discoveryPage(1000),
+          accessPage(
+            [
+              record({ LOGID: '1', READERKEY: '190', PERSONID: '00208' }),
+              record({ LOGID: '2', READERKEY: '190', PERSONID: '00208' }),
+            ],
+            '3'
+          ),
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          {
+            notFound: false,
+            data: { READERS: { READER: { READERKEY: '190', NAME: 'R190', DESCRIPTION: 'HALLWAY TO ROUND BED AREA' } }, NEXTKEY: '-1' },
+          },
+        ],
+      });
+
+      const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+
+      const readerCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS);
+      expect(readerCalls).toHaveLength(1);
+      expect(result.READERDESCRIPTION).toBe('HALLWAY TO ROUND BED AREA');
+      expect(result.matches).toHaveLength(2);
+      for (const match of result.matches) {
+        expect(match).not.toHaveProperty('READERDESCRIPTION');
+      }
+    });
+
+    it('RESOLVEDESCRIPTIONS: true (explicit) behaves the same as omitted', async () => {
+      const { client, calls } = scriptedClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [discoveryPage(1000), accessPage([record({ LOGID: '1', READERKEY: '190' })], '2')],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          { notFound: false, data: { READERS: { READER: { READERKEY: '190', DESCRIPTION: 'HALLWAY' } }, NEXTKEY: '-1' } },
+        ],
+      });
+
+      const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: true });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(1);
+      expect(result.READERDESCRIPTION).toBe('HALLWAY');
+    });
+
+    it('RESOLVEDESCRIPTIONS: false omits the top-level field entirely (not present at all, not merely empty) and makes zero GetReaders calls', async () => {
+      const { client, calls } = scriptedClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [discoveryPage(1000), accessPage([record({ LOGID: '1', READERKEY: '190' })], '2')],
+      });
+
+      const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(0);
+      expect('READERDESCRIPTION' in result).toBe(false);
+    });
+
+    it("READERDESCRIPTION is '' when the requested READERKEY has no match among fetched readers", async () => {
+      const { client } = scriptedClient({
+        [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [discoveryPage(1000), accessPage([], '1')],
+        [NBAPI_COMMANDS.GET_READERS]: [{ notFound: false, data: { READERS: '', NEXTKEY: '-1' } }],
+      });
+
+      const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+
+      expect(result.READERDESCRIPTION).toBe('');
+    });
   });
 });
 
@@ -371,10 +441,10 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
     return registered;
   }
 
-  it('R8: is registered unconditionally (not gated by write flags) with READERKEY/SCANWINDOW/MAXMATCHES', () => {
+  it('R8: is registered unconditionally (not gated by write flags) with READERKEY/SCANWINDOW/MAXMATCHES/RESOLVEDESCRIPTIONS', () => {
     const { client } = scriptedClient({});
     const { schema } = registerGetReaderAccessHistory(client);
-    expect(Object.keys(schema).sort()).toEqual(['MAXMATCHES', 'READERKEY', 'SCANWINDOW'].sort());
+    expect(Object.keys(schema).sort()).toEqual(['MAXMATCHES', 'READERKEY', 'RESOLVEDESCRIPTIONS', 'SCANWINDOW'].sort());
   });
 
   it('R9: description mentions the lack of a server-side filter and the default 2000-record scan window', () => {
@@ -384,6 +454,13 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
     expect(lower).toContain('no');
     expect(lower).toContain('filter');
     expect(description).toContain('2000');
+  });
+
+  it('R6: description mentions RESOLVEDESCRIPTIONS and its default-true behavior', () => {
+    const { client } = scriptedClient({});
+    const { description } = registerGetReaderAccessHistory(client);
+    expect(description).toContain('RESOLVEDESCRIPTIONS');
+    expect(description.toLowerCase()).toContain('true');
   });
 
   it('returns the composite result as JSON through the tool handler', async () => {
@@ -396,12 +473,44 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
     });
     const { handler } = registerGetReaderAccessHistory(client);
 
-    const result = await handler({ READERKEY: '190' });
+    const result = await handler({ READERKEY: '190', RESOLVEDESCRIPTIONS: false });
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.matches).toEqual([expect.objectContaining({ LOGID: '1', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' })]);
     expect(parsed.truncated).toBe(false);
+  });
+
+  it('R4: RESOLVEDESCRIPTIONS omitted attaches a top-level READERDESCRIPTION in the JSON result, absent from each match', async () => {
+    const { client } = scriptedClient({
+      [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+        discoveryPage(1000),
+        accessPage([record({ LOGID: '1', READERKEY: '190', PERSONID: '00208' })], '2'),
+      ],
+      [NBAPI_COMMANDS.GET_PERSON]: [{ notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } }],
+      [NBAPI_COMMANDS.GET_READERS]: [
+        { notFound: false, data: { READERS: { READER: { READERKEY: '190', DESCRIPTION: 'HALLWAY TO ROUND BED AREA' } }, NEXTKEY: '-1' } },
+      ],
+    });
+    const { handler } = registerGetReaderAccessHistory(client);
+
+    const result = await handler({ READERKEY: '190' });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.READERDESCRIPTION).toBe('HALLWAY TO ROUND BED AREA');
+    expect(parsed.matches[0]).not.toHaveProperty('READERDESCRIPTION');
+  });
+
+  it('R4: RESOLVEDESCRIPTIONS: false omits READERDESCRIPTION from the JSON result entirely', async () => {
+    const { client } = scriptedClient({
+      [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [discoveryPage(1000), accessPage([record({ LOGID: '1', READERKEY: '190' })], '2')],
+    });
+    const { handler } = registerGetReaderAccessHistory(client);
+
+    const result = await handler({ READERKEY: '190', RESOLVEDESCRIPTIONS: false });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect('READERDESCRIPTION' in parsed).toBe(false);
   });
 
   it('surfaces NBAPI failures as tool errors', async () => {
@@ -412,6 +521,18 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
     } as unknown as NetboxClient;
 
     const result = await registerGetReaderAccessHistory(client).handler({ READERKEY: '190' });
+
+    expect(result).toEqual({ content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }], isError: true });
+  });
+
+  it('R5: an NBAPI failure surfaces the same error text whether RESOLVEDESCRIPTIONS is true or omitted', async () => {
+    const client = {
+      call: async () => {
+        throw new NbapiFailError('NOT PERMITTED');
+      },
+    } as unknown as NetboxClient;
+
+    const result = await registerGetReaderAccessHistory(client).handler({ READERKEY: '190', RESOLVEDESCRIPTIONS: true });
 
     expect(result).toEqual({ content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }], isError: true });
   });
