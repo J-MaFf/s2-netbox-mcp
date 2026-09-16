@@ -297,7 +297,7 @@ surrounding file and location differ.
 | `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
 | `get_time_specs`             | `GetTimeSpecs`           | — (optional `STARTFROMKEY`)   |
 | `get_time_spec_group`        | `GetTimeSpecGroup`       | `TIMESPECGROUPKEY`            |
-| `get_time_spec_groups`       | `GetTimeSpecGroups`      | — (optional `STARTFROMKEY`)   |
+| `get_time_spec_groups`       | `GetTimeSpecGroups`      | — (optional `STARTFROMKEY`/`RESOLVEMEMBERNAMES`) |
 | `get_holiday`                | `GetHoliday`             | `HOLIDAYKEY`                  |
 | `get_holidays`               | `GetHolidays`            | — (optional `STARTFROMKEY`)   |
 | `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY` (optional `RESOLVEGROUPNAMES`) |
@@ -512,6 +512,33 @@ to `''` and the call still succeeds with every other field (including
 `ACTIONS`) intact — an enrichment failure never loses the primary data. Set
 `RESOLVEPARTITIONNAMES: false` to skip the `GetPartitions` call and get the
 response back exactly as `ListEvents` provides it.
+
+`get_time_spec_groups` accepts `RESOLVEMEMBERNAMES` (default **`true`** — on
+by default, the same opt-*out* default as the other `RESOLVE*` flags above,
+since resolving every group's members on a page always costs exactly one
+fixed-size `GetTimeSpecs` fetch, never scaling with how many groups/members
+are on the page): unless explicitly set to `false`, each group's
+`TIMESPECKEYS.TIMESPECKEY` field — which `GetTimeSpecGroups` returns as bare
+`TIMESPECKEY` string(s) — is replaced with a list of `{TIMESPECKEY, NAME}`
+objects, matching this codebase's own convention for other group-membership
+sub-lists that NBAPI already returns as objects natively (`get_access_level_group`'s
+`ACCESSLEVELS`, `get_reader_group`'s `READERS`). A member key with no match
+in the fetched `GetTimeSpecs` table (an unknown/deleted time spec) resolves
+to `NAME: ''` rather than being omitted. Every other field
+(`TIMESPECGROUPKEY`, the group's own `NAME`, `DESCRIPTION`) is unchanged. The
+name lookup uses the new `src/timeSpecNames.ts` helper — one full paginated
+`GetTimeSpecs` fetch per call, regardless of how many groups/members are on
+the page — and reuses `keyList` (`src/paging.ts`, relocated from
+`src/unlockWindow/managed.ts`) to normalize the bare-key collection. If the
+underlying `GetTimeSpecs` fetch itself fails, every member's `NAME` resolves
+to `''` and the call still succeeds with every group's own fields intact —
+an enrichment failure never loses the primary data. `RESOLVEMEMBERNAMES`
+applies only to this plural tool, not the singular `get_time_spec_group`,
+which is verified broken (`CODE=FAIL`/`ERRMSG="NOT FOUND"`) on this
+controller even for a genuinely existing group, independent of this change.
+Set `RESOLVEMEMBERNAMES: false` to skip the fetch and get `TIMESPECKEYS`
+back exactly as `GetTimeSpecGroups` provides it (bare string or array of
+strings).
 
 ### Write tools and Destructive tools
 

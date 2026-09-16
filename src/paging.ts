@@ -44,6 +44,29 @@ export function splitKeys(value: unknown): string[] {
     .filter((part) => part !== '');
 }
 
+/**
+ * A key list that may arrive as `<KEYS><KEY>k</KEY>...</KEYS>` (object with
+ * a single or repeated child), as a bare comma string, or as '' when empty —
+ * the shape of, e.g., GetTimeSpecGroups' `TIMESPECKEYS.TIMESPECKEY` field.
+ *
+ * Originally lived in `src/unlockWindow/managed.ts`; relocated here (see
+ * specs/archive/time-spec-groups-resolve-member-names.md's Context) so a general
+ * tool module (`src/tools/timeSpec.ts`, `get_time_spec_groups`'s
+ * `RESOLVEMEMBERNAMES` path) can reuse it without importing from a
+ * feature-specific unlock-window module. `src/unlockWindow/managed.ts`
+ * imports it from here rather than defining it locally.
+ *
+ * Distinct from `asRecordList`, which normalizes collections of *objects*,
+ * not bare key strings.
+ */
+export function keyList(container: unknown, item: string): string[] {
+  if (typeof container === 'string' || typeof container === 'number') return splitKeys(container);
+  const inner = asRecord(container)[item];
+  if (Array.isArray(inner)) return inner.map(text).filter((key) => key !== '');
+  const single = text(inner);
+  return single === '' ? [] : [single];
+}
+
 export interface FetchAllPagesOptions {
   /** Some live controllers (observed: 6.2.0) answer an *unconfigured*
    * collection with CODE=FAIL/ERRMSG="NOT FOUND" instead of an empty list.

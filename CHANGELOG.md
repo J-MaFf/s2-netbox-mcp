@@ -33,6 +33,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   underlying `GetPartitions` fetch itself fails, every event's `PARTITIONNAME` resolves to `''`
   while every other field (including `ACTIONS`) stays intact
   ([#65](https://github.com/J-MaFf/s2-netbox-mcp/issues/65)).
+- `get_time_spec_groups` gains a `RESOLVEMEMBERNAMES: boolean` parameter (default `true`/on, the
+  same opt-*out* default as `get_access_level`'s own `RESOLVEGROUPNAMES`): unless explicitly set
+  to `false`, each group's `TIMESPECKEYS.TIMESPECKEY` field -- bare `TIMESPECKEY` string(s) as
+  `GetTimeSpecGroups` returns them -- is replaced with a list of `{TIMESPECKEY, NAME}` objects,
+  matching this codebase's convention for other group-membership sub-lists NBAPI already returns
+  as objects (`get_access_level_group`'s `ACCESSLEVELS`, `get_reader_group`'s `READERS`). An
+  unmatched member key (unknown/deleted time spec) resolves to `NAME: ''` rather than being
+  omitted. A new shared module, `src/timeSpecNames.ts`, fetches the full paginated `GetTimeSpecs`
+  list once per call (never per group/member) and resolves client-side, mirroring
+  `src/readerDescriptions.ts`'s never-throws `Map`-returning shape exactly -- a `GetTimeSpecs`
+  failure resolves every member's `NAME` to `''` rather than failing the call. Applies only to
+  this plural tool, not the singular `get_time_spec_group`, which is verified broken
+  (`CODE=FAIL`/`ERRMSG="NOT FOUND"`) on this controller independent of this change. As part of
+  this work, `keyList` (the bare-key-collection normalizer this feature reuses for
+  `TIMESPECKEYS.TIMESPECKEY`) is relocated from the unlock-window-specific
+  `src/unlockWindow/managed.ts` to the general `src/paging.ts`, with no behavior change, so a
+  general tool module doesn't need to import from a feature-specific one
+  ([#64](https://github.com/J-MaFf/s2-netbox-mcp/issues/64)).
 - `get_access_level` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the
   same opt-*out* default as `get_portals`/`get_access_history`/`get_card_access_details`'s own
   `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, it resolves the response's bare
