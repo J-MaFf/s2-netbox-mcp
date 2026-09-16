@@ -1,5 +1,12 @@
 # Spec: `RESOLVEPARTITIONNAMES` partition-name enrichment for `list_events`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 10 acceptance criteria
+> (C1-C9, C-final) passed cleanly. Built in parallel with the sibling specs
+> `time-spec-groups-resolve-member-names.md` and `portal-group-resolve-group-names.md`, each in
+> its own isolated git worktree. This is the last of 4 specs in a new enrichment batch following
+> on from the `RESOLVENAMES`/`RESOLVEDESCRIPTIONS` work shipped in `v0.3.0`. Shipped in
+> [PR #67](https://github.com/J-MaFf/s2-netbox-mcp/pull/67).
+
 ## Goal
 
 Let `list_events` resolve each event's bare `PARTITIONID` into a human-readable partition name by
