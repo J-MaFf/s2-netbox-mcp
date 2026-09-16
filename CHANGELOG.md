@@ -40,6 +40,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
 - Enabled secret scanning + push protection on the repo (previously off; Dependabot security
   updates were already on) ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+- New shared `src/readerDescriptions.ts` module (`fetchReaderDescriptions` +
+  `enrichWithReaderDescriptions`) -- mirrors `src/personEnrichment.ts`'s shape but does one
+  full paginated `GetReaders` fetch per call rather than one lookup per distinct key, since the
+  reader table is small and unfiltered (the whole 68-reader table already fetches in exactly 2
+  pages, as `find_portals` proved). `get_access_history` and `get_card_access_details` both gain
+  a `RESOLVEDESCRIPTIONS: boolean` parameter that enriches each returned record with the
+  reader's human-readable `READERDESCRIPTION` alongside its existing `READER`/`PORTALNAME` code
+  -- and `get_reader_access_history` gains the same flag but attaches a single **top-level**
+  `READERDESCRIPTION` field instead of duplicating it onto every `matches` entry, since every
+  match in that tool already shares one caller-supplied `READERKEY` by construction. All three
+  default to `true`/on -- the first opt-*out* (rather than opt-in) boolean parameter in this
+  codebase, since the underlying `GetReaders` fetch has a fixed cost that doesn't scale with
+  result size, unlike `RESOLVENAMES`'s per-person `GetPerson` calls. `RESOLVENAMES` and
+  `RESOLVEDESCRIPTIONS` are independent flags on `get_access_history` -- either, both, or
+  neither may be requested in the same call
+  ([#53](https://github.com/J-MaFf/s2-netbox-mcp/issues/53)).
 
 ### Removed
 - `get_access_history`'s `OLDESTDTTM`/`NEWESTDTTM` parameters -- they never matched

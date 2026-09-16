@@ -6,6 +6,7 @@ import { findPortals } from '../src/portalSearch.js';
 import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
 import { asRecord, asRecordList, text } from '../src/paging.js';
 import { enrichWithPersonNames } from '../src/personEnrichment.js';
+import { enrichWithReaderDescriptions } from '../src/readerDescriptions.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -169,7 +170,13 @@ async function runFindPortalsCheck(client: NetboxClient, portalName: string | un
 /** get_reader_access_history is composite (GetAccessHistory, filtered
  * client-side, enriched with GetPerson), so it is checked by driving it
  * directly against a real READERKEY and asserting the call completes
- * without throwing over the tool's default 2000-record scan window. */
+ * without throwing over the tool's default 2000-record scan window.
+ *
+ * Also covers RESOLVEDESCRIPTIONS (specs/get-access-history-resolve-
+ * descriptions.md R9): getReaderAccessHistory defaults RESOLVEDESCRIPTIONS
+ * to true, so this same call already exercises R4's single top-level
+ * READERDESCRIPTION field -- asserted present (a defined string, possibly
+ * '') here rather than driving a second call. */
 async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: string | undefined): Promise<CheckResult> {
   const name = 'get_reader_access_history';
   if (!readerKey) {
@@ -177,10 +184,15 @@ async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: s
   }
   try {
     const result = await getReaderAccessHistory(client, { READERKEY: readerKey });
+    if (result.READERDESCRIPTION === undefined) {
+      return { name, pass: false, summary: 'RESOLVEDESCRIPTIONS default-true path did not attach a top-level READERDESCRIPTION field' };
+    }
     return {
       name,
       pass: true,
-      summary: `OK ${result.matchCount} match(es) for READERKEY ${readerKey} over the most recent ${result.scanWindow} records (truncated=${result.truncated})`,
+      summary:
+        `OK ${result.matchCount} match(es) for READERKEY ${readerKey} over the most recent ${result.scanWindow} records ` +
+        `(truncated=${result.truncated}), READERDESCRIPTION="${result.READERDESCRIPTION}"`,
     };
   } catch (err) {
     return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
@@ -221,6 +233,93 @@ async function runGetAccessHistoryResolveNamesCheck(client: NetboxClient): Promi
       name,
       pass: true,
       summary: `OK enriched ${enriched.length} record(s), e.g. FULLNAME="${enriched[0].FULLNAME}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * get_access_history's RESOLVEDESCRIPTIONS: true (default) path is
+ * hand-rolled inline in its tool handler (src/tools/events.ts), same as
+ * RESOLVENAMES above, so this check drives the same two building blocks
+ * directly: one GetAccessHistory call, then the shared
+ * enrichWithReaderDescriptions helper (src/readerDescriptions.ts) --
+ * asserting every enriched record carries a non-undefined READERDESCRIPTION
+ * key, and that at least one record's READERDESCRIPTION is non-empty (R9 of
+ * specs/archive/get-access-history-resolve-descriptions.md).
+ */
+async function runGetAccessHistoryResolveDescriptionsCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_access_history (RESOLVEDESCRIPTIONS: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_HISTORY, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawRecords = asRecordList(asRecord(details.ACCESSES).ACCESS);
+    if (rawRecords.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no ACCESS records returned to enrich)' };
+    }
+    const records = rawRecords.map((raw) => ({ ...raw, READERKEY: text(raw.READERKEY) }));
+    const enriched = await enrichWithReaderDescriptions(client, records);
+    const missingKey = enriched.find((r) => r.READERDESCRIPTION === undefined);
+    if (missingKey) {
+      return { name, pass: false, summary: `enriched record missing the READERDESCRIPTION key: ${JSON.stringify(missingKey)}` };
+    }
+    const withNonEmptyDescription = enriched.find((r) => r.READERDESCRIPTION !== '');
+    if (!withNonEmptyDescription) {
+      return { name, pass: false, summary: `every enriched record's READERDESCRIPTION was empty across ${enriched.length} record(s)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK enriched ${enriched.length} record(s), e.g. READERDESCRIPTION="${withNonEmptyDescription.READERDESCRIPTION}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * get_card_access_details's RESOLVEDESCRIPTIONS: true (default) path,
+ * checked the same way as get_access_history's above: one
+ * GetCardAccessDetails call for a real card, then enrichWithReaderDescriptions
+ * over its ACCESSES.ACCESS records.
+ */
+async function runGetCardAccessDetailsResolveDescriptionsCheck(
+  client: NetboxClient,
+  encodedNum: string | undefined,
+  cardFormat: string | undefined
+): Promise<CheckResult> {
+  const name = 'get_card_access_details (RESOLVEDESCRIPTIONS: true, default)';
+  if (!encodedNum || !cardFormat) {
+    return { name, pass: true, summary: 'SKIPPED (no ENCODEDNUM/CARDFORMAT found in search_person_data results to test against)' };
+  }
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, { ENCODEDNUM: encodedNum, CARDFORMAT: cardFormat });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawRecords = asRecordList(asRecord(details.ACCESSES).ACCESS);
+    if (rawRecords.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no ACCESS records returned to enrich)' };
+    }
+    const records = rawRecords.map((raw) => ({ ...raw, READERKEY: text(raw.READERKEY) }));
+    const enriched = await enrichWithReaderDescriptions(client, records);
+    const missingKey = enriched.find((r) => r.READERDESCRIPTION === undefined);
+    if (missingKey) {
+      return { name, pass: false, summary: `enriched record missing the READERDESCRIPTION key: ${JSON.stringify(missingKey)}` };
+    }
+    const withNonEmptyDescription = enriched.find((r) => r.READERDESCRIPTION !== '');
+    if (!withNonEmptyDescription) {
+      return { name, pass: false, summary: `every enriched record's READERDESCRIPTION was empty across ${enriched.length} record(s)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK enriched ${enriched.length} record(s), e.g. READERDESCRIPTION="${withNonEmptyDescription.READERDESCRIPTION}"`,
     };
   } catch (err) {
     return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
@@ -322,11 +421,13 @@ async function main(): Promise<number> {
       summary: 'SKIPPED (no ENCODEDNUM/CARDFORMAT found in search_person_data results to test against)',
     });
   }
+  results.push(await runGetCardAccessDetailsResolveDescriptionsCheck(client, encodedNum, cardFormat));
 
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
   results.push(await runCheck(client, 'get_access_history', NBAPI_COMMANDS.GET_ACCESS_HISTORY, {}));
   results.push(await runGetAccessHistoryResolveNamesCheck(client));
+  results.push(await runGetAccessHistoryResolveDescriptionsCheck(client));
 
   // --- R29: the 18 additional read tools added in this stage ---------------
 

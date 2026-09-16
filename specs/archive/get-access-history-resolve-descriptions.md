@@ -1,5 +1,16 @@
 # Spec: `RESOLVEDESCRIPTIONS` reader-description enrichment for the access-record tools
 
+> **Archived, 2026-09-16.** Built via the forge skill in
+> [PR #54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54) (`Fixes #53`). Took 2 rounds: round 1 passed the rubric's
+> literal text but the blind evaluator's own evidence surfaced a real bug the wording let through
+> — `get_reader_access_history` called `fetchReaderDescriptions` directly (bypassing
+> `enrichWithReaderDescriptions`'s failure catch) and would throw, losing its primary access-history
+> matches, on a `GetReaders` failure. R1/R2b were revised to move the catch into
+> `fetchReaderDescriptions` itself so all three tools inherit safety structurally, and C2b was
+> tightened from "at least one tool" to "all three tools independently" so this class of gap can't
+> slip through the rubric again. Round 2 passed cleanly, including a live re-verification of the
+> exact previously-broken path. All 10 acceptance criteria passed.
+
 ## Goal
 
 Let the three tools that return raw reader/portal codes (`READER`/`PORTALNAME`, e.g.
@@ -73,19 +84,49 @@ code-like `NAME` (as `READER` or `PORTALNAME` depending on the tool):
 - R1. `src/readerDescriptions.ts` exports `fetchReaderDescriptions(client: NetboxClient):
   Promise<Map<string, string>>`, fetching every reader via `fetchAllPages(client,
   NBAPI_COMMANDS.GET_READERS, 'READERS', 'READER')` and building a `READERKEY -> DESCRIPTION` map
-  (using `text()` from `src/paging.ts` to normalize each field). [verify: a unit test with a
-  scripted multi-page `GetReaders` response asserts the returned map has one entry per reader,
-  correctly keyed]
+  (using `text()` from `src/paging.ts` to normalize each field). **`fetchReaderDescriptions`
+  itself never throws** — if the underlying `GetReaders` fetch fails (transient error,
+  permissions, anything), it catches internally and resolves to an **empty** `Map` rather than
+  rejecting. This guarantee lives in this one function specifically so every caller — whether
+  through `enrichWithReaderDescriptions` (R2) or a direct call (as `get_reader_access_history`
+  makes, R4) — inherits safe behavior automatically, with no duplicated try/catch at each call
+  site. [verify: a unit test with a scripted multi-page `GetReaders` response asserts the returned
+  map has one entry per reader, correctly keyed; a unit test where the `GetReaders` call is
+  scripted to throw asserts `fetchReaderDescriptions` does not throw and resolves to an empty
+  `Map`]
 - R2. `src/readerDescriptions.ts` exports `enrichWithReaderDescriptions<T extends { READERKEY:
   string }>(client, records: T[]): Promise<(T & { READERDESCRIPTION: string })[]>`. It calls
   `fetchReaderDescriptions` **exactly once** regardless of how many records are passed (not once
   per record — same per-request-memoization spirit as `personEnrichment.ts`, but here it's a
   single full-table fetch rather than per-key lookups, since the reader table is small and
   unfiltered `GetReaders` already returns everything). A record whose `READERKEY` has no match in
-  the map (an unknown or deleted reader) gets `READERDESCRIPTION: ''`. [verify: a unit test with 5
-  records (some sharing `READERKEY`s) asserts exactly one `GetReaders` fetch (i.e., exactly one
-  full paginated walk, not one per record); a unit test with a record whose `READERKEY` isn't in
-  the fetched set asserts `READERDESCRIPTION: ''` for that record and does not throw]
+  the map (an unknown/deleted reader, **or** the empty map R1 falls back to on a `GetReaders`
+  failure — both look identical from here, by design) gets `READERDESCRIPTION: ''`. [verify: a
+  unit test with 5 records (some sharing `READERKEY`s) asserts exactly one `GetReaders` fetch
+  (i.e., exactly one full paginated walk, not one per record); a unit test with a record whose
+  `READERKEY` isn't in the fetched set asserts `READERDESCRIPTION: ''` for that record and does
+  not throw]
+- R2b. **Resolved ambiguity, revised after round 1 evaluation found a real gap:** an earlier
+  version of this requirement put the `GetReaders`-failure catch in `enrichWithReaderDescriptions`
+  only — which left `get_reader_access_history`'s *direct* `fetchReaderDescriptions` call (R4)
+  unprotected, so it still threw and lost its primary access-history matches on a `GetReaders`
+  failure, directly contradicting this requirement's own rationale. **Moving the catch into
+  `fetchReaderDescriptions` itself (R1) fixes this structurally for all three tools at once** —
+  there is nothing left for `enrichWithReaderDescriptions` or `get_reader_access_history` to
+  separately catch, since the function they both call never throws. Rationale (unchanged):
+  `RESOLVEDESCRIPTIONS` defaults to `true` (R3/R4), so an enrichment hiccup must never silently
+  break the primary call for every caller who didn't even explicitly ask for descriptions — this
+  mirrors `enrichWithPersonNames`'s existing per-`PERSONID` failure isolation, generalized to a
+  single all-or-nothing fetch (there's no smaller unit to isolate a failure to here, so the whole
+  fetch degrades together rather than throwing). [verify: **all three tools**, not just one — a
+  test per tool (`get_access_history`, `get_reader_access_history`, `get_card_access_details`)
+  with `GetReaders` scripted to throw and `RESOLVEDESCRIPTIONS` effectively `true` asserts (a) the
+  tool call does not error, (b) the primary data (access records / matches / card details) is
+  still returned correctly, and (c) `READERDESCRIPTION` is `''` (or absent at the top level for
+  `get_reader_access_history`'s truncated-per-R4 case — actually present as `''` per R1's fallback,
+  since R1 guarantees a value, just an empty one) rather than the field being missing entirely
+  through all three tools — `RESOLVEDESCRIPTIONS` true with a failing `GetReaders` still returns
+  the primary data (access records / card details) successfully, just without descriptions]
 - R3. `get_access_history` and `get_card_access_details` each gain `RESOLVEDESCRIPTIONS:
   z.boolean().optional()`, **defaulting to `true`** when omitted (opt-*out*, not opt-in — the
   first boolean param in this codebase with that default; call this out explicitly in both tool
@@ -161,9 +202,17 @@ code-like `NAME` (as `READER` or `PORTALNAME` depending on the tool):
 ## Acceptance rubric
 
 - C1 (from R1): PASS iff a test proves `fetchReaderDescriptions` correctly builds the map from a
-  multi-page scripted response.
+  multi-page scripted response, AND a separate test proves it does not throw when `GetReaders`
+  itself throws, resolving to an empty `Map` instead.
 - C2 (from R2): PASS iff tests prove single-fetch-regardless-of-record-count and graceful handling
   of an unmatched `READERKEY`.
+- C2b (from R2b): PASS iff **each of the three tools** (`get_access_history`,
+  `get_reader_access_history`, `get_card_access_details`) has its own test where `GetReaders` is
+  scripted to throw and `RESOLVEDESCRIPTIONS` is effectively `true`, proving that specific tool's
+  call does not error and its primary data (access records / matches / card details) still returns
+  correctly with `READERDESCRIPTION: ''`. "At least one tool" does not satisfy this — all three
+  call sites must be independently proven, since each one calls the shared helper differently
+  (two through `enrichWithReaderDescriptions`, one — `get_reader_access_history` — directly).
 - C3 (from R3): PASS iff tests prove default-on behavior and explicit-`false` opt-out for both
   `get_access_history` and `get_card_access_details`.
 - C4 (from R4): PASS iff tests prove the top-level (not per-match) field placement and its

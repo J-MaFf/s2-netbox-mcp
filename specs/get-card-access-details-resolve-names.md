@@ -53,7 +53,7 @@ this spec (auditing it is out of scope — same boundary this project already dr
 
 **Not in scope here:** reader/portal description enrichment (`PORTALNAME` in this tool's output is
 a site-code, not a description — same issue documented for the other access-record tools). That's
-covered by a separate spec (`specs/get-access-history-resolve-descriptions.md`) that also touches
+covered by a separate spec (`specs/archive/get-access-history-resolve-descriptions.md`) that also touches
 this tool; keep this spec limited to `RESOLVENAMES` only so each PR stays scoped to one feature.
 
 ## Deliverable

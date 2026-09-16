@@ -16,6 +16,7 @@ import {
 import { getReaderAccessHistory } from '../readerAccessHistory.js';
 import { asRecord, asRecordList, text, type XmlRecord } from '../paging.js';
 import { enrichWithPersonNames } from '../personEnrichment.js';
+import { enrichWithReaderDescriptions } from '../readerDescriptions.js';
 
 /**
  * Event/history/activity tools: the existing three read tools
@@ -39,6 +40,17 @@ import { enrichWithPersonNames } from '../personEnrichment.js';
  * not-found/error mapping runNbapiTool does, via notFoundResult()/
  * toolErrorResult() from toolHelpers.ts.
  *
+ * get_access_history's RESOLVEDESCRIPTIONS (specs/get-access-history-
+ * resolve-descriptions.md, R3) is an independent flag over the same
+ * response, backed by src/readerDescriptions.ts's enrichWithReaderDescriptions
+ * -- a single full-table GetReaders fetch per call rather than a per-record
+ * lookup. Unlike RESOLVENAMES it defaults to true (opt-out, not opt-in): the
+ * reader table is small and fixed-size, so the cost doesn't scale with
+ * result size the way person lookups do. get_reader_access_history gains the
+ * same flag, but attaches only a single top-level READERDESCRIPTION (see
+ * readerAccessHistory.ts's own R4 doc comment) since every match there
+ * already shares one caller-supplied READERKEY.
+ *
  * get_access_history has no date-range filter: NBAPI's real GetAccessHistory
  * date fields are STARTDATE/ENDDATE, not this tool's former OLDESTDTTM/
  * NEWESTDTTM (issue #47) -- and a live controlled A/B test found the
@@ -59,6 +71,13 @@ import { enrichWithPersonNames } from '../personEnrichment.js';
  * this just makes that fact visible to the type checker. */
 function withStringPersonId(raw: XmlRecord): XmlRecord & { PERSONID: string } {
   return { ...raw, PERSONID: text(raw.PERSONID) };
+}
+
+/** Same normalization as withStringPersonId above, but for READERKEY
+ * (satisfying enrichWithReaderDescriptions's `T extends { READERKEY: string }`
+ * constraint) -- used by RESOLVEDESCRIPTIONS' enrichment path. */
+function withStringReaderKey(raw: XmlRecord): XmlRecord & { READERKEY: string } {
+  return { ...raw, READERKEY: text(raw.READERKEY) };
 }
 
 export function registerEventsTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
@@ -87,7 +106,12 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
       'Identifies a person by ENCODEDNUM/HOTSTAMP, not PERSONID — GetAccessHistory has no PERSONID parameter. ' +
       "Set RESOLVENAMES: true to enrich each returned record with the badge-holder's " +
       'FIRSTNAME/LASTNAME/FULLNAME/NOTES (default false — off); enabling it costs one extra GetPerson call ' +
-      'per distinct person found in the result, which is why it is opt-in rather than on by default.',
+      'per distinct person found in the result, which is why it is opt-in rather than on by default. ' +
+      'RESOLVEDESCRIPTIONS defaults to true — the only default-on optional boolean in this codebase (an ' +
+      'inverted, opt-*out* default, unlike RESOLVENAMES/dryRun-style flags elsewhere): each returned record is ' +
+      "enriched with the reader's human-readable READERDESCRIPTION via one GetReaders full-table fetch per " +
+      'call (not per record, since the reader table is small and fixed-size); set RESOLVEDESCRIPTIONS: false ' +
+      'to skip it.',
     {
       STARTLOGID: z.string().optional().describe('Optional. Begin returning records at this LOGID.'),
       AFTERLOGID: z.string().optional().describe('Optional. Return records strictly after this LOGID.'),
@@ -103,9 +127,18 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
           "Optional (default false). Enrich each returned record with the badge-holder's FIRSTNAME/LASTNAME/" +
             'FULLNAME/NOTES via one extra GetPerson call per distinct person found in the result.'
         ),
+      RESOLVEDESCRIPTIONS: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            "default). Enrich each returned record with the reader's human-readable READERDESCRIPTION via one " +
+            'GetReaders full-table fetch per call (not per record). Set to false to skip it.'
+        ),
     },
-    async ({ RESOLVENAMES, ...otherParams }): Promise<ToolTextResult> => {
-      if (!RESOLVENAMES) {
+    async ({ RESOLVENAMES, RESOLVEDESCRIPTIONS, ...otherParams }): Promise<ToolTextResult> => {
+      const resolveDescriptions = RESOLVEDESCRIPTIONS !== false;
+      if (!RESOLVENAMES && !resolveDescriptions) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(otherParams));
       }
       try {
@@ -115,9 +148,14 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
         }
         const details = asRecord(result.data);
         const accesses = asRecord(details.ACCESSES);
-        const records = asRecordList(accesses.ACCESS).map(withStringPersonId);
-        const enriched = await enrichWithPersonNames(client, records);
-        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: enriched } };
+        let records: XmlRecord[] = asRecordList(accesses.ACCESS);
+        if (RESOLVENAMES) {
+          records = await enrichWithPersonNames(client, records.map(withStringPersonId));
+        }
+        if (resolveDescriptions) {
+          records = await enrichWithReaderDescriptions(client, records.map(withStringReaderKey));
+        }
+        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: records } };
         return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
       } catch (err) {
         return toolErrorResult(err);
@@ -130,7 +168,11 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
     "Returns a single reader's access (grant/deny) history for a given READERKEY, with each match's " +
       'PERSONID enriched to a name (composite: wraps NBAPI GetAccessHistory + GetPerson). GetAccessHistory has ' +
       'no server-side reader filter, so this reads and filters client-side. Rather than a date range, it scans ' +
-      'the most recent SCANWINDOW system-wide records (default 2000).',
+      'the most recent SCANWINDOW system-wide records (default 2000). RESOLVEDESCRIPTIONS defaults to true — ' +
+      "an inverted, opt-*out* default like get_access_history's own RESOLVEDESCRIPTIONS: it attaches a single " +
+      'top-level READERDESCRIPTION field for the given READERKEY (not one per match — every match already ' +
+      'shares this identical READERKEY by construction) via one GetReaders full-table fetch; set to false to ' +
+      'omit it entirely.',
     {
       READERKEY: z.string().describe('Required. Only access records for this reader are returned.'),
       SCANWINDOW: z
@@ -141,10 +183,18 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
         .string()
         .optional()
         .describe('Optional. Maximum number of matches to include, in chronological order. Defaults to 100.'),
+      RESOLVEDESCRIPTIONS: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default). Attaches a single top-level READERDESCRIPTION field (the ' +
+            "description for this call's own READERKEY, not one per match) via one GetReaders full-table " +
+            'fetch. Set to false to omit the field entirely.'
+        ),
     },
-    async ({ READERKEY, SCANWINDOW, MAXMATCHES }): Promise<ToolTextResult> => {
+    async ({ READERKEY, SCANWINDOW, MAXMATCHES, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
       try {
-        const result = await getReaderAccessHistory(client, { READERKEY, SCANWINDOW, MAXMATCHES });
+        const result = await getReaderAccessHistory(client, { READERKEY, SCANWINDOW, MAXMATCHES, RESOLVEDESCRIPTIONS });
         return { content: [{ type: 'text', text: formatAsJson(result) }] };
       } catch (err) {
         return toolErrorResult(err);
