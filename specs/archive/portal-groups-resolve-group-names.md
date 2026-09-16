@@ -1,5 +1,13 @@
 # Spec: `RESOLVEGROUPNAMES` group-name enrichment for `get_portal_groups` (plural)
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 11 acceptance criteria
+> (C1-C10, C-final) passed cleanly, including both spec-emphasized design points: no per-item
+> `PORTALGROUP` unwrap applied to the already-flat plural list, and exactly one shared
+> `GetTimeSpecGroups` fetch per page rather than per group. This was the explicitly-deferred
+> follow-on to `specs/archive/portal-group-resolve-group-names.md`'s singular tool, surfaced by
+> a broader post-`v0.3.0` enhancement survey. Shipped in
+> [PR #74](https://github.com/J-MaFf/s2-netbox-mcp/pull/74).
+
 ## Goal
 
 Let `get_portal_groups` (the plural, paginated list tool) resolve each returned group's bare
