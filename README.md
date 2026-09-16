@@ -314,6 +314,7 @@ surrounding file and location differ.
 | `get_elevators`               | `GetElevators`           | — (optional `STARTFROMKEY`)   |
 | `get_floors`                 | `GetFloors`              | — (optional `STARTFROMKEY`)   |
 | `ping_app`                   | `PingApp`                | —                             |
+| `get_threat_levels`          | `GetThreatLevels`        | — (optional `ALLPARTITIONS`)  |
 | `get_unlock_window`          | `GetPortalGroups` + `GetPortalGroup` + `GetTimeSpecGroups` + `GetTimeSpecs` + `GetHolidays` + `GetHoliday` (composite) | — |
 | `get_daily_unlock_window`    | `GetPortalGroups` + `GetPortalGroup` + `GetTimeSpecGroups` + `GetTimeSpecs` + `GetHolidays` (composite) | — |
 
@@ -963,8 +964,9 @@ the same `FAIL`/`ERRMSG="NOT FOUND"` quirk documented for `GetTimeSpecGroup`
 against an empty collection); a threat level plus a threat level group
 (`AddThreatLevel` → `AddThreatLevelGroup` → `ModifyThreatLevel` →
 `ModifyThreatLevelGroup` → `RemoveThreatLevelGroup` → `RemoveThreatLevel`,
-proven gone by a second `RemoveThreatLevel` failing — there is no
-`GetThreatLevel`, and `SetThreatLevel` is never called); `InsertActivity`
+proven gone by a second `RemoveThreatLevel` failing — `GetThreatLevels` is
+not used for round-trip verification here, and `SetThreatLevel` is never
+called); `InsertActivity`
 with a timestamped `USERACTIVITY` record; a UDF list item round-trip via
 `ModifyUDFListItems` (or a recorded `SKIPPED` pass if no UDF list is
 configured); and `GetPartitions` → `SwitchPartition` back to the session's

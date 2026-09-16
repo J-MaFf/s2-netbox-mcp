@@ -16,6 +16,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   v1 edition (doc #API-UG-14, 2020); neither newer NBAPI edition has yet been
   diffed against the current command reference
   ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75)).
+- Added `get_threat_levels` (wraps NBAPI `GetThreatLevels`, optional `ALLPARTITIONS` filter),
+  always registered regardless of the write gates, like every other read tool. Found via a full
+  conformance review of `docs/reference/NetBox_API_V2.pdf` against the 81-command allowlist: the
+  command was documented (doc p.198) but had no `NBAPI_COMMANDS` entry or tool at all, leaving
+  `set_threat_level`/`add_threat_level`/etc. with no way to list existing threat levels first.
+  `src/tools/threatLevel.ts`'s module comment previously (and incorrectly) claimed no such read
+  command existed in the Command reference -- it does; it just wasn't wired in
+  ([#77](https://github.com/J-MaFf/s2-netbox-mcp/issues/77)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,

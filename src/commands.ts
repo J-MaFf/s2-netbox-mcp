@@ -6,11 +6,11 @@
  * elsewhere in the codebase references these constants (e.g.
  * `NBAPI_COMMANDS.GET_PERSON`) rather than inlining a new string literal, so a
  * grep of the source tree for command-name literals stays exhaustive here.
- * `test/commandAllowlist.test.ts` enforces both the exact 80-command set and
+ * `test/commandAllowlist.test.ts` enforces both the exact 81-command set and
  * the confinement rule.
  *
  * This is a closed set: no command may be added here that isn't one of the
- * 80 explicitly enumerated by the spec (session lifecycle, reads, portal/
+ * 81 explicitly enumerated by the spec (session lifecycle, reads, portal/
  * output actions, adds, deletes, modifies, removes, person/credential
  * writes, event/activity writes, and partition/UDF-list commands). Whether a
  * given tool built on top of one of these commands is actually *reachable*
@@ -37,7 +37,7 @@ export const NBAPI_COMMANDS = {
   LIST_EVENTS: 'ListEvents',
   GET_ACCESS_HISTORY: 'GetAccessHistory',
 
-  // Additional read commands (18, R8/R29)
+  // Additional read commands (19, R8/R29)
   GET_TIME_SPEC: 'GetTimeSpec',
   GET_TIME_SPECS: 'GetTimeSpecs',
   GET_TIME_SPEC_GROUP: 'GetTimeSpecGroup',
@@ -56,6 +56,7 @@ export const NBAPI_COMMANDS = {
   GET_ELEVATORS: 'GetElevators',
   GET_FLOORS: 'GetFloors',
   PING_APP: 'PingApp',
+  GET_THREAT_LEVELS: 'GetThreatLevels',
 
   // Portal/output actions (7, R9)
   ACTIVATE_OUTPUT: 'ActivateOutput',

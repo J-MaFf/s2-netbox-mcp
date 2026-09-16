@@ -7,29 +7,47 @@ import { FakeServer, byName, fakeClient } from './testUtils.js';
 const WRITES_ON = { writesEnabled: true, destructiveEnabled: true };
 const WRITES_OFF = { writesEnabled: false, destructiveEnabled: false };
 
-describe('registerThreatLevelTools (R18, write-only — no read command exists)', () => {
-  it('registers nothing when writes are off', () => {
+describe('registerThreatLevelTools (R18)', () => {
+  it('registers only get_threat_levels when writes are off', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_OFF);
-    expect(server.registrations).toEqual([]);
+    expect(server.registrations.map((r) => r.name)).toEqual(['get_threat_levels']);
   });
 
-  it('registers the five non-destructive tools when writes are on and destructive is off', () => {
+  it('get_threat_levels takes an optional ALLPARTITIONS filter and calls GetThreatLevels', async () => {
+    const server = new FakeServer();
+    const { client, calls } = fakeClient();
+    registerThreatLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+    const reg = byName(server, 'get_threat_levels');
+    expect(Object.keys(reg.schema)).toEqual(['ALLPARTITIONS']);
+    await reg.handler({});
+    expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_THREAT_LEVELS, params: {} }]);
+  });
+
+  it('registers get_threat_levels plus the five non-destructive write tools when writes are on and destructive is off', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, { writesEnabled: true, destructiveEnabled: false });
     expect(server.registrations.map((r) => r.name).sort()).toEqual(
-      ['set_threat_level', 'add_threat_level', 'modify_threat_level', 'add_threat_level_group', 'modify_threat_level_group'].sort()
+      [
+        'get_threat_levels',
+        'set_threat_level',
+        'add_threat_level',
+        'modify_threat_level',
+        'add_threat_level_group',
+        'modify_threat_level_group',
+      ].sort()
     );
   });
 
-  it('registers all seven tools (plus the two destructive removes) when both flags are on', () => {
+  it('registers get_threat_levels plus all seven write tools (plus the two destructive removes) when both flags are on', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
     expect(server.registrations.map((r) => r.name).sort()).toEqual(
       [
+        'get_threat_levels',
         'set_threat_level',
         'add_threat_level',
         'modify_threat_level',
