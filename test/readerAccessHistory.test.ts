@@ -305,6 +305,30 @@ describe('getReaderAccessHistory', () => {
     expect(result.matches).toHaveLength(2);
   });
 
+  it('R7 (refactor): a returned match includes non-undefined FULLNAME and NOTES keys via the shared enrichWithPersonNames helper', async () => {
+    const { client } = scriptedClient({
+      [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+        discoveryPage(1000),
+        accessPage([record({ LOGID: '1', READERKEY: '190', PERSONID: '00208' })], '2'),
+      ],
+      [NBAPI_COMMANDS.GET_PERSON]: [
+        { notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola', NOTES: 'VIP' } },
+      ],
+    });
+
+    const result = await getReaderAccessHistory(client, { READERKEY: '190' });
+
+    expect(result.matches).toHaveLength(1);
+    const [match] = result.matches;
+    expect(match.FULLNAME).not.toBeUndefined();
+    expect(match.NOTES).not.toBeUndefined();
+    expect(match.FULLNAME).toBe('Joey Maffiola');
+    expect(match.NOTES).toBe('VIP');
+    // FIRSTNAME/LASTNAME keep their existing meaning — no field removed or renamed.
+    expect(match.FIRSTNAME).toBe('Joey');
+    expect(match.LASTNAME).toBe('Maffiola');
+  });
+
   it('R8: defaults MAXMATCHES to 100 when omitted', async () => {
     const records = Array.from({ length: 3 }, (_, i) => record({ LOGID: String(i + 1), READERKEY: '190', PERSONID: '00208' }));
     const { client } = scriptedClient({

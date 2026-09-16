@@ -1,6 +1,7 @@
 import type { NetboxClient } from './netboxClient.js';
 import { NBAPI_COMMANDS } from './commands.js';
 import { asRecord, asRecordList, text, type XmlRecord } from './paging.js';
+import { enrichWithPersonNames, type PersonEnrichment } from './personEnrichment.js';
 
 /**
  * Reader access (grant/deny) history: composite read over the NBAPI's
@@ -66,10 +67,7 @@ export interface AccessHistoryRecord {
   REASON: string;
 }
 
-export interface EnrichedAccessHistoryRecord extends AccessHistoryRecord {
-  FIRSTNAME: string;
-  LASTNAME: string;
-}
+export type EnrichedAccessHistoryRecord = AccessHistoryRecord & PersonEnrichment;
 
 function toAccessHistoryRecord(raw: XmlRecord): AccessHistoryRecord {
   return {
@@ -167,38 +165,6 @@ export async function fetchReaderAccessHistory(
   throw new Error(
     `${NBAPI_COMMANDS.GET_ACCESS_HISTORY} was still returning pages after ${MAX_ACCESS_HISTORY_PAGES} requests; stopped to avoid an unbounded scan.`
   );
-}
-
-/**
- * R7: attaches `FIRSTNAME`/`LASTNAME` to each record by calling the
- * person-lookup command once per distinct `PERSONID` (never once per
- * record). A lookup failure (thrown error or a not-found-shaped result) for
- * a given `PERSONID` never fails the whole call — that person's records
- * simply get empty `FIRSTNAME`/`LASTNAME`.
- */
-async function enrichWithPersonNames(
-  client: NetboxClient,
-  records: AccessHistoryRecord[]
-): Promise<EnrichedAccessHistoryRecord[]> {
-  const EMPTY_NAME = { FIRSTNAME: '', LASTNAME: '' };
-  const namesByPersonId = new Map<string, { FIRSTNAME: string; LASTNAME: string }>();
-  const distinctPersonIds = [...new Set(records.map((record) => record.PERSONID))];
-
-  for (const personId of distinctPersonIds) {
-    try {
-      const result = await client.call(NBAPI_COMMANDS.GET_PERSON, { PERSONID: personId });
-      if (result.notFound) {
-        namesByPersonId.set(personId, EMPTY_NAME);
-        continue;
-      }
-      const person = asRecord(result.data);
-      namesByPersonId.set(personId, { FIRSTNAME: text(person.FIRSTNAME), LASTNAME: text(person.LASTNAME) });
-    } catch {
-      namesByPersonId.set(personId, EMPTY_NAME);
-    }
-  }
-
-  return records.map((record) => ({ ...record, ...(namesByPersonId.get(record.PERSONID) ?? EMPTY_NAME) }));
 }
 
 export interface GetReaderAccessHistoryParams {
