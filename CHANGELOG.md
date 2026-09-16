@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.3.0] — 2026-09-16
 
 ### Changed
 - README's client registration section, previously "Registering with Claude Code" and
@@ -90,6 +90,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - README's intro paragraph still said "Claude-callable tools" -- fixed to match the
   client-agnostic wording used everywhere else ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+- README's intro paragraph said "two are composites, `find_portals` and `get_unlock_window`,"
+  which predated `get_daily_unlock_window` (`v0.2.0`) and `get_reader_access_history` (this
+  release) -- both are read-only composites too, and the README's own "Tools exposed" section
+  already correctly said "Nine tools are composites" and named all four
+  ([#59](https://github.com/J-MaFf/s2-netbox-mcp/issues/59)).
 
 ## [0.2.3] — 2026-09-15
 
