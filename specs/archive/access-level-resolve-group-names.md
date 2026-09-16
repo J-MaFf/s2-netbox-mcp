@@ -1,5 +1,11 @@
 # Spec: `RESOLVEGROUPNAMES` group-name enrichment for `get_access_level`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 11 acceptance criteria
+> (C1-C10, C-final) passed cleanly, including live confirmation that the singular
+> `GetTimeSpecGroup` command genuinely fails `NOT FOUND` on this controller. This is the 1st of
+> 4 specs in a new enrichment batch following on from the `RESOLVENAMES`/`RESOLVEDESCRIPTIONS`
+> work shipped in `v0.3.0`. Shipped in [PR #62](https://github.com/J-MaFf/s2-netbox-mcp/pull/62).
+
 ## Goal
 
 Let `get_access_level` resolve its bare `TIMESPECGROUPKEY`/`READERGROUPKEY` foreign keys into
