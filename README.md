@@ -284,7 +284,7 @@ surrounding file and location differ.
 | `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPKEY`          |
 | `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`)   |
 | `get_access_level_names`     | `GetAccessLevelNames`    | — (optional `PARTITIONKEY`/`STARTFROMNAME`) |
-| `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`; no single-portal filter — returns each portal with its nested readers) |
+| `get_portals`                | `GetPortals`             | — (optional `STARTFROMKEY`/`RESOLVEDESCRIPTIONS`; no single-portal filter — returns each portal with its nested readers) |
 | `get_reader`                 | `GetReader`              | `READERKEY`                   |
 | `get_readers`                | `GetReaders`             | — (optional `STARTFROMKEY`; no portal-id filter) |
 | `get_outputs`                | `GetOutputs`             | — (optional `STARTFROMKEY`)   |
@@ -356,6 +356,21 @@ For example, `"maintenance office"` matches a reader described as
 descriptions. The result also lists `portalsWithoutDescriptions`: portals none
 of whose readers has a description, which can only be found by name. It issues
 no commands beyond those two.
+
+`get_portals` itself also accepts `RESOLVEDESCRIPTIONS` (default **`true`** —
+on by default, the same opt-*out* default as every other `RESOLVEDESCRIPTIONS`
+flag in this codebase): unless explicitly set to `false`, it fills in each
+nested reader's own `DESCRIPTION` field — `GetPortals` never populates it,
+only `READERKEY`/`NAME`/`PORTALORDER` — via one `GetReaders` full-table fetch
+per call (not per portal/reader), using the same `src/readerDescriptions.ts`
+helper as the other `RESOLVEDESCRIPTIONS` tools. Unlike those tools, which add
+a new sibling field (`READERDESCRIPTION`) to flat records, this fills
+`DESCRIPTION` in directly on each nested reader object, since that's that
+reader's own native `GetReaders` field name. Set `RESOLVEDESCRIPTIONS: false`
+to get readers back exactly as `GetPortals` returns them, with no
+`GetReaders` call. This makes plain `get_portals` listings self-describing;
+it doesn't replace `find_portals`, which remains the tool for *searching* by
+name or description rather than just listing.
 
 `get_reader_access_history` is for finding out who actually badges through a
 given reader — useful, for example, when a reader has no `DESCRIPTION` and

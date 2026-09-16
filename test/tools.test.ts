@@ -996,14 +996,137 @@ describe('registerPortalTools', () => {
     expect(server.registrations.map((r) => r.name)).not.toContain('get_portal');
   });
 
-  it('get_portals takes only STARTFROMKEY (no single-portal filter) and calls GetPortals', async () => {
+  it('get_portals takes only STARTFROMKEY and RESOLVEDESCRIPTIONS (no single-portal filter) and calls GetPortals', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_portals');
-    expect(Object.keys(reg.schema)).toEqual(['STARTFROMKEY']);
-    await reg.handler({ STARTFROMKEY: 'abc' });
+    expect(Object.keys(reg.schema).sort()).toEqual(['RESOLVEDESCRIPTIONS', 'STARTFROMKEY'].sort());
+    // RESOLVEDESCRIPTIONS: false isolates this test to plain STARTFROMKEY pass-through --
+    // the RESOLVEDESCRIPTIONS default-true enrichment path is covered separately below.
+    await reg.handler({ STARTFROMKEY: 'abc', RESOLVEDESCRIPTIONS: false });
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_PORTALS, params: { STARTFROMKEY: 'abc' } }]);
+  });
+
+  describe('get_portals RESOLVEDESCRIPTIONS (spec: get-portals-resolve-descriptions)', () => {
+    // Synthetic fixture shaped like a live NetBox 6.2.0 GetPortals page: a
+    // one-reader portal collapses READERS.READER to a bare object, a
+    // two-reader portal keeps it as an array, and one reader (READERKEY '99')
+    // has no match in the GetReaders table (an unknown/deleted reader).
+    const PORTALS_PAGE = [
+      { PORTALKEY: '1', NAME: 'B1OF05A', READERS: { READER: { READERKEY: '1', NAME: 'B1OF05A READER', PORTALORDER: '1' } } },
+      {
+        PORTALKEY: '3',
+        NAME: 'B1OF09',
+        READERS: {
+          READER: [
+            { READERKEY: '7', NAME: 'B1OF09 IN', PORTALORDER: '1' },
+            { READERKEY: '10', NAME: 'B1OF09 OUT', PORTALORDER: '2' },
+          ],
+        },
+      },
+      { PORTALKEY: '2', NAME: 'B1OF05B', READERS: { READER: { READERKEY: '99', NAME: 'UNKNOWN READER', PORTALORDER: '1' } } },
+    ];
+    const READERS_TABLE = [
+      { READERKEY: '1', DESCRIPTION: 'WORKSHOP TO MAINTENANCE OFFICE' },
+      { READERKEY: '7', DESCRIPTION: 'HALLWAY TO MAINTENANCE WORKSHOP' },
+      { READERKEY: '10', DESCRIPTION: 'MAINTENANCE WORKSHOP TO HALLWAY' },
+    ];
+
+    it('R1: schema is exactly STARTFROMKEY and RESOLVEDESCRIPTIONS', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+      expect(Object.keys(reg.schema).sort()).toEqual(['RESOLVEDESCRIPTIONS', 'STARTFROMKEY'].sort());
+    });
+
+    it('R2: RESOLVEDESCRIPTIONS omitted defaults to true: GetReaders is fetched once and every nested reader on the page gains DESCRIPTION, every other field unchanged', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_PORTALS]: [{ notFound: false, data: { PORTALS: { PORTAL: PORTALS_PAGE }, NEXTKEY: '-1' } }],
+        [NBAPI_COMMANDS.GET_READERS]: [{ notFound: false, data: { READERS: { READER: READERS_TABLE }, NEXTKEY: '-1' } }],
+      });
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+
+      const result = await reg.handler({});
+
+      // Three portals / four readers share one page -- exactly one GetReaders
+      // fetch proves the fixed-cost full-table fetch, not once per portal/reader.
+      const readerCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS);
+      expect(readerCalls).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.NEXTKEY).toBe('-1');
+      expect(parsed.PORTALS.PORTAL[0]).toMatchObject({
+        PORTALKEY: '1',
+        NAME: 'B1OF05A',
+        READERS: {
+          READER: [{ READERKEY: '1', NAME: 'B1OF05A READER', PORTALORDER: '1', DESCRIPTION: 'WORKSHOP TO MAINTENANCE OFFICE' }],
+        },
+      });
+      expect(parsed.PORTALS.PORTAL[1].READERS.READER).toEqual([
+        { READERKEY: '7', NAME: 'B1OF09 IN', PORTALORDER: '1', DESCRIPTION: 'HALLWAY TO MAINTENANCE WORKSHOP' },
+        { READERKEY: '10', NAME: 'B1OF09 OUT', PORTALORDER: '2', DESCRIPTION: 'MAINTENANCE WORKSHOP TO HALLWAY' },
+      ]);
+      // Unknown/deleted reader (no GetReaders match) gets an empty DESCRIPTION, not omitted.
+      expect(parsed.PORTALS.PORTAL[2].READERS.READER[0]).toMatchObject({ READERKEY: '99', DESCRIPTION: '' });
+    });
+
+    it('R3: RESOLVEDESCRIPTIONS: false makes zero GetReaders calls and returns readers exactly as GetPortals provided them (no DESCRIPTION key)', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({ notFound: false, data: { PORTALS: { PORTAL: PORTALS_PAGE }, NEXTKEY: '-1' } });
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+
+      const result = await reg.handler({ STARTFROMKEY: 'abc', RESOLVEDESCRIPTIONS: false });
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_PORTALS, params: { STARTFROMKEY: 'abc' } }]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.PORTALS.PORTAL).toEqual(PORTALS_PAGE);
+      expect(parsed.PORTALS.PORTAL[0].READERS.READER).not.toHaveProperty('DESCRIPTION');
+    });
+
+    it('R4: RESOLVEDESCRIPTIONS true (default) with a notFound GetPortals response produces the same standard not-found text as RESOLVEDESCRIPTIONS: false would', async () => {
+      const server = new FakeServer();
+      const { client } = fakeClient({ notFound: true, data: undefined });
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+
+      const result = await reg.handler({});
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+    });
+
+    it('R4: RESOLVEDESCRIPTIONS true (default) with a thrown NbapiFailError produces the same standard mapped error text as the plain path', async () => {
+      const server = new FakeServer();
+      const client = {
+        call: async () => {
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+
+      const result = await reg.handler({});
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+    });
+
+    it('R5: description mentions RESOLVEDESCRIPTIONS and its default-true behavior', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portals');
+
+      expect(reg.description).toContain('RESOLVEDESCRIPTIONS');
+      expect(reg.description.toLowerCase()).toContain('true');
+    });
   });
 
   it('get_reader requires READERKEY, not READERID', async () => {

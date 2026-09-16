@@ -23,6 +23,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ACCESS` record. Independent of the existing `RESOLVEDESCRIPTIONS` flag on the same tool -- either,
   both, or neither may be requested in the same call
   ([#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55)).
+- `get_portals` gains a `RESOLVEDESCRIPTIONS: boolean` parameter (default `true`/on, the same
+  opt-*out* default as `get_access_history`/`get_card_access_details`/`get_reader_access_history`'s
+  own `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, it fills in each nested reader's
+  own `DESCRIPTION` field -- `GetPortals` never populates it, only `READERKEY`/`NAME`/
+  `PORTALORDER` -- via one `GetReaders` full-table fetch per call (not per portal/reader), reusing
+  `src/readerDescriptions.ts`'s `fetchReaderDescriptions`. Unlike the sibling tools above, which
+  add a new sibling `READERDESCRIPTION` field to flat records, this fills `DESCRIPTION` in
+  directly on each nested reader object -- that's the reader's own native `GetReaders` field name,
+  and `get_portals`'s readers are nested objects rather than flat records. `find_portals` is
+  unchanged and remains the tool for *searching* portals by name/description; this only makes a
+  plain `get_portals` listing self-describing ([#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57)).
 - `get_reader_access_history` tool: a single reader's access (grant/deny) history, filtered
   client-side (`GetAccessHistory` has no `READERKEY`/`PORTALKEY` filter) over a bounded
   `SCANWINDOW` of the most recent system-wide records (default 2000) via its own

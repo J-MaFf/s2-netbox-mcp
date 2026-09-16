@@ -6,7 +6,7 @@ import { findPortals } from '../src/portalSearch.js';
 import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
 import { asRecord, asRecordList, text } from '../src/paging.js';
 import { enrichWithPersonNames } from '../src/personEnrichment.js';
-import { enrichWithReaderDescriptions } from '../src/readerDescriptions.js';
+import { enrichWithReaderDescriptions, fetchReaderDescriptions } from '../src/readerDescriptions.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -371,6 +371,56 @@ async function runGetCardAccessDetailsResolveDescriptionsCheck(
   }
 }
 
+/**
+ * get_portals's RESOLVEDESCRIPTIONS: true (default) path is hand-rolled
+ * inline in its tool handler (src/tools/portal.ts), same as the checks
+ * above, so this check drives the same building blocks directly: one
+ * GetPortals call, then fetchReaderDescriptions (src/readerDescriptions.ts)
+ * -- asserting every nested reader on the page carries a non-undefined
+ * DESCRIPTION key (filled in directly on the nested reader object, per
+ * specs/archive/get-portals-resolve-descriptions.md R2 -- not a new sibling field
+ * the way the ACCESS-record tools above add READERDESCRIPTION), and that at
+ * least one nested reader's DESCRIPTION is non-empty (R8).
+ */
+async function runGetPortalsResolveDescriptionsCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_portals (RESOLVEDESCRIPTIONS: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_PORTALS, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawPortals = asRecordList(asRecord(details.PORTALS).PORTAL);
+    if (rawPortals.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no PORTAL records returned to enrich)' };
+    }
+    const descriptionsByReaderKey = await fetchReaderDescriptions(client);
+    const nestedReaders = rawPortals.flatMap((portal) => asRecordList(asRecord(portal.READERS).READER));
+    if (nestedReaders.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no nested READER records on this page to enrich)' };
+    }
+    const enrichedReaders = nestedReaders.map((reader) => ({
+      ...reader,
+      DESCRIPTION: descriptionsByReaderKey.get(text(reader.READERKEY)) ?? '',
+    }));
+    const missingKey = enrichedReaders.find((r) => r.DESCRIPTION === undefined);
+    if (missingKey) {
+      return { name, pass: false, summary: `enriched nested reader missing the DESCRIPTION key: ${JSON.stringify(missingKey)}` };
+    }
+    const withNonEmptyDescription = enrichedReaders.find((r) => r.DESCRIPTION !== '');
+    if (!withNonEmptyDescription) {
+      return { name, pass: false, summary: `every nested reader's DESCRIPTION was empty across ${enrichedReaders.length} reader(s)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK enriched ${enrichedReaders.length} nested reader(s) across ${rawPortals.length} portal(s), e.g. DESCRIPTION="${withNonEmptyDescription.DESCRIPTION}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -430,6 +480,7 @@ async function main(): Promise<number> {
   // portal, and its response already nests each portal's readers.
   const portals = await runCheck(client, 'get_portals', NBAPI_COMMANDS.GET_PORTALS, {});
   results.push(portals);
+  results.push(await runGetPortalsResolveDescriptionsCheck(client));
 
   const readers = await runCheck(client, 'get_readers', NBAPI_COMMANDS.GET_READERS, {});
   results.push(readers);
