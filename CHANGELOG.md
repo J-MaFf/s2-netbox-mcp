@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `get_portal_group` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
+  same flag name and opt-*out* default as `get_access_level`'s own `RESOLVEGROUPNAMES` below,
+  since it is the identical kind of lookup against the same `GetTimeSpecGroups` table): unless
+  explicitly set to `false`, it resolves the response's bare `UNLOCKTIMESPECGROUPKEY` foreign key
+  into a new sibling `UNLOCKTIMESPECGROUPNAME` field, via one fixed-cost `GetTimeSpecGroups` fetch
+  per call (a single portal group carries exactly one `UNLOCKTIMESPECGROUPKEY`, so this never
+  scales with anything). Reuses `src/timeSpecGroupNames.ts`'s `fetchTimeSpecGroupNames` as-is --
+  no second, parallel fetch-and-map implementation. The already-human-readable `PORTALS` sub-list
+  (`{PORTALKEY, NAME}` per portal) is left completely unchanged. An empty/absent
+  `UNLOCKTIMESPECGROUPKEY` skips the fetch entirely and yields `''` for the name; a
+  `GetTimeSpecGroups` fetch failure also yields `''` for the name while the primary
+  `GetPortalGroup` data (including `PORTALS`) stays intact. `THREATLEVELGROUPKEY` is out of scope
+  and never resolved -- no NBAPI read command for threat level groups exists in this server's
+  command surface at all
+  ([#63](https://github.com/J-MaFf/s2-netbox-mcp/issues/63)).
 - `get_access_level` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the
   same opt-*out* default as `get_portals`/`get_access_history`/`get_card_access_details`'s own
   `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, it resolves the response's bare

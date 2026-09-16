@@ -7,7 +7,7 @@ import { fetchAllPages, text } from './paging.js';
  * `RESOLVEGROUPNAMES` path (src/tools/accessLevel.ts) to resolve a bare
  * `TIMESPECGROUPKEY` into its human-readable `NAME`, and reused as-is by a
  * later, separate spec that resolves `get_portal_group`'s own
- * `UNLOCKTIMESPECGROUPKEY` (specs/portal-group-resolve-group-names.md) —
+ * `UNLOCKTIMESPECGROUPKEY` (specs/archive/portal-group-resolve-group-names.md) —
  * see specs/archive/access-level-resolve-group-names.md's Context.
  *
  * Mirrors `src/readerDescriptions.ts`'s `fetchReaderDescriptions` shape
