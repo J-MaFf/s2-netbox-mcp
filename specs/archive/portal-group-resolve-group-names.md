@@ -1,5 +1,14 @@
 # Spec: `RESOLVEGROUPNAMES` group-name enrichment for `get_portal_group`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round, all 11 acceptance criteria
+> (C1-C10, C-final) passed cleanly. Live testing caught a genuine spec inaccuracy (the original
+> response-shape example was copied from the plural `get_portal_groups` call, not the singular
+> `get_portal_group`, which actually nests `DETAILS` under a `PORTALGROUP` key) -- fixed in place
+> using an existing defensive unwrap already in `src/unlockWindow/managed.ts`, and this spec's
+> text corrected to match. This is the 2nd of 4 specs in a new enrichment batch following on
+> from the `RESOLVENAMES`/`RESOLVEDESCRIPTIONS` work shipped in `v0.3.0`. Shipped in
+> [PR #66](https://github.com/J-MaFf/s2-netbox-mcp/pull/66).
+
 ## Goal
 
 Let `get_portal_group` resolve its bare `UNLOCKTIMESPECGROUPKEY` foreign key into a human-readable
