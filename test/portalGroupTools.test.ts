@@ -264,11 +264,254 @@ describe('registerPortalGroupTools (R8 reads)', () => {
     });
   });
 
-  it('get_portal_groups takes only STARTFROMKEY', () => {
+  it('get_portal_groups gains RESOLVEGROUPNAMES alongside STARTFROMKEY (R1/R7)', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
-    expect(Object.keys(byName(server, 'get_portal_groups').schema)).toEqual(['STARTFROMKEY']);
+    const reg = byName(server, 'get_portal_groups');
+    expect(Object.keys(reg.schema).sort()).toEqual(['STARTFROMKEY', 'RESOLVEGROUPNAMES'].sort());
+    expect(reg.description).toContain('RESOLVEGROUPNAMES');
+  });
+
+  describe('get_portal_groups RESOLVEGROUPNAMES (specs/portal-groups-resolve-group-names.md)', () => {
+    // Unlike the singular GetPortalGroup, GetPortalGroups' list items are
+    // already flat -- no per-item PORTALGROUP wrapper. These scripted
+    // responses use that real flat shape (DETAILS.PORTALGROUPS.PORTALGROUP[]).
+    it('R2: resolves UNLOCKTIMESPECGROUPNAME on every group on the page, with exactly one GetTimeSpecGroups call for a mix of matching/non-matching/empty keys', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_PORTAL_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              PORTALGROUPS: {
+                PORTALGROUP: [
+                  {
+                    PORTALGROUPKEY: '26',
+                    NAME: 'LAB ALL ACCESS',
+                    DESCRIPTION: 'ACCESS TO MAIN LAB DOORS',
+                    PORTALS: { PORTAL: { PORTALKEY: '51', NAME: '01OF20B' } },
+                    UNLOCKTIMESPECGROUPKEY: '1',
+                    THREATLEVELGROUPKEY: '',
+                  },
+                  {
+                    PORTALGROUPKEY: '29',
+                    NAME: 'GRAND OPENING - All Doors',
+                    DESCRIPTION: '',
+                    PORTALS: { PORTAL: { PORTALKEY: '52', NAME: '01OF20C' } },
+                    UNLOCKTIMESPECGROUPKEY: '28',
+                    THREATLEVELGROUPKEY: '',
+                  },
+                  {
+                    PORTALGROUPKEY: '30',
+                    NAME: 'UNMATCHED KEY',
+                    DESCRIPTION: '',
+                    PORTALS: { PORTAL: { PORTALKEY: '53', NAME: '01OF20D' } },
+                    UNLOCKTIMESPECGROUPKEY: '999',
+                    THREATLEVELGROUPKEY: '',
+                  },
+                  {
+                    PORTALGROUPKEY: '31',
+                    NAME: 'NO KEY',
+                    DESCRIPTION: '',
+                    PORTALS: { PORTAL: { PORTALKEY: '54', NAME: '01OF20E' } },
+                    UNLOCKTIMESPECGROUPKEY: '',
+                    THREATLEVELGROUPKEY: '',
+                  },
+                ],
+              },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              TIMESPECGROUPS: {
+                TIMESPECGROUP: [
+                  { TIMESPECGROUPKEY: '1', NAME: 'Always' },
+                  { TIMESPECGROUPKEY: '28', NAME: 'GRAND OPENING' },
+                ],
+              },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({});
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      const groups = parsed.PORTALGROUPS.PORTALGROUP;
+      expect(groups).toHaveLength(4);
+      expect(groups[0].UNLOCKTIMESPECGROUPNAME).toBe('Always');
+      expect(groups[0].PORTALS).toEqual({ PORTAL: { PORTALKEY: '51', NAME: '01OF20B' } });
+      expect(groups[1].UNLOCKTIMESPECGROUPNAME).toBe('GRAND OPENING');
+      expect(groups[2].UNLOCKTIMESPECGROUPNAME).toBe('');
+      expect(groups[3].UNLOCKTIMESPECGROUPNAME).toBe('');
+      // No per-item PORTALGROUP unwrap applied -- each item stays flat.
+      expect(groups[0].PORTALGROUP).toBeUndefined();
+    });
+
+    it('R3: RESOLVEGROUPNAMES: false makes zero GetTimeSpecGroups calls and adds no UNLOCKTIMESPECGROUPNAME key', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_PORTAL_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              PORTALGROUPS: {
+                PORTALGROUP: {
+                  PORTALGROUPKEY: '26',
+                  NAME: 'LAB ALL ACCESS',
+                  DESCRIPTION: 'ACCESS TO MAIN LAB DOORS',
+                  PORTALS: { PORTAL: { PORTALKEY: '51', NAME: '01OF20B' } },
+                  UNLOCKTIMESPECGROUPKEY: '1',
+                  THREATLEVELGROUPKEY: '',
+                },
+              },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({ RESOLVEGROUPNAMES: false });
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_PORTAL_GROUPS, params: {} }]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(Object.keys(parsed.PORTALGROUPS.PORTALGROUP).sort()).toEqual(
+        ['PORTALGROUPKEY', 'NAME', 'DESCRIPTION', 'PORTALS', 'UNLOCKTIMESPECGROUPKEY', 'THREATLEVELGROUPKEY'].sort()
+      );
+      expect(parsed.PORTALGROUPS.PORTALGROUP.UNLOCKTIMESPECGROUPNAME).toBeUndefined();
+    });
+
+    it('R4: an all-empty-UNLOCKTIMESPECGROUPKEY page makes zero GetTimeSpecGroups calls and every group gets an empty name', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_PORTAL_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              PORTALGROUPS: {
+                PORTALGROUP: [
+                  { PORTALGROUPKEY: '40', NAME: 'A', UNLOCKTIMESPECGROUPKEY: '', THREATLEVELGROUPKEY: '' },
+                  { PORTALGROUPKEY: '41', NAME: 'B', THREATLEVELGROUPKEY: '' },
+                ],
+              },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({});
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS)).toHaveLength(0);
+      const parsed = JSON.parse(result.content[0].text);
+      const groups = parsed.PORTALGROUPS.PORTALGROUP;
+      expect(groups[0].UNLOCKTIMESPECGROUPNAME).toBe('');
+      expect(groups[1].UNLOCKTIMESPECGROUPNAME).toBe('');
+    });
+
+    it("R5: a thrown GetTimeSpecGroups call does not break the tool call -- every group's UNLOCKTIMESPECGROUPNAME resolves to '' and PORTALS/other fields stay intact", async () => {
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.GET_PORTAL_GROUPS) {
+            return {
+              notFound: false,
+              data: {
+                PORTALGROUPS: {
+                  PORTALGROUP: [
+                    {
+                      PORTALGROUPKEY: '26',
+                      NAME: 'LAB ALL ACCESS',
+                      DESCRIPTION: 'ACCESS TO MAIN LAB DOORS',
+                      PORTALS: { PORTAL: { PORTALKEY: '51', NAME: '01OF20B' } },
+                      UNLOCKTIMESPECGROUPKEY: '1',
+                      THREATLEVELGROUPKEY: '',
+                    },
+                    {
+                      PORTALGROUPKEY: '29',
+                      NAME: 'GRAND OPENING - All Doors',
+                      DESCRIPTION: '',
+                      PORTALS: { PORTAL: { PORTALKEY: '52', NAME: '01OF20C' } },
+                      UNLOCKTIMESPECGROUPKEY: '28',
+                      THREATLEVELGROUPKEY: '',
+                    },
+                  ],
+                },
+                NEXTKEY: '-1',
+              },
+            };
+          }
+          if (command === NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS) {
+            throw new Error('transient GetTimeSpecGroups failure');
+          }
+          throw new Error(`unexpected call: ${command}`);
+        },
+      } as unknown as NetboxClient;
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({});
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      const groups = parsed.PORTALGROUPS.PORTALGROUP;
+      expect(groups[0].UNLOCKTIMESPECGROUPNAME).toBe('');
+      expect(groups[0].PORTALS).toEqual({ PORTAL: { PORTALKEY: '51', NAME: '01OF20B' } });
+      expect(groups[1].UNLOCKTIMESPECGROUPNAME).toBe('');
+      expect(groups[1].PORTALS).toEqual({ PORTAL: { PORTALKEY: '52', NAME: '01OF20C' } });
+    });
+
+    it('R6: RESOLVEGROUPNAMES true (default) with a notFound GetPortalGroups response produces the same standard not-found text as the plain path, with no enrichment calls', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_PORTAL_GROUPS]: [{ notFound: true, data: undefined }],
+      });
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({});
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('R6: RESOLVEGROUPNAMES true (default) with a thrown NbapiFailError produces the same standard mapped error text as the plain path, with no enrichment calls', async () => {
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      const server = new FakeServer();
+      registerPortalGroupTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_portal_groups');
+
+      const result = await reg.handler({});
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+      expect(calls).toHaveLength(1);
+    });
   });
 });
 

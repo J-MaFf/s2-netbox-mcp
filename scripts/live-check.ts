@@ -568,6 +568,63 @@ async function runGetPortalGroupResolveGroupNamesCheck(client: NetboxClient, por
 }
 
 /**
+ * get_portal_groups's RESOLVEGROUPNAMES: true (default) path is hand-rolled
+ * inline in its tool handler (src/tools/portalGroup.ts), same shape as
+ * get_time_spec_groups's RESOLVEMEMBERNAMES check below: one GetPortalGroups
+ * call, then fetchTimeSpecGroupNames (src/timeSpecGroupNames.ts) built once
+ * for the whole page -- asserting every group on the page carries a
+ * non-undefined UNLOCKTIMESPECGROUPNAME key, and that at least one group's
+ * UNLOCKTIMESPECGROUPNAME is non-empty (R10 of
+ * specs/archive/portal-groups-resolve-group-names.md). Known-good live cases,
+ * verified this session: PORTALGROUPKEY "26" ("LAB ALL ACCESS") carries
+ * UNLOCKTIMESPECGROUPKEY "1" -> "Always"; PORTALGROUPKEY "29" ("GRAND
+ * OPENING - All Doors") carries UNLOCKTIMESPECGROUPKEY "28" -> "GRAND
+ * OPENING" -- both on the same page, confirming the shared-fetch-per-page
+ * design (exactly one GetTimeSpecGroups call regardless of how many groups
+ * are on the page).
+ */
+async function runGetPortalGroupsResolveGroupNamesCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_portal_groups (RESOLVEGROUPNAMES: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_PORTAL_GROUPS, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawGroups = asRecordList(asRecord(details.PORTALGROUPS).PORTALGROUP);
+    if (rawGroups.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no PORTALGROUP records returned to enrich)' };
+    }
+    const hasAnyKey = rawGroups.some((group) => text(group.UNLOCKTIMESPECGROUPKEY) !== '');
+    const namesByTimeSpecGroupKey = hasAnyKey ? await fetchTimeSpecGroupNames(client) : new Map<string, string>();
+    const enrichedGroups = rawGroups.map((group) => {
+      const unlockTimeSpecGroupKey = text(group.UNLOCKTIMESPECGROUPKEY);
+      return {
+        ...group,
+        UNLOCKTIMESPECGROUPNAME: unlockTimeSpecGroupKey === '' ? '' : (namesByTimeSpecGroupKey.get(unlockTimeSpecGroupKey) ?? ''),
+      };
+    });
+    const missingKey = enrichedGroups.find((g) => g.UNLOCKTIMESPECGROUPNAME === undefined);
+    if (missingKey) {
+      return { name, pass: false, summary: `enriched group missing the UNLOCKTIMESPECGROUPNAME key: ${JSON.stringify(missingKey)}` };
+    }
+    const withNonEmptyName = enrichedGroups.find((g) => g.UNLOCKTIMESPECGROUPNAME !== '');
+    if (!withNonEmptyName) {
+      return { name, pass: true, summary: `SKIPPED (every group's UNLOCKTIMESPECGROUPKEY was empty across ${enrichedGroups.length} group(s) -- nothing to resolve)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary:
+        `OK enriched ${enrichedGroups.length} group(s), e.g. PORTALGROUPKEY "${text(withNonEmptyName.PORTALGROUPKEY)}": ` +
+        `UNLOCKTIMESPECGROUPKEY "${text(withNonEmptyName.UNLOCKTIMESPECGROUPKEY)}" -> UNLOCKTIMESPECGROUPNAME="${withNonEmptyName.UNLOCKTIMESPECGROUPNAME}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * get_time_spec_groups's RESOLVEMEMBERNAMES: true (default) path is
  * hand-rolled inline in its tool handler (src/tools/timeSpec.ts), same as
  * the checks above, so this check drives the same building blocks directly:
@@ -770,6 +827,7 @@ async function main(): Promise<number> {
     acceptEmptyCollectionFail: true,
   });
   results.push(portalGroups);
+  results.push(await runGetPortalGroupsResolveGroupNamesCheck(client));
   results.push(
     await chainedSingleCheck(client, 'get_portal_group', NBAPI_COMMANDS.GET_PORTAL_GROUP, 'PORTALGROUPKEY', portalGroups.data)
   );
