@@ -1,5 +1,13 @@
 # Spec: `get_reader_access_history` composite tool
 
+> **Archived, 2026-09-15.** Built via the forge skill in
+> [PR #48](https://github.com/J-MaFf/s2-netbox-mcp/pull/48) (`Fixes #46`). All 13 acceptance
+> criteria passed (blind evaluator, round 1 of the corrected design), including a live run against
+> the real controller during generation (`3 match(es) for READERKEY 1 over the most recent 2000
+> records`). The date-range design in this spec's history is exactly what shipped as
+> "supersedes an earlier draft" — see the Goal's revision note below for why it changed twice
+> before landing on the scan-window approach.
+
 ## Goal
 
 Add a read-only MCP tool that scans a bounded window of the most recent system-wide access
