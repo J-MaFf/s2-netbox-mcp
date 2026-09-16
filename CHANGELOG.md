@@ -41,6 +41,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   live confirmation of when the requirement actually applies — most likely only once `USERNAME` is
   set, i.e. only for a person who should also get a NetBox login account
   ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79)).
+- `modify_time_spec` gains an optional `NAME` field, letting a time spec be renamed. Doc p.248
+  documents `NAME` as a `ModifyTimeSpec` calling parameter, with dedicated FAIL messages
+  confirming it's live ("Time Spec name already exists...", "Time Spec name cannot be null.") --
+  but it was entirely absent from the shared `timeSpecWriteFields` `modify_time_spec` is built
+  from, so there was no way to rename an existing time spec through this server
+  ([#80](https://github.com/J-MaFf/s2-netbox-mcp/issues/80)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,
