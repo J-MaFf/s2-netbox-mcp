@@ -1077,14 +1077,16 @@ describe('registerAccessLevelTools', () => {
     });
   });
 
-  it('get_access_levels takes STARTFROMKEY/STARTFROMNAME/WANTKEY and calls GetAccessLevels', async () => {
+  it('get_access_levels takes PARTITIONKEY/STARTFROMKEY/STARTFROMNAME/WANTKEY and calls GetAccessLevels', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_access_levels');
-    expect(Object.keys(reg.schema).sort()).toEqual(['STARTFROMKEY', 'STARTFROMNAME', 'WANTKEY'].sort());
+    expect(Object.keys(reg.schema).sort()).toEqual(['PARTITIONKEY', 'STARTFROMKEY', 'STARTFROMNAME', 'WANTKEY'].sort());
     await reg.handler({});
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_LEVELS, params: {} }]);
+    await reg.handler({ PARTITIONKEY: '0' });
+    expect(calls[1]).toEqual({ command: NBAPI_COMMANDS.GET_ACCESS_LEVELS, params: { PARTITIONKEY: '0' } });
   });
 
   it('get_access_level_group calls GetAccessLevelGroup with ACCESSLEVELGROUPKEY, not ACCESSLEVELGROUPID', async () => {
@@ -1097,14 +1099,16 @@ describe('registerAccessLevelTools', () => {
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUP, params: { ACCESSLEVELGROUPKEY: '9' } }]);
   });
 
-  it('get_access_level_groups takes only STARTFROMKEY', async () => {
+  it('get_access_level_groups takes STARTFROMKEY/PARTITIONKEY', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_access_level_groups');
-    expect(Object.keys(reg.schema)).toEqual(['STARTFROMKEY']);
+    expect(Object.keys(reg.schema).sort()).toEqual(['STARTFROMKEY', 'PARTITIONKEY'].sort());
     await reg.handler({});
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, params: {} }]);
+    await reg.handler({ PARTITIONKEY: '0' });
+    expect(calls[1]).toEqual({ command: NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, params: { PARTITIONKEY: '0' } });
   });
 
   it('get_access_level_names takes PARTITIONKEY/STARTFROMNAME and calls GetAccessLevelNames', async () => {

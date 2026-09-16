@@ -109,12 +109,13 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
     'get_access_levels',
     'Lists access levels configured on the NetBox system (wraps NBAPI GetAccessLevels).',
     {
+      PARTITIONKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevels — only "0" is documented as allowed.'),
       STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor (key) to continue listing from a previous call.'),
       STARTFROMNAME: z.string().optional().describe('Optional. Pagination cursor (name) to continue listing from a previous call.'),
       WANTKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevels.'),
     },
-    async ({ STARTFROMKEY, STARTFROMNAME, WANTKEY }) =>
-      runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVELS, mergeParams({ STARTFROMKEY, STARTFROMNAME, WANTKEY }))
+    async ({ PARTITIONKEY, STARTFROMKEY, STARTFROMNAME, WANTKEY }) =>
+      runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVELS, mergeParams({ PARTITIONKEY, STARTFROMKEY, STARTFROMNAME, WANTKEY }))
   );
 
   server.tool(
@@ -132,9 +133,10 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
     'Lists access level groups configured on the NetBox system (wraps NBAPI GetAccessLevelGroups).',
     {
       STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.'),
+      PARTITIONKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevelGroups — only "0" is documented as allowed.'),
     },
-    async ({ STARTFROMKEY }) =>
-      runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, mergeParams({ STARTFROMKEY }))
+    async ({ STARTFROMKEY, PARTITIONKEY }) =>
+      runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, mergeParams({ STARTFROMKEY, PARTITIONKEY }))
   );
 
   server.tool(
