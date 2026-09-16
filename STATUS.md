@@ -9,20 +9,83 @@ Gemini/Antigravity, etc.), so NetBox data can be queried — and, when explicitl
 conversationally instead of via hand-built XML/HTTP calls. Node/TypeScript, stdio transport,
 session-login auth only. Read-only by default; write tools are gated behind
 `NETBOX_ENABLE_WRITES`/`NETBOX_ENABLE_DESTRUCTIVE` (see README "Write access"). On top of the
-pass-through tools it offers composite ones: `find_portals`, `set_portals_state`, a managed unlock
-window (`schedule_unlock_window` / `cancel_unlock_window` / `get_unlock_window`), and a managed
-**daily recurring** unlock window (`schedule_daily_unlock_window` / `cancel_daily_unlock_window` /
-`get_daily_unlock_window`) — both enforced by the controller itself (README "Scheduled unlock
-windows" / "Scheduled daily unlock windows"). See `specs/archive/s2-netbox-mcp-write.md` for the
-write-tools spec (archived `specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all
-its acceptance criteria passed).
+pass-through tools it offers composite ones: `find_portals`, `get_reader_access_history`,
+`set_portals_state`, a managed unlock window (`schedule_unlock_window` / `cancel_unlock_window` /
+`get_unlock_window`), and a managed **daily recurring** unlock window
+(`schedule_daily_unlock_window` / `cancel_daily_unlock_window` / `get_daily_unlock_window`) — the
+unlock windows are enforced by the controller itself (README "Scheduled unlock windows" /
+"Scheduled daily unlock windows"). Several read tools also accept opt-in/opt-out `RESOLVENAMES`/
+`RESOLVEDESCRIPTIONS` flags to resolve a bare `PERSONID`/`READERKEY` to a human-readable name
+inline (README "Tools exposed"). See `specs/archive/s2-netbox-mcp-write.md` for the write-tools
+spec (archived `specs/archive/s2-netbox-mcp.md` is the original read-only v1 spec — all its
+acceptance criteria passed).
 
 Published on [npm](https://www.npmjs.com/package/s2-netbox-mcp) and the [official MCP
 Registry](https://registry.modelcontextprotocol.io) as `io.github.J-MaFf/s2-netbox-mcp`; submitted
 to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Trusted Publishing
 (OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again.
 
-## Current State — 2026-09-15
+## Current State — 2026-09-16
+
+### Person/reader-description enrichment across access-record tools
+
+A five-part sequential push (spec -> forge loop per part, one PR each) making every read tool
+that returns a bare `PERSONID` or `READERKEY` optionally resolve it to a human-readable name,
+instead of requiring a separate `get_person`/`get_readers` lookup to decode who or where:
+
+1. **`get_reader_access_history`** (issue [#46](https://github.com/J-MaFf/s2-netbox-mcp/issues/46),
+   [PR #48](https://github.com/J-MaFf/s2-netbox-mcp/pull/48)) — new composite tool: a single
+   reader's access (grant/deny) history, since `GetAccessHistory` itself has no `READERKEY`
+   filter. Filters client-side over a bounded `SCANWINDOW` (default 2000 most-recent records) via
+   its own `AFTERLOGID`/`NEXTLOGID` pagination loop, seeded by a cheap `MAXRECORDS: '1'` call that
+   discovers the current max `LOGID`. Each match's `PERSONID` is enriched with a name (one
+   `GetPerson` call per distinct person), capped at `MAXMATCHES` (default 100) with a `truncated`
+   flag.
+2. **`get_access_history` `RESOLVENAMES`** (issue
+   [#51](https://github.com/J-MaFf/s2-netbox-mcp/issues/51), fixing the broken
+   `OLDESTDTTM`/`NEWESTDTTM` date-range params along the way — issue
+   [#47](https://github.com/J-MaFf/s2-netbox-mcp/issues/47) — [PR #52](https://github.com/J-MaFf/s2-netbox-mcp/pull/52)):
+   opt-in (`false` by default) per-record `PERSONID` -> name resolution via the new
+   `src/personEnrichment.ts` (`enrichWithPersonNames`, one `GetPerson` call per distinct
+   `PERSONID`, memoized per request, failures isolated to just that person's records). Live A/B
+   testing proved this controller silently ignores `OLDESTDTTM`/`NEWESTDTTM`/`STARTDATE`/`ENDDATE`
+   regardless of name, so date-range filtering was removed rather than "fixed."
+3. **`RESOLVEDESCRIPTIONS` on `get_access_history` / `get_reader_access_history` /
+   `get_card_access_details`** (issue [#53](https://github.com/J-MaFf/s2-netbox-mcp/issues/53),
+   [PR #54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54)): opt-*out* (`true` by default,
+   inverted from `RESOLVENAMES`, since a full `GetReaders` fetch is one small fixed-cost table
+   regardless of result size) `READERKEY` -> `DESCRIPTION` resolution via the new
+   `src/readerDescriptions.ts` (`fetchReaderDescriptions`, one full-table fetch per call; never
+   throws — a `GetReaders` failure degrades to an empty map rather than losing the primary access
+   data, a fix made after round-1 evaluation caught the original per-caller catch missing
+   `get_reader_access_history`'s own direct call site).
+4. **`get_card_access_details` `RESOLVENAMES`** (issue
+   [#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55),
+   [PR #56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56)): this tool's response carries
+   exactly one `PERSONID` at the top level (one card = one person), so the single `GetPerson`
+   lookup's four fields land on the top level of the response, not duplicated per `ACCESS` record
+   — cheaper than `get_access_history`'s per-record case.
+5. **`get_portals` `RESOLVEDESCRIPTIONS`** (issue
+   [#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57),
+   [PR #58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58)): opt-out, `true` by default, reusing
+   `fetchReaderDescriptions`. Unlike the sibling tools above (which add a new sibling
+   `READERDESCRIPTION` field to flat records), this fills `DESCRIPTION` in directly on each nested
+   reader object, using the reader's own native `GetReaders` field name, since `get_portals`'s
+   readers are nested objects rather than flat records.
+
+All five were built via the `blueprint` -> `forge` spec-driven loop (5 specs, all archived under
+`specs/archive/`); [#49](https://github.com/J-MaFf/s2-netbox-mcp/issues/49) (README's client
+registration section made client-agnostic, [PR #50](https://github.com/J-MaFf/s2-netbox-mcp/pull/50))
+and [#44](https://github.com/J-MaFf/s2-netbox-mcp/issues/44) (this file's previous refresh,
+[PR #45](https://github.com/J-MaFf/s2-netbox-mcp/pull/45)) landed alongside them. `get_reader_access_history`
+is the only new tool name; every other change is an additive optional field on an existing tool.
+
+Tool surface on `main` now: **37** read tools with writes off; **76** with `NETBOX_ENABLE_WRITES`;
+**87** with `NETBOX_ENABLE_DESTRUCTIVE` as well (up from 36/75/86 for the one new tool).
+607 unit tests pass (30 files), `npm run typecheck` and `npm run build` are clean, and
+`npm run test:live` (39/39) has verified every enrichment path against the real controller.
+
+## Previous State — 2026-09-15
 
 Both stages of the write-tools spec (now archived at `specs/archive/s2-netbox-mcp-write.md`) are
 complete and live-verified, and both are merged into `main`. Stage 1 (issue #8) added the
@@ -152,6 +215,9 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `src/paging.ts` | The shared "fully paginated" NEXTKEY loop (`fetchAllPages` / `fetchAllPagesWith`) plus the XML-record helpers, used by every composite tool |
 | `src/portalSearch.ts` | `find_portals` logic: pages GetPortals + GetReaders, joins reader descriptions by READERKEY, term search |
 | `src/portalState.ts` | `set_portals_state` logic: one Lock/Unlock/MomentaryUnlock per portal, sequential, outcome partitioning |
+| `src/readerAccessHistory.ts` | `get_reader_access_history` logic: client-side `READERKEY` filter over a bounded `AFTERLOGID`/`NEXTLOGID` scan window, `MAXMATCHES` cap |
+| `src/personEnrichment.ts` | `enrichWithPersonNames`: shared `PERSONID` -> name resolution (`RESOLVENAMES`), one `GetPerson` call per distinct person, per-request memoized, failure-isolated |
+| `src/readerDescriptions.ts` | `fetchReaderDescriptions`/`enrichWithReaderDescriptions`: shared `READERKEY` -> `DESCRIPTION` resolution (`RESOLVEDESCRIPTIONS`), one full-table `GetReaders` fetch per call, never throws |
 | `src/unlockWindow/planner.ts` | Pure R23 planner (`planUnlockWindow`), date-time parsing/validation, R22 clock/31-day checks |
 | `src/unlockWindow/managed.ts` | Managed-object naming (R27), read-back normalisation (`TRUE`/`FALSE`, `HH:MM:SS`, `YYYY-MM-DD HH:MM:SS`, comma key strings), typed paginated readers |
 | `src/unlockWindow/executor.ts` | `scheduleUnlockWindow` (R22/R24/R25/R28), `cancelUnlockWindow` (R26), `getUnlockWindow` (R26) |
@@ -201,6 +267,13 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#40](https://github.com/J-MaFf/s2-netbox-mcp/issues/40) | Fix write and destructive tools section wording in README | [#39](https://github.com/J-MaFf/s2-netbox-mcp/pull/39) |
 | [#41](https://github.com/J-MaFf/s2-netbox-mcp/issues/41) | Cut v0.2.3 to sync npm's published README | [#42](https://github.com/J-MaFf/s2-netbox-mcp/pull/42) |
 | [#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30) | SECURITY.md + physical-safety README messaging + repo security settings | [#43](https://github.com/J-MaFf/s2-netbox-mcp/pull/43) |
+| [#44](https://github.com/J-MaFf/s2-netbox-mcp/issues/44) | Refresh stale STATUS.md | [#45](https://github.com/J-MaFf/s2-netbox-mcp/pull/45) |
+| [#46](https://github.com/J-MaFf/s2-netbox-mcp/issues/46) | Add `get_reader_access_history` composite tool | [#48](https://github.com/J-MaFf/s2-netbox-mcp/pull/48) |
+| [#49](https://github.com/J-MaFf/s2-netbox-mcp/issues/49) | README's MCP client registration section made client-agnostic (Claude Code, Antigravity, Gemini CLI) | [#50](https://github.com/J-MaFf/s2-netbox-mcp/pull/50) |
+| [#47](https://github.com/J-MaFf/s2-netbox-mcp/issues/47) / [#51](https://github.com/J-MaFf/s2-netbox-mcp/issues/51) | `get_access_history` `RESOLVENAMES` person-name enrichment; removed broken `OLDESTDTTM`/`NEWESTDTTM` date-range params | [#52](https://github.com/J-MaFf/s2-netbox-mcp/pull/52) |
+| [#53](https://github.com/J-MaFf/s2-netbox-mcp/issues/53) | `RESOLVEDESCRIPTIONS` reader-description enrichment on `get_access_history`/`get_reader_access_history`/`get_card_access_details` | [#54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54) |
+| [#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55) | `get_card_access_details` `RESOLVENAMES` person-name enrichment (single top-level lookup) | [#56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56) |
+| [#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57) | `get_portals` `RESOLVEDESCRIPTIONS` reader-description enrichment (nested reader objects) | [#58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58) |
 
 ### Open Issues
 
