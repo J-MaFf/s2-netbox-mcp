@@ -469,6 +469,55 @@ async function runGetAccessLevelResolveGroupNamesCheck(client: NetboxClient, acc
   }
 }
 
+/**
+ * get_portal_group's RESOLVEGROUPNAMES: true (default) path is hand-rolled
+ * inline in its tool handler (src/tools/portalGroup.ts), same shape as
+ * get_access_level's own check above: one GetPortalGroup call, then
+ * fetchTimeSpecGroupNames (src/timeSpecGroupNames.ts) -- asserting a
+ * non-empty resolved UNLOCKTIMESPECGROUPNAME when the portal group carries a
+ * non-empty UNLOCKTIMESPECGROUPKEY (R10 of
+ * specs/archive/portal-group-resolve-group-names.md). Known-good live cases,
+ * verified this session: PORTALGROUPKEY "26" ("LAB ALL ACCESS") carries
+ * UNLOCKTIMESPECGROUPKEY "1" -> "Always"; PORTALGROUPKEY "29" ("GRAND
+ * OPENING - All Doors") carries UNLOCKTIMESPECGROUPKEY "28" -> "GRAND
+ * OPENING".
+ */
+async function runGetPortalGroupResolveGroupNamesCheck(client: NetboxClient, portalGroupKey: string): Promise<CheckResult> {
+  const name = 'get_portal_group (RESOLVEGROUPNAMES: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_PORTAL_GROUP, { PORTALGROUPKEY: portalGroupKey });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const topLevel = asRecord(result.data);
+    // This controller nests a singular GetPortalGroup's fields under a
+    // PORTALGROUP key (verified live this session) -- same quirk
+    // src/unlockWindow/managed.ts's fetchPortalGroup already handles.
+    const details = 'PORTALGROUP' in topLevel ? asRecord(topLevel.PORTALGROUP) : topLevel;
+    const unlockTimeSpecGroupKey = text(details.UNLOCKTIMESPECGROUPKEY);
+    if (unlockTimeSpecGroupKey === '') {
+      return { name, pass: true, summary: 'SKIPPED (this portal group carries no UNLOCKTIMESPECGROUPKEY to resolve)' };
+    }
+    const unlockTimeSpecGroupName = (await fetchTimeSpecGroupNames(client)).get(unlockTimeSpecGroupKey) ?? '';
+    if (unlockTimeSpecGroupName === '') {
+      return {
+        name,
+        pass: false,
+        summary: `UNLOCKTIMESPECGROUPKEY "${unlockTimeSpecGroupKey}" did not resolve to a non-empty UNLOCKTIMESPECGROUPNAME`,
+      };
+    }
+    return {
+      name,
+      pass: true,
+      summary:
+        `OK PORTALGROUPKEY "${portalGroupKey}": UNLOCKTIMESPECGROUPKEY "${unlockTimeSpecGroupKey}" -> ` +
+        `UNLOCKTIMESPECGROUPNAME="${unlockTimeSpecGroupName}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -622,6 +671,16 @@ async function main(): Promise<number> {
   results.push(portalGroups);
   results.push(
     await chainedSingleCheck(client, 'get_portal_group', NBAPI_COMMANDS.GET_PORTAL_GROUP, 'PORTALGROUPKEY', portalGroups.data)
+  );
+  const portalGroupKey = findFirstMatchingId(portalGroups.data, /PORTALGROUPKEY/i);
+  results.push(
+    portalGroupKey
+      ? await runGetPortalGroupResolveGroupNamesCheck(client, portalGroupKey)
+      : {
+          name: 'get_portal_group (RESOLVEGROUPNAMES: true, default)',
+          pass: true,
+          summary: 'SKIPPED (no PORTALGROUPKEY found in get_portal_groups results to test against)',
+        }
   );
 
   const readerGroups = await runCheck(client, 'get_reader_groups', NBAPI_COMMANDS.GET_READER_GROUPS, {}, {

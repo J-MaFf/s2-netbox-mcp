@@ -300,7 +300,7 @@ surrounding file and location differ.
 | `get_time_spec_groups`       | `GetTimeSpecGroups`      | — (optional `STARTFROMKEY`)   |
 | `get_holiday`                | `GetHoliday`             | `HOLIDAYKEY`                  |
 | `get_holidays`               | `GetHolidays`            | — (optional `STARTFROMKEY`)   |
-| `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY`              |
+| `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY` (optional `RESOLVEGROUPNAMES`) |
 | `get_portal_groups`          | `GetPortalGroups`        | — (optional `STARTFROMKEY`)   |
 | `get_reader_group`           | `GetReaderGroup`         | `READERGROUPKEY`              |
 | `get_reader_groups`          | `GetReaderGroups`        | — (optional `STARTFROMKEY`)   |
@@ -475,6 +475,26 @@ resolves to `''` and the call still succeeds with the primary
 `GetAccessLevel` data intact — an enrichment failure never loses the primary
 data. Set `RESOLVEGROUPNAMES: false` to skip both fetches and get the
 response back exactly as `GetAccessLevel` provides it.
+
+`get_portal_group` accepts the same `RESOLVEGROUPNAMES` flag (default
+**`true`**, same opt-*out* default and identical kind of lookup as
+`get_access_level`'s own `RESOLVEGROUPNAMES` above): unless explicitly set to
+`false`, it resolves the response's bare `UNLOCKTIMESPECGROUPKEY` foreign key
+into a new sibling `UNLOCKTIMESPECGROUPNAME` field, reusing the same
+`src/timeSpecGroupNames.ts` helper (and so the same full-paginated-list
+resolution, never the broken singular `GetTimeSpecGroup` command). A single
+`GetPortalGroup` response carries exactly one `UNLOCKTIMESPECGROUPKEY`, so
+this always costs exactly one fixed-size `GetTimeSpecGroups` fetch, never
+scaling with anything. The already-human-readable `PORTALS` sub-list
+(`{PORTALKEY, NAME}` per portal) is left completely unchanged.
+`THREATLEVELGROUPKEY` is **never** resolved — no NBAPI read command for
+threat level groups exists in this server's command surface. An
+empty/absent `UNLOCKTIMESPECGROUPKEY` skips the fetch entirely and yields
+`''` for the name; if the underlying `GetTimeSpecGroups` fetch itself fails,
+`UNLOCKTIMESPECGROUPNAME` resolves to `''` and the call still succeeds with
+the primary `GetPortalGroup` data (including `PORTALS`) intact. Set
+`RESOLVEGROUPNAMES: false` to skip the fetch and get the response back
+exactly as `GetPortalGroup` provides it.
 
 ### Write tools and Destructive tools
 
