@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added `docs/reference/`: `NetBox_API_V1.pdf` (doc #API-UG-22, April 2024),
+  `NetBox_API_V2.pdf` (doc #API2-UG-8, April 2025), `Data_Operations.pdf`
+  (doc #DOPS-UG-22, April 2025), and `NetBox_Hardening_Guide.pdf` (doc
+  NB-HG-03, May 2025) — LenelS2's official NetBox guides, as reference
+  documentation. Downloaded from a NetBox controller's help portal; all are
+  generic vendor content with no site-specific data, reviewed page-by-page
+  before committing. This server's tools were built against an earlier NBAPI
+  v1 edition (doc #API-UG-14, 2020); neither newer NBAPI edition has yet been
+  diffed against the current command reference
+  ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,

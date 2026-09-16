@@ -293,6 +293,11 @@ enforced client-side via her `mcp_config.json`, not by the NetBox account itself
 3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
 4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
+5. Newer **NBAPI v1** (doc #API-UG-22, April 2024) and **v2** (doc #API2-UG-8, April 2025) guides
+   are now in `docs/reference/`, alongside the original 2020 v1 doc this server was built against
+   (#API-UG-14) — see [#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75). Worth a diff pass
+   against the current Command Reference to check for new/changed commands or parameters, including
+   whether it answers item 2 above.
 
 ## Prerequisites to Run
 
