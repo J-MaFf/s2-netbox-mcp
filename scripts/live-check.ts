@@ -4,6 +4,8 @@ import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS, type NbapiCommandName } from '../src/commands.js';
 import { findPortals } from '../src/portalSearch.js';
 import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
+import { asRecord, asRecordList, text } from '../src/paging.js';
+import { enrichWithPersonNames } from '../src/personEnrichment.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -185,6 +187,46 @@ async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: s
   }
 }
 
+/**
+ * get_access_history's RESOLVENAMES: true path is hand-rolled inline in its
+ * tool handler (src/tools/events.ts) rather than a separately exported
+ * composite function, so this check drives the same two building blocks
+ * directly against the live controller: one GetAccessHistory call, then the
+ * shared `enrichWithPersonNames` helper (src/personEnrichment.ts) --
+ * asserting every enriched record carries non-undefined
+ * FIRSTNAME/LASTNAME/FULLNAME/NOTES keys, exactly as RESOLVENAMES: true
+ * promises (R11 of specs/archive/get-access-history-resolve-names.md).
+ */
+async function runGetAccessHistoryResolveNamesCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_access_history (RESOLVENAMES: true)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_HISTORY, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawRecords = asRecordList(asRecord(details.ACCESSES).ACCESS);
+    if (rawRecords.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no ACCESS records returned to enrich)' };
+    }
+    const records = rawRecords.map((raw) => ({ ...raw, PERSONID: text(raw.PERSONID) }));
+    const enriched = await enrichWithPersonNames(client, records);
+    const missingKeys = enriched.find(
+      (r) => r.FIRSTNAME === undefined || r.LASTNAME === undefined || r.FULLNAME === undefined || r.NOTES === undefined
+    );
+    if (missingKeys) {
+      return { name, pass: false, summary: `enriched record missing an expected key: ${JSON.stringify(missingKeys)}` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK enriched ${enriched.length} record(s), e.g. FULLNAME="${enriched[0].FULLNAME}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -284,6 +326,7 @@ async function main(): Promise<number> {
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
   results.push(await runCheck(client, 'get_access_history', NBAPI_COMMANDS.GET_ACCESS_HISTORY, {}));
+  results.push(await runGetAccessHistoryResolveNamesCheck(client));
 
   // --- R29: the 18 additional read tools added in this stage ---------------
 

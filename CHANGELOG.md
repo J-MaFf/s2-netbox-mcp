@@ -23,6 +23,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `GetPerson` call per distinct person (a lookup failure leaves that record's name blank
   rather than failing the call), and the result is capped at `MAXMATCHES` (default 100) with
   a `truncated` flag ([#46](https://github.com/J-MaFf/s2-netbox-mcp/issues/46)).
+- `get_access_history` gains an opt-in `RESOLVENAMES: true` parameter: enriches each returned
+  record with the badge-holder's `FIRSTNAME`/`LASTNAME`/`FULLNAME`/`NOTES` via one `GetPerson`
+  call per distinct `PERSONID` found in the result -- the same per-request memoization pattern
+  `get_reader_access_history` already used, now extracted into a new shared
+  `src/personEnrichment.ts` module both tools call. Defaults to `false`/off, since enabling it
+  costs one extra `GetPerson` call per distinct person found in the result. As a side effect of
+  the shared-helper refactor, `get_reader_access_history`'s output also gains `FULLNAME`/`NOTES`
+  on every match (additive -- `FIRSTNAME`/`LASTNAME` keep their existing meaning and no field is
+  removed or renamed).
 - `SECURITY.md`: private vulnerability reporting instructions (via GitHub's private
   advisory reporting, now enabled on the repo) and a plain statement of the physical-safety
   blast radius at each configuration level ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
@@ -31,6 +40,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
 - Enabled secret scanning + push protection on the repo (previously off; Dependabot security
   updates were already on) ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).
+
+### Removed
+- `get_access_history`'s `OLDESTDTTM`/`NEWESTDTTM` parameters -- they never matched
+  `GetAccessHistory`'s real NBAPI date-filter field names (`STARTDATE`/`ENDDATE`), and a live
+  controlled A/B test this session found that even the correct names don't work: the controller
+  silently ignores them and returns the identical most-recent records regardless of the
+  requested range, no error, just no effect. Renaming would have only traded a loud failure for
+  a silently wrong one, so the fields are removed rather than fixed, closing
+  [#47](https://github.com/J-MaFf/s2-netbox-mcp/issues/47).
 
 ### Fixed
 - README's intro paragraph still said "Claude-callable tools" -- fixed to match the

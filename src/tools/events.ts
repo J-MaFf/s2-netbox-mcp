@@ -9,10 +9,13 @@ import {
   formatWriteSuccess,
   clientGuardError,
   toolErrorResult,
+  notFoundResult,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
 import { getReaderAccessHistory } from '../readerAccessHistory.js';
+import { asRecord, asRecordList, text, type XmlRecord } from '../paging.js';
+import { enrichWithPersonNames } from '../personEnrichment.js';
 
 /**
  * Event/history/activity tools: the existing three read tools
@@ -28,9 +31,36 @@ import { getReaderAccessHistory } from '../readerAccessHistory.js';
  * enriches each match's PERSONID with a name via GetPerson, mirroring
  * find_portals' composite pattern (src/tools/portal.ts).
  *
+ * get_access_history's RESOLVENAMES: true path (specs/get-access-history-
+ * resolve-names.md) reuses that same person-name enrichment, generalized
+ * into src/personEnrichment.ts so both tools share one implementation. It
+ * bypasses runNbapiTool (whose formatSuccess callback is synchronous and
+ * can't run the async GetPerson lookups inline) and hand-rolls the same
+ * not-found/error mapping runNbapiTool does, via notFoundResult()/
+ * toolErrorResult() from toolHelpers.ts.
+ *
+ * get_access_history has no date-range filter: NBAPI's real GetAccessHistory
+ * date fields are STARTDATE/ENDDATE, not this tool's former OLDESTDTTM/
+ * NEWESTDTTM (issue #47) -- and a live controlled A/B test found the
+ * controller silently ignores STARTDATE/ENDDATE too, returning identical
+ * records regardless of the requested range. Renaming would only trade a
+ * loud failure for a silently wrong one, so date-range filtering is removed
+ * rather than fixed, for the same reason already true of
+ * get_reader_access_history's own record-count-window design.
+ *
  * trigger_event is routed to NETBOX_EVENT_API_PATH automatically by
  * NetboxClient (R6) — this module never references a request path itself.
  */
+
+/** Normalizes an ACCESS record's PERSONID to a definite string (satisfying
+ * enrichWithPersonNames's `T extends { PERSONID: string }` constraint) while
+ * preserving every other original field untouched (R3) — the raw NBAPI
+ * response already carries PERSONID as a string (see the spec's Context),
+ * this just makes that fact visible to the type checker. */
+function withStringPersonId(raw: XmlRecord): XmlRecord & { PERSONID: string } {
+  return { ...raw, PERSONID: text(raw.PERSONID) };
+}
+
 export function registerEventsTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
     'get_event_history',
@@ -54,7 +84,10 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
   server.tool(
     'get_access_history',
     'Returns historical access (grant/deny) records for optional filters (wraps NBAPI GetAccessHistory). ' +
-      'Identifies a person by ENCODEDNUM/HOTSTAMP, not PERSONID — GetAccessHistory has no PERSONID parameter.',
+      'Identifies a person by ENCODEDNUM/HOTSTAMP, not PERSONID — GetAccessHistory has no PERSONID parameter. ' +
+      "Set RESOLVENAMES: true to enrich each returned record with the badge-holder's " +
+      'FIRSTNAME/LASTNAME/FULLNAME/NOTES (default false — off); enabling it costs one extra GetPerson call ' +
+      'per distinct person found in the result, which is why it is opt-in rather than on by default.',
     {
       STARTLOGID: z.string().optional().describe('Optional. Begin returning records at this LOGID.'),
       AFTERLOGID: z.string().optional().describe('Optional. Return records strictly after this LOGID.'),
@@ -63,10 +96,33 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
       ENCODEDNUM: z.string().optional().describe('Optional. Restrict results to this encoded card number.'),
       HOTSTAMP: z.string().optional().describe('Optional. Restrict results to this hot-stamp number.'),
       CARDFORMAT: z.string().optional().describe('Optional. Card format of ENCODEDNUM/HOTSTAMP.'),
-      OLDESTDTTM: z.string().optional().describe('Optional. Oldest date/time to include.'),
-      NEWESTDTTM: z.string().optional().describe('Optional. Newest date/time to include.'),
+      RESOLVENAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          "Optional (default false). Enrich each returned record with the badge-holder's FIRSTNAME/LASTNAME/" +
+            'FULLNAME/NOTES via one extra GetPerson call per distinct person found in the result.'
+        ),
     },
-    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(args))
+    async ({ RESOLVENAMES, ...otherParams }): Promise<ToolTextResult> => {
+      if (!RESOLVENAMES) {
+        return runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(otherParams));
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_HISTORY, mergeParams(otherParams));
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const accesses = asRecord(details.ACCESSES);
+        const records = asRecordList(accesses.ACCESS).map(withStringPersonId);
+        const enriched = await enrichWithPersonNames(client, records);
+        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: enriched } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   server.tool(

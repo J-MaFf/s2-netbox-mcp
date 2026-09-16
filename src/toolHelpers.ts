@@ -63,6 +63,17 @@ export function wrapList(wrapperKey: string, itemKey: string, items: NbapiParamV
   return items === undefined ? {} : { [wrapperKey]: { [itemKey]: items } };
 }
 
+/** The standard "not found" tool result produced by `runNbapiTool`. Exported
+ * so a hand-rolled composite handler that must bypass `runNbapiTool` (e.g.
+ * `get_access_history`'s `RESOLVENAMES: true` path — see R4 of
+ * `specs/archive/get-access-history-resolve-names.md`) can still produce an
+ * identical not-found result instead of duplicating the literal text. */
+export function notFoundResult(): ToolTextResult {
+  return {
+    content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+  };
+}
+
 /**
  * Shared execution wrapper for every tool: issues one NBAPI command and maps
  * the outcome onto the MCP tool-result shape per R7-R9:
@@ -79,9 +90,7 @@ export async function runNbapiTool(
   try {
     const result = await client.call(command, params);
     if (result.notFound) {
-      return {
-        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
-      };
+      return notFoundResult();
     }
     return { content: [{ type: 'text', text: formatSuccess(result.data) }] };
   } catch (err) {

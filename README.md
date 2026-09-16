@@ -291,7 +291,7 @@ surrounding file and location differ.
 | `find_portals`               | `GetPortals` + `GetReaders` (composite) | `query` (search terms) |
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
-| `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`OLDESTDTTM`/`NEWESTDTTM`) |
+| `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`RESOLVENAMES`) |
 | `get_reader_access_history`  | `GetAccessHistory` + `GetPerson` (composite) | `READERKEY` (optional `SCANWINDOW`/`MAXMATCHES`) |
 | `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
 | `get_time_specs`             | `GetTimeSpecs`           | — (optional `STARTFROMKEY`)   |
@@ -373,6 +373,25 @@ per distinct person (a lookup failure — e.g. for an operator-style
 `PERSONID` — leaves those two fields blank rather than failing the call).
 The result is capped at `MAXMATCHES` (default 100, earliest matches first)
 with a `truncated` flag.
+
+`get_access_history` optionally enriches each returned record with the
+badge-holder's name via `RESOLVENAMES: true` (default `false`): when set, it
+calls `GetPerson` once per distinct `PERSONID` found in the result (the same
+per-request memoization as `get_reader_access_history`, via the shared
+`src/personEnrichment.ts` helper — no cross-request cache) and adds
+`FIRSTNAME`/`LASTNAME`/`FULLNAME`/`NOTES` to each record, preserving every
+original field. This costs one extra `GetPerson` call per distinct person in
+the result, which is why it's opt-in rather than on by default.
+`get_access_history` has no date-range filter: its previous date-range
+parameters were removed entirely, closing
+[#47](https://github.com/J-MaFf/s2-netbox-mcp/issues/47) — they didn't match
+`GetAccessHistory`'s real NBAPI field names, and a live controlled A/B test
+this session found that even the correct field names don't work: the
+controller silently ignores them and returns the same records regardless of
+the requested range, no error, just no effect. Renaming would have only
+traded a loud failure for a silently wrong one, so date-range filtering is
+dropped rather than fixed — the same reasoning already documented above for
+`get_reader_access_history`.
 
 ### Write tools and Destructive tools
 
