@@ -9,6 +9,7 @@ import { enrichWithPersonNames } from '../src/personEnrichment.js';
 import { enrichWithReaderDescriptions, fetchReaderDescriptions } from '../src/readerDescriptions.js';
 import { fetchTimeSpecGroupNames } from '../src/timeSpecGroupNames.js';
 import { fetchReaderGroupNames } from '../src/readerGroupNames.js';
+import { fetchPartitionNames } from '../src/partitionNames.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -195,6 +196,53 @@ async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: s
       summary:
         `OK ${result.matchCount} match(es) for READERKEY ${readerKey} over the most recent ${result.scanWindow} records ` +
         `(truncated=${result.truncated}), READERDESCRIPTION="${result.READERDESCRIPTION}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * list_events' RESOLVEPARTITIONNAMES: true (default) path is hand-rolled
+ * inline in its tool handler (src/tools/events.ts), same pattern as the
+ * RESOLVENAMES/RESOLVEDESCRIPTIONS checks below, so this check drives the
+ * same two building blocks directly against the live controller: one
+ * ListEvents call, then the shared `fetchPartitionNames` helper
+ * (src/partitionNames.ts) -- asserting every enriched event carries a
+ * non-undefined PARTITIONNAME key, and that at least one event's
+ * PARTITIONNAME is non-empty (R9 of specs/archive/list-events-resolve-partition-
+ * names.md). On this controller every event's PARTITIONID is "1", which
+ * GetPartitions resolves to "Master".
+ */
+async function runListEventsResolvePartitionNamesCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'list_events (RESOLVEPARTITIONNAMES: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.LIST_EVENTS, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawEvents = asRecordList(asRecord(details.EVENTS).EVENT);
+    if (rawEvents.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no EVENT records returned to enrich)' };
+    }
+    const namesByPartitionKey = await fetchPartitionNames(client);
+    const enriched = rawEvents.map((raw) => ({
+      ...raw,
+      PARTITIONNAME: namesByPartitionKey.get(text(raw.PARTITIONID)) ?? '',
+    }));
+    const missingKey = enriched.find((e) => e.PARTITIONNAME === undefined);
+    if (missingKey) {
+      return { name, pass: false, summary: `enriched event missing the PARTITIONNAME key: ${JSON.stringify(missingKey)}` };
+    }
+    const withNonEmptyName = enriched.find((e) => e.PARTITIONNAME !== '');
+    if (!withNonEmptyName) {
+      return { name, pass: false, summary: `every enriched event's PARTITIONNAME was empty across ${enriched.length} event(s)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK enriched ${enriched.length} event(s), e.g. PARTITIONID="${text(withNonEmptyName.PARTITIONID)}" -> PARTITIONNAME="${withNonEmptyName.PARTITIONNAME}"`,
     };
   } catch (err) {
     return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
@@ -620,6 +668,7 @@ async function main(): Promise<number> {
 
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
+  results.push(await runListEventsResolvePartitionNamesCheck(client));
   results.push(await runCheck(client, 'get_access_history', NBAPI_COMMANDS.GET_ACCESS_HISTORY, {}));
   results.push(await runGetAccessHistoryResolveNamesCheck(client));
   results.push(await runGetAccessHistoryResolveDescriptionsCheck(client));
