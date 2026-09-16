@@ -1,6 +1,6 @@
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { asRecord, asRecordList, fetchAllPages, fetchAllPagesWith, isBareNotFoundFail, splitKeys, text } from '../paging.js';
+import { asRecord, asRecordList, fetchAllPages, fetchAllPagesWith, isBareNotFoundFail, keyList, splitKeys, text } from '../paging.js';
 import { SEGMENT_KINDS, segmentName, type SegmentKind } from './planner.js';
 
 /**
@@ -108,16 +108,6 @@ export function sameSet(a: readonly string[], b: readonly string[]): boolean {
   const left = [...new Set(a)].sort();
   const right = [...new Set(b)].sort();
   return left.length === right.length && left.every((item, index) => item === right[index]);
-}
-
-/** A key list that may arrive as `<KEYS><KEY>k</KEY>...</KEYS>` (object with
- * a single or repeated child), as a bare comma string, or as '' when empty. */
-export function keyList(container: unknown, item: string): string[] {
-  if (typeof container === 'string' || typeof container === 'number') return splitKeys(container);
-  const inner = asRecord(container)[item];
-  if (Array.isArray(inner)) return inner.map(text).filter((key) => key !== '');
-  const single = text(inner);
-  return single === '' ? [] : [single];
 }
 
 // ---------------------------------------------------------------------------

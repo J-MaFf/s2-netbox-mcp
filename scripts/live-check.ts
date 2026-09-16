@@ -4,10 +4,11 @@ import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS, type NbapiCommandName } from '../src/commands.js';
 import { findPortals } from '../src/portalSearch.js';
 import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
-import { asRecord, asRecordList, text } from '../src/paging.js';
+import { asRecord, asRecordList, keyList, text } from '../src/paging.js';
 import { enrichWithPersonNames } from '../src/personEnrichment.js';
 import { enrichWithReaderDescriptions, fetchReaderDescriptions } from '../src/readerDescriptions.js';
 import { fetchTimeSpecGroupNames } from '../src/timeSpecGroupNames.js';
+import { fetchTimeSpecNames } from '../src/timeSpecNames.js';
 import { fetchReaderGroupNames } from '../src/readerGroupNames.js';
 import { fetchPartitionNames } from '../src/partitionNames.js';
 import type { NbapiParams } from '../src/xml.js';
@@ -566,6 +567,56 @@ async function runGetPortalGroupResolveGroupNamesCheck(client: NetboxClient, por
   }
 }
 
+/**
+ * get_time_spec_groups's RESOLVEMEMBERNAMES: true (default) path is
+ * hand-rolled inline in its tool handler (src/tools/timeSpec.ts), same as
+ * the checks above, so this check drives the same building blocks directly:
+ * one GetTimeSpecGroups call, then keyList (src/paging.ts -- relocated from
+ * src/unlockWindow/managed.ts as part of this spec) + fetchTimeSpecNames
+ * (src/timeSpecNames.ts) -- asserting at least one group member on the page
+ * resolves to a non-empty NAME (R9 of
+ * specs/archive/time-spec-groups-resolve-member-names.md). Known-good live data
+ * verified this session: TIMESPECGROUPKEY "1" ("Always") has member
+ * TIMESPECKEY "1", which resolves to NAME "Always"; TIMESPECGROUPKEY "28"
+ * ("GRAND OPENING") has member TIMESPECKEY "3", which resolves to NAME
+ * "GRAND OPENING".
+ */
+async function runGetTimeSpecGroupsResolveMemberNamesCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_time_spec_groups (RESOLVEMEMBERNAMES: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, {});
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const rawGroups = asRecordList(asRecord(details.TIMESPECGROUPS).TIMESPECGROUP);
+    if (rawGroups.length === 0) {
+      return { name, pass: true, summary: 'SKIPPED (no TIMESPECGROUP records returned to enrich)' };
+    }
+    const namesByTimeSpecKey = await fetchTimeSpecNames(client);
+    const resolvedMembers = rawGroups.flatMap((group) =>
+      keyList(group.TIMESPECKEYS, 'TIMESPECKEY').map((key) => ({
+        TIMESPECGROUPKEY: text(group.TIMESPECGROUPKEY),
+        TIMESPECKEY: key,
+        NAME: namesByTimeSpecKey.get(key) ?? '',
+      }))
+    );
+    const namedMember = resolvedMembers.find((member) => member.NAME !== '');
+    if (!namedMember) {
+      return { name, pass: false, summary: `no group member resolved to a non-empty NAME across ${resolvedMembers.length} member(s)` };
+    }
+    return {
+      name,
+      pass: true,
+      summary:
+        `OK TIMESPECGROUPKEY "${namedMember.TIMESPECGROUPKEY}": member TIMESPECKEY "${namedMember.TIMESPECKEY}" -> ` +
+        `NAME="${namedMember.NAME}" (${resolvedMembers.length} member(s) checked)`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -685,6 +736,7 @@ async function main(): Promise<number> {
     acceptEmptyCollectionFail: true,
   });
   results.push(timeSpecGroups);
+  results.push(await runGetTimeSpecGroupsResolveMemberNamesCheck(client));
   results.push(
     // Live-observed quirk on this 6.2.0 controller: GetTimeSpecGroup returns
     // CODE=FAIL/ERRMSG="NOT FOUND" for every key, including keys that

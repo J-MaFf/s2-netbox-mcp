@@ -3,13 +3,12 @@ import { NBAPI_COMMANDS } from '../src/commands.js';
 import { NbapiFailError } from '../src/errors.js';
 import type { NbapiCallResult, NetboxClient } from '../src/netboxClient.js';
 import { MAX_PAGES as PORTAL_SEARCH_MAX_PAGES } from '../src/portalSearch.js';
-import { MAX_PAGES, fetchAllPages, fetchAllPagesWith, splitKeys } from '../src/paging.js';
+import { MAX_PAGES, fetchAllPages, fetchAllPagesWith, keyList, splitKeys } from '../src/paging.js';
 import {
   carriesManagedPrefix,
   fetchHolidayKeys,
   fetchHolidays,
   fetchTimeSpecGroups,
-  keyList,
   managedNames,
   normalizeDateTime,
   normalizeFlag,

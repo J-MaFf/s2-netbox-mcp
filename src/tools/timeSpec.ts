@@ -2,7 +2,19 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, type ToolGateFlags } from '../toolHelpers.js';
+import {
+  runNbapiTool,
+  mergeParams,
+  formatAsJson,
+  formatWriteSuccess,
+  notFoundResult,
+  toolErrorResult,
+  wrapList,
+  type ToolTextResult,
+  type ToolGateFlags,
+} from '../toolHelpers.js';
+import { asRecord, asRecordList, keyList } from '../paging.js';
+import { fetchTimeSpecNames } from '../timeSpecNames.js';
 
 const WEEKDAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const;
 
@@ -24,6 +36,23 @@ const timeSpecWriteFields = {
  * ModifyTimeSpec, AddTimeSpecGroup, ModifyTimeSpecGroup, DeleteTimeSpec,
  * DeleteTimeSpecGroup). Field names are copied verbatim from the spec's
  * Command reference.
+ *
+ * `get_time_spec_groups`'s `RESOLVEMEMBERNAMES`
+ * (specs/archive/time-spec-groups-resolve-member-names.md) resolves each group's
+ * bare `TIMESPECKEYS.TIMESPECKEY` member key(s) into `{TIMESPECKEY, NAME}`
+ * objects — matching this codebase's established shape for other
+ * already-object-typed group-membership sub-lists (`get_access_level_group`'s
+ * ACCESSLEVELS, `get_reader_group`'s READERS) — via
+ * src/timeSpecNames.ts's `fetchTimeSpecNames` (one full-table GetTimeSpecs
+ * fetch per call, never per group/member). Defaults to true (opt-out),
+ * matching this codebase's RESOLVEDESCRIPTIONS/RESOLVEGROUPNAMES cost-shape
+ * convention. Reuses `keyList` (relocated from
+ * src/unlockWindow/managed.ts to src/paging.ts as part of this spec) to
+ * normalize the bare-key collection — never the singular
+ * `get_time_spec_group`, which is confirmed broken (NOT FOUND) on this
+ * controller and out of scope. This bypasses `runNbapiTool` (whose
+ * formatSuccess callback is synchronous) the same way `get_portals` and
+ * `get_access_level` already do for their own async enrichment paths.
  */
 export function registerTimeSpecTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
@@ -49,9 +78,52 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
 
   server.tool(
     'get_time_spec_groups',
-    'Lists time spec groups configured on the NetBox system (wraps NBAPI GetTimeSpecGroups).',
-    { STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.') },
-    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, mergeParams({ STARTFROMKEY }))
+    'Lists time spec groups configured on the NetBox system (wraps NBAPI GetTimeSpecGroups). ' +
+      'RESOLVEMEMBERNAMES defaults to true — an inverted, opt-*out* default (unlike most optional booleans in this ' +
+      "codebase): GetTimeSpecGroups' TIMESPECKEYS.TIMESPECKEY member field carries only bare TIMESPECKEY strings, " +
+      'so this replaces each group member with a {TIMESPECKEY, NAME} object via one GetTimeSpecs full-table fetch ' +
+      "per call (not per group/member). An unmatched (unknown/deleted) member key resolves to NAME: ''. Applies " +
+      'only to this plural tool, not the singular get_time_spec_group (confirmed broken/NOT FOUND on this ' +
+      'controller — out of scope). Set RESOLVEMEMBERNAMES: false to skip the fetch and return TIMESPECKEYS exactly ' +
+      'as GetTimeSpecGroups provides it (bare string or array of strings).',
+    {
+      STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.'),
+      RESOLVEMEMBERNAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            "default). Replaces each group's TIMESPECKEYS.TIMESPECKEY bare member key(s) with {TIMESPECKEY, NAME} " +
+            'objects via one GetTimeSpecs full-table fetch per call (not per group/member); an unmatched key ' +
+            "resolves to NAME: ''. Set to false to skip the fetch and return TIMESPECKEYS exactly as " +
+            'GetTimeSpecGroups provides it (bare string or array of strings).'
+        ),
+    },
+    async ({ STARTFROMKEY, RESOLVEMEMBERNAMES }): Promise<ToolTextResult> => {
+      if (RESOLVEMEMBERNAMES === false) {
+        return runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, mergeParams({ STARTFROMKEY }));
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, mergeParams({ STARTFROMKEY }));
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const groupsWrapper = asRecord(details.TIMESPECGROUPS);
+        const namesByTimeSpecKey = await fetchTimeSpecNames(client);
+        const groups = asRecordList(groupsWrapper.TIMESPECGROUP).map((group) => {
+          const members = keyList(group.TIMESPECKEYS, 'TIMESPECKEY').map((key) => ({
+            TIMESPECKEY: key,
+            NAME: namesByTimeSpecKey.get(key) ?? '',
+          }));
+          return { ...group, TIMESPECKEYS: { TIMESPECKEY: members } };
+        });
+        const responseData = { ...details, TIMESPECGROUPS: { ...groupsWrapper, TIMESPECGROUP: groups } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   if (gate.writesEnabled) {
