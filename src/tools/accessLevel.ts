@@ -2,7 +2,21 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, clientGuardError, wrapList, type ToolGateFlags } from '../toolHelpers.js';
+import {
+  runNbapiTool,
+  mergeParams,
+  formatAsJson,
+  formatWriteSuccess,
+  notFoundResult,
+  toolErrorResult,
+  clientGuardError,
+  wrapList,
+  type ToolTextResult,
+  type ToolGateFlags,
+} from '../toolHelpers.js';
+import { asRecord, text } from '../paging.js';
+import { fetchTimeSpecGroupNames } from '../timeSpecGroupNames.js';
+import { fetchReaderGroupNames } from '../readerGroupNames.js';
 
 const accessLevelGroupItemSchema = z.object({
   NAME: z.string().optional(),
@@ -23,15 +37,72 @@ const accessLevelsGroupField = z
  * Field names below are copied verbatim from the spec's Command reference —
  * access levels/groups are keyed by *KEY fields (ACCESSLEVELKEY,
  * ACCESSLEVELGROUPKEY), not *ID.
+ *
+ * get_access_level's RESOLVEGROUPNAMES (specs/access-level-resolve-group-
+ * names.md) resolves the raw response's bare TIMESPECGROUPKEY/READERGROUPKEY
+ * foreign keys into new sibling TIMESPECGROUPNAME/READERGROUPNAME fields.
+ * Defaults to true (opt-out), matching this codebase's RESOLVEDESCRIPTIONS
+ * cost-shape convention (get_portals, get_reader_access_history, etc.): a
+ * single GetAccessLevel response carries exactly one of each key, so
+ * resolving both always costs exactly one fixed-size GetTimeSpecGroups fetch
+ * and one fixed-size GetReaderGroups fetch, never scaling with anything.
+ * Each axis is resolved via its own full paginated list
+ * (src/timeSpecGroupNames.ts, src/readerGroupNames.ts) and skipped
+ * independently when that axis's key is empty/absent — never the singular
+ * GetTimeSpecGroup command, which is verified broken (NOT FOUND) on this
+ * controller even for a genuinely existing group. THREATLEVELGROUPKEY is
+ * never resolved: no NBAPI read command for threat level groups exists in
+ * this server's command surface at all. This bypasses runNbapiTool (whose
+ * formatSuccess callback is synchronous) the same way get_portals and
+ * get_card_access_details already do for their own async enrichment paths.
  */
 export function registerAccessLevelTools(server: McpServer, client: NetboxClient, gate: ToolGateFlags): void {
   server.tool(
     'get_access_level',
-    'Returns the details of a single access level for a given ACCESSLEVELKEY (wraps NBAPI GetAccessLevel).',
+    'Returns the details of a single access level for a given ACCESSLEVELKEY (wraps NBAPI GetAccessLevel). ' +
+      'RESOLVEGROUPNAMES defaults to true — an inverted, opt-*out* default (unlike most optional booleans in this ' +
+      'codebase): the raw response carries only bare TIMESPECGROUPKEY/READERGROUPKEY/THREATLEVELGROUPKEY foreign ' +
+      'keys, so this resolves TIMESPECGROUPKEY and READERGROUPKEY into new sibling TIMESPECGROUPNAME/READERGROUPNAME ' +
+      'fields via one full-table GetTimeSpecGroups fetch and one full-table GetReaderGroups fetch per call — a ' +
+      "fixed cost regardless of anything else, since a single access level carries exactly one of each key. " +
+      'THREATLEVELGROUPKEY is never resolved (no NBAPI read command exists for threat level groups). Set ' +
+      'RESOLVEGROUPNAMES: false to skip both fetches and return the response exactly as GetAccessLevel provides it.',
     {
       ACCESSLEVELKEY: z.string().describe('Required. The unique ACCESSLEVELKEY of the access level to retrieve.'),
+      RESOLVEGROUPNAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; the inverse of this codebase\'s usual optional-boolean ' +
+            'default). Resolves TIMESPECGROUPKEY/READERGROUPKEY into new TIMESPECGROUPNAME/READERGROUPNAME sibling ' +
+            "fields via one full-table GetTimeSpecGroups fetch and one full-table GetReaderGroups fetch per call " +
+            "(each made only when that axis's key is non-empty; an empty/absent key on one axis yields '' for " +
+            "that axis's name without affecting the other). THREATLEVELGROUPKEY is never resolved — no NBAPI read " +
+            'command exists for threat level groups. Set to false to skip both fetches and return the response ' +
+            'exactly as GetAccessLevel provides it.'
+        ),
     },
-    async ({ ACCESSLEVELKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY })
+    async ({ ACCESSLEVELKEY, RESOLVEGROUPNAMES }): Promise<ToolTextResult> => {
+      if (RESOLVEGROUPNAMES === false) {
+        return runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY });
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY });
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const timeSpecGroupKey = text(details.TIMESPECGROUPKEY);
+        const readerGroupKey = text(details.READERGROUPKEY);
+        const timeSpecGroupName =
+          timeSpecGroupKey === '' ? '' : ((await fetchTimeSpecGroupNames(client)).get(timeSpecGroupKey) ?? '');
+        const readerGroupName = readerGroupKey === '' ? '' : ((await fetchReaderGroupNames(client)).get(readerGroupKey) ?? '');
+        const responseData = { ...details, TIMESPECGROUPNAME: timeSpecGroupName, READERGROUPNAME: readerGroupName };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   server.tool(

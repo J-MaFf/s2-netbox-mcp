@@ -3,6 +3,28 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- `get_access_level` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the
+  same opt-*out* default as `get_portals`/`get_access_history`/`get_card_access_details`'s own
+  `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, it resolves the response's bare
+  `TIMESPECGROUPKEY`/`READERGROUPKEY` foreign keys into new sibling
+  `TIMESPECGROUPNAME`/`READERGROUPNAME` fields, via one fixed-cost `GetTimeSpecGroups` fetch and
+  one fixed-cost `GetReaderGroups` fetch per call (a single access level carries exactly one of
+  each key, so this never scales with anything). Two new shared modules,
+  `src/timeSpecGroupNames.ts` and `src/readerGroupNames.ts`, each fetch their full paginated list
+  and resolve client-side, mirroring `src/readerDescriptions.ts`'s never-throws `Map`-returning
+  shape exactly. `TIMESPECGROUPKEY` is resolved via the paginated `GetTimeSpecGroups` list rather
+  than the singular `GetTimeSpecGroup` command, which is verified broken on this controller --
+  it returns `CODE=FAIL`/`ERRMSG="NOT FOUND"` even for a genuinely existing group (the same
+  finding already documented for `src/unlockWindow/managed.ts`); `READERGROUPKEY` is resolved via
+  the paginated `GetReaderGroups` list too, for consistency. An empty/absent key on either axis
+  independently skips that axis's fetch and yields `''` for just that axis's name.
+  `THREATLEVELGROUPKEY` is out of scope and never resolved -- no NBAPI read command for threat
+  level groups exists in this server's command surface at all
+  ([#61](https://github.com/J-MaFf/s2-netbox-mcp/issues/61)).
+
 ## [0.3.0] — 2026-09-16
 
 ### Changed

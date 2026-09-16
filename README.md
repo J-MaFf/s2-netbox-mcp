@@ -280,7 +280,7 @@ surrounding file and location differ.
 | `search_person_data`         | `SearchPersonData`       | — (all filters optional)      |
 | `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
 | `get_card_formats`           | `GetCardFormats`         | —                             |
-| `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY`               |
+| `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY` (optional `RESOLVEGROUPNAMES`) |
 | `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
 | `get_access_level_group`     | `GetAccessLevelGroup`    | `ACCESSLEVELGROUPKEY`          |
 | `get_access_level_groups`    | `GetAccessLevelGroups`   | — (optional `STARTFROMKEY`)   |
@@ -449,6 +449,32 @@ at the top level — a card belongs to one person — so this costs a single
 enrichment fields land on the **top level** of the response, alongside
 `PERSONID`/`DISABLED`/`EXPDATE`, rather than being duplicated onto every
 `ACCESS` record.
+
+`get_access_level` accepts `RESOLVEGROUPNAMES` (default **`true`** — on by
+default, the same opt-*out* default as the other `RESOLVE*` flags above,
+since `GetAccessLevel` carries exactly one `TIMESPECGROUPKEY` and one
+`READERGROUPKEY` per call, so resolving both always costs exactly one
+fixed-size `GetTimeSpecGroups` fetch and one fixed-size `GetReaderGroups`
+fetch, never scaling with anything): unless explicitly set to `false`, it
+resolves the response's bare `TIMESPECGROUPKEY`/`READERGROUPKEY` foreign
+keys into new sibling `TIMESPECGROUPNAME`/`READERGROUPNAME` fields, using
+the new `src/timeSpecGroupNames.ts`/`src/readerGroupNames.ts` helpers.
+`TIMESPECGROUPKEY` is resolved via the full paginated `GetTimeSpecGroups`
+list, filtering client-side for the matching key — **never** the singular
+`GetTimeSpecGroup` command, which is verified broken on this controller: it
+returns `CODE=FAIL`/`ERRMSG="NOT FOUND"` even for a genuinely existing group
+(the same finding already documented for `src/unlockWindow/managed.ts`).
+`READERGROUPKEY` is resolved the same way, via the full paginated
+`GetReaderGroups` list, for consistency. An empty/absent key on either axis
+independently skips that axis's fetch and yields `''` for just that axis's
+name, without affecting the other. `THREATLEVELGROUPKEY` is **never**
+resolved and is left exactly as-is — no NBAPI read command for threat level
+groups exists in this server's command surface at all. If the underlying
+`GetTimeSpecGroups`/`GetReaderGroups` fetch itself fails, that axis's name
+resolves to `''` and the call still succeeds with the primary
+`GetAccessLevel` data intact — an enrichment failure never loses the primary
+data. Set `RESOLVEGROUPNAMES: false` to skip both fetches and get the
+response back exactly as `GetAccessLevel` provides it.
 
 ### Write tools and Destructive tools
 

@@ -850,14 +850,189 @@ describe('registerAccessLevelTools', () => {
     );
   });
 
-  it('get_access_level requires ACCESSLEVELKEY, not ACCESSLEVELID', async () => {
+  it('get_access_level requires ACCESSLEVELKEY, not ACCESSLEVELID, and gains RESOLVEGROUPNAMES (R1)', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_access_level');
-    expect(Object.keys(reg.schema)).toEqual(['ACCESSLEVELKEY']);
+    expect(Object.keys(reg.schema).sort()).toEqual(['ACCESSLEVELKEY', 'RESOLVEGROUPNAMES'].sort());
     await reg.handler({ ACCESSLEVELKEY: '7' });
+    // The default fakeClient's GetAccessLevel response carries no TIMESPECGROUPKEY/READERGROUPKEY, so per R4
+    // both axes' fetches are skipped and this is the same single call as before this change.
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_LEVEL, params: { ACCESSLEVELKEY: '7' } }]);
+    expect(reg.description).toContain('RESOLVEGROUPNAMES');
+  });
+
+  describe('get_access_level RESOLVEGROUPNAMES (specs/access-level-resolve-group-names.md)', () => {
+    it('R2: resolves both TIMESPECGROUPNAME and READERGROUPNAME when RESOLVEGROUPNAMES is omitted (default true), and leaves an unmatched key as an empty string', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_LEVEL]: [
+          {
+            notFound: false,
+            data: {
+              ACCESSLEVELNAME: 'Master Door Access',
+              ACCESSLEVELDESCRIPTION: '',
+              READERGROUPKEY: '22',
+              TIMESPECGROUPKEY: '999',
+              THREATLEVELGROUPKEY: '',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS]: [
+          { notFound: false, data: { TIMESPECGROUPS: { TIMESPECGROUP: { TIMESPECGROUPKEY: '1', NAME: 'Always' } }, NEXTKEY: '-1' } },
+        ],
+        [NBAPI_COMMANDS.GET_READER_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              READERGROUPS: { READERGROUP: { READERGROUPKEY: '22', NAME: 'Master Door Access - all doors' } },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '1' });
+
+      expect(calls.map((c) => c.command)).toEqual([
+        NBAPI_COMMANDS.GET_ACCESS_LEVEL,
+        NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS,
+        NBAPI_COMMANDS.GET_READER_GROUPS,
+      ]);
+      const parsed = JSON.parse(result.content[0].text);
+      // TIMESPECGROUPKEY '999' has no match in the fetched list -> ''.
+      expect(parsed.TIMESPECGROUPNAME).toBe('');
+      expect(parsed.READERGROUPNAME).toBe('Master Door Access - all doors');
+      expect(parsed.READERGROUPKEY).toBe('22');
+      expect(parsed.TIMESPECGROUPKEY).toBe('999');
+      expect(parsed.THREATLEVELGROUPKEY).toBe('');
+    });
+
+    it('R3: RESOLVEGROUPNAMES: false makes exactly one GetAccessLevel call and adds no new keys', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_LEVEL]: [
+          {
+            notFound: false,
+            data: {
+              ACCESSLEVELNAME: 'Master Door Access',
+              READERGROUPKEY: '22',
+              TIMESPECGROUPKEY: '1',
+              THREATLEVELGROUPKEY: '',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '1', RESOLVEGROUPNAMES: false });
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_ACCESS_LEVEL, params: { ACCESSLEVELKEY: '1' } }]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(Object.keys(parsed).sort()).toEqual(
+        ['ACCESSLEVELNAME', 'READERGROUPKEY', 'TIMESPECGROUPKEY', 'THREATLEVELGROUPKEY'].sort()
+      );
+      expect(parsed.TIMESPECGROUPNAME).toBeUndefined();
+      expect(parsed.READERGROUPNAME).toBeUndefined();
+    });
+
+    it('R4: an empty TIMESPECGROUPKEY skips only the GetTimeSpecGroups fetch, leaving READERGROUPNAME correctly resolved', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_LEVEL]: [
+          { notFound: false, data: { ACCESSLEVELNAME: 'X', READERGROUPKEY: '22', TIMESPECGROUPKEY: '', THREATLEVELGROUPKEY: '' } },
+        ],
+        [NBAPI_COMMANDS.GET_READER_GROUPS]: [
+          {
+            notFound: false,
+            data: {
+              READERGROUPS: { READERGROUP: { READERGROUPKEY: '22', NAME: 'Master Door Access - all doors' } },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '1' });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS)).toHaveLength(0);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READER_GROUPS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.TIMESPECGROUPNAME).toBe('');
+      expect(parsed.READERGROUPNAME).toBe('Master Door Access - all doors');
+    });
+
+    it('R5: a thrown GetReaderGroups call does not break the tool call -- READERGROUPNAME resolves to \'\' and TIMESPECGROUPNAME still resolves correctly', async () => {
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.GET_ACCESS_LEVEL) {
+            return { notFound: false, data: { ACCESSLEVELNAME: 'X', READERGROUPKEY: '22', TIMESPECGROUPKEY: '1', THREATLEVELGROUPKEY: '' } };
+          }
+          if (command === NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS) {
+            return { notFound: false, data: { TIMESPECGROUPS: { TIMESPECGROUP: { TIMESPECGROUPKEY: '1', NAME: 'Always' } }, NEXTKEY: '-1' } };
+          }
+          if (command === NBAPI_COMMANDS.GET_READER_GROUPS) {
+            throw new Error('transient GetReaderGroups failure');
+          }
+          throw new Error(`unexpected call: ${command}`);
+        },
+      } as unknown as NetboxClient;
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '1' });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.TIMESPECGROUPNAME).toBe('Always');
+      expect(parsed.READERGROUPNAME).toBe('');
+    });
+
+    it('R6: RESOLVEGROUPNAMES true (default) with a notFound GetAccessLevel response produces the same standard not-found text as the plain path, with no enrichment calls', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_ACCESS_LEVEL]: [{ notFound: true, data: undefined }],
+      });
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '999' });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('R6: RESOLVEGROUPNAMES true (default) with a thrown NbapiFailError produces the same standard mapped error text as the plain path, with no enrichment calls', async () => {
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      const server = new FakeServer();
+      registerAccessLevelTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_level');
+
+      const result = await reg.handler({ ACCESSLEVELKEY: '1' });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+      expect(calls).toHaveLength(1);
+    });
   });
 
   it('get_access_levels takes STARTFROMKEY/STARTFROMNAME/WANTKEY and calls GetAccessLevels', async () => {
