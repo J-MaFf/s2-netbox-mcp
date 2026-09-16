@@ -277,7 +277,7 @@ surrounding file and location differ.
 | `check_connection`           | `GetAPIVersion`          | —                             |
 | `get_person`                 | `GetPerson`              | `PERSONID`                    |
 | `search_person_data`         | `SearchPersonData`       | — (all filters optional)      |
-| `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVEDESCRIPTIONS`) |
+| `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
 | `get_card_formats`           | `GetCardFormats`         | —                             |
 | `get_access_level`           | `GetAccessLevel`         | `ACCESSLEVELKEY`               |
 | `get_access_levels`          | `GetAccessLevels`        | — (optional `STARTFROMKEY`/`STARTFROMNAME`/`WANTKEY`) |
@@ -417,10 +417,22 @@ cost — this controller's entire reader table (68 readers) fetches in exactly
 2 paginated calls regardless of how many result records are returned, so
 there's no scaling cost to make callers opt in to. Set
 `RESOLVEDESCRIPTIONS: false` to skip the `GetReaders` call and get the plain
-(unenriched) response. On `get_access_history`, `RESOLVENAMES` and
-`RESOLVEDESCRIPTIONS` are independent flags — either, both, or neither may
-be requested in the same call (`get_card_access_details` does not currently
-offer `RESOLVENAMES`; that is tracked separately).
+(unenriched) response. On both `get_access_history` and
+`get_card_access_details`, `RESOLVENAMES` and `RESOLVEDESCRIPTIONS` are
+independent flags — either, both, or neither may be requested in the same
+call.
+
+`get_card_access_details` also accepts its own `RESOLVENAMES: true` (default
+`false`), enriching the response with the card owner's
+`FIRSTNAME`/`LASTNAME`/`FULLNAME`/`NOTES` via the same shared
+`src/personEnrichment.ts` helper `get_access_history` uses. Unlike
+`get_access_history` (whose response can carry many distinct `PERSONID`s, one
+per record), `GetCardAccessDetails`' response carries exactly one `PERSONID`
+at the top level — a card belongs to one person — so this costs a single
+`GetPerson` call per tool call, not one per distinct person. The four
+enrichment fields land on the **top level** of the response, alongside
+`PERSONID`/`DISABLED`/`EXPDATE`, rather than being duplicated onto every
+`ACCESS` record.
 
 ### Write tools and Destructive tools
 

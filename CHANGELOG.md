@@ -13,6 +13,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ([#49](https://github.com/J-MaFf/s2-netbox-mcp/issues/49)).
 
 ### Added
+- `get_card_access_details` gains an opt-in `RESOLVENAMES: true` parameter (default `false`):
+  enriches the response with the card owner's `FIRSTNAME`/`LASTNAME`/`FULLNAME`/`NOTES` via a
+  single `GetPerson` call, reusing `src/personEnrichment.ts`'s `enrichWithPersonNames` as-is
+  (a single-element array call). Unlike `get_access_history`'s `RESOLVENAMES` -- one `GetPerson`
+  call per distinct `PERSONID` across many records -- `GetCardAccessDetails`' response carries
+  exactly one `PERSONID` at the top level, so the four enriched fields land on the **top level**
+  of the response, alongside `PERSONID`/`DISABLED`/`EXPDATE`, rather than duplicated onto every
+  `ACCESS` record. Independent of the existing `RESOLVEDESCRIPTIONS` flag on the same tool -- either,
+  both, or neither may be requested in the same call
+  ([#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55)).
 - `get_reader_access_history` tool: a single reader's access (grant/deny) history, filtered
   client-side (`GetAccessHistory` has no `READERKEY`/`PORTALKEY` filter) over a bounded
   `SCANWINDOW` of the most recent system-wide records (default 2000) via its own

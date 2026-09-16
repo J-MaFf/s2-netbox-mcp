@@ -1,5 +1,11 @@
 # Spec: `RESOLVENAMES` person-name enrichment for `get_card_access_details`
 
+> **Completed 2026-09-16.** Built via the forge loop in 1 round (10/11 criteria passed cleanly;
+> C1 failed only because R1's literal schema key list was stale — written before accounting for
+> the already-merged `RESOLVEDESCRIPTIONS` field on this same tool — and was corrected in place
+> rather than re-generated). Shipped in
+> [PR #56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56).
+
 ## Goal
 
 Let callers of `get_card_access_details` opt in to having the card's owner name resolved
@@ -68,9 +74,11 @@ this tool; keep this spec limited to `RESOLVENAMES` only so each PR stays scoped
 - R1. `get_card_access_details`'s Zod schema gains `RESOLVENAMES: z.boolean().optional()`
   (matching the existing project convention — see `dryRun` in the unlock-window tools, and
   `get_access_history`'s own `RESOLVENAMES` from the sibling spec), defaulting to `false`/off when
-  omitted. `ENCODEDNUM`, `CARDFORMAT`, `MAXRECORDS`, `OLDESTDTTM` are unchanged. [verify: a test
-  asserts `Object.keys(schema).sort()` equals exactly `['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS',
-  'OLDESTDTTM', 'RESOLVENAMES'].sort()`]
+  omitted. `ENCODEDNUM`, `CARDFORMAT`, `MAXRECORDS`, `OLDESTDTTM` are unchanged. **Correction
+  (post-generation, this schema already gained `RESOLVEDESCRIPTIONS` from the separately-merged
+  sibling spec before this one was written — the original key list below omitted it in error):**
+  [verify: a test asserts `Object.keys(schema).sort()` equals exactly `['CARDFORMAT', 'ENCODEDNUM',
+  'MAXRECORDS', 'OLDESTDTTM', 'RESOLVENAMES', 'RESOLVEDESCRIPTIONS'].sort()`]
 - R2. When `RESOLVENAMES` is omitted or `false`, behavior is byte-identical to before this change:
   `runNbapiTool(client, NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, mergeParams(otherParams))`, no
   `GetPerson` call ever made. [verify: a unit test with `RESOLVENAMES` omitted and one with it
