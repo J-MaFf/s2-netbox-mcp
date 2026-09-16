@@ -54,10 +54,11 @@ this server registers only query/read NBAPI commands:
 By default, this server registers only the query/read commands listed above.
 It does not register any write, delete, or control operations against the
 controller until you explicitly opt in via the environment variables in
-**Write access** below. Among the read-only tools, two are composites,
-`find_portals` and `get_unlock_window`, which issue only read commands. Note
-there is no `GetPortal` (singular) command; only `GetPortals` (plural,
-paginated, no single-portal filter) exists on the real NBAPI.
+**Write access** below. Among the read-only tools, four are composites,
+`find_portals`, `get_unlock_window`, `get_daily_unlock_window`, and
+`get_reader_access_history`, which issue only read commands. Note there is no
+`GetPortal` (singular) command; only `GetPortals` (plural, paginated, no
+single-portal filter) exists on the real NBAPI.
 
 ## Requirements
 
