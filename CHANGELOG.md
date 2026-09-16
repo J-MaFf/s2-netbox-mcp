@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `get_reader_access_history` tool: a single reader's access (grant/deny) history, filtered
+  client-side (`GetAccessHistory` has no `READERKEY`/`PORTALKEY` filter) over a bounded
+  `SCANWINDOW` of the most recent system-wide records (default 2000) via its own
+  `AFTERLOGID`/`NEXTLOGID` pagination loop, seeded by a cheap `MAXRECORDS: '1'` call that
+  discovers the current maximum `LOGID` -- a fixed-size record-count window rather than a
+  date range, after two rounds of live verification found real date-range filtering
+  unworkable on this controller. Each match's `PERSONID` is enriched with a name via one
+  `GetPerson` call per distinct person (a lookup failure leaves that record's name blank
+  rather than failing the call), and the result is capped at `MAXMATCHES` (default 100) with
+  a `truncated` flag ([#46](https://github.com/J-MaFf/s2-netbox-mcp/issues/46)).
 - `SECURITY.md`: private vulnerability reporting instructions (via GitHub's private
   advisory reporting, now enabled on the repo) and a plain statement of the physical-safety
   blast radius at each configuration level ([#30](https://github.com/J-MaFf/s2-netbox-mcp/issues/30)).

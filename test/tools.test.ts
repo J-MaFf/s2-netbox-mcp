@@ -599,12 +599,12 @@ describe('registerPortalTools', () => {
 });
 
 describe('registerEventsTools', () => {
-  it('registers exactly get_event_history, list_events, get_access_history when writes are off', () => {
+  it('registers exactly get_event_history, list_events, get_access_history, get_reader_access_history when writes are off', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
     expect(server.registrations.map((r) => r.name).sort()).toEqual(
-      ['get_access_history', 'get_event_history', 'list_events'].sort()
+      ['get_access_history', 'get_event_history', 'get_reader_access_history', 'list_events'].sort()
     );
   });
 

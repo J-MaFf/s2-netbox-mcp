@@ -261,6 +261,7 @@ reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
 | `list_events`                | `ListEvents`             | —                             |
 | `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`OLDESTDTTM`/`NEWESTDTTM`) |
+| `get_reader_access_history`  | `GetAccessHistory` + `GetPerson` (composite) | `READERKEY` (optional `SCANWINDOW`/`MAXMATCHES`) |
 | `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
 | `get_time_specs`             | `GetTimeSpecs`           | — (optional `STARTFROMKEY`)   |
 | `get_time_spec_group`        | `GetTimeSpecGroup`       | `TIMESPECGROUPKEY`            |
@@ -294,15 +295,16 @@ are copied verbatim from the NBAPI Command Reference (see
 `specs/archive/s2-netbox-mcp-write.md` and the archived `specs/archive/s2-netbox-mcp.md`)
 — none are invented or guessed.
 
-Seven tools are composites — they combine several NBAPI commands and reshape
+Nine tools are composites — they combine several NBAPI commands and reshape
 the result instead of passing one command through: `find_portals`,
-`get_unlock_window`, and `get_daily_unlock_window` (read-only, always
-registered), and `set_portals_state`, `schedule_unlock_window`,
-`cancel_unlock_window`, `schedule_daily_unlock_window`, and
-`cancel_daily_unlock_window` (write, registered only with
+`get_unlock_window`, `get_daily_unlock_window`, and `get_reader_access_history`
+(read-only, always registered), and `set_portals_state`,
+`schedule_unlock_window`, `cancel_unlock_window`, `schedule_daily_unlock_window`,
+and `cancel_daily_unlock_window` (write, registered only with
 `NETBOX_ENABLE_WRITES`). Every composite reads list commands fully
-paginated (following `NEXTKEY` until `-1`) and issues only commands from the
-closed allowlist. `set_portals_state` locks, unlocks (Extended Unlock until
+paginated (following `NEXTKEY` until `-1`, or `AFTERLOGID`/`NEXTLOGID` over a
+bounded `SCANWINDOW` for `get_reader_access_history`) and issues only
+commands from the closed allowlist. `set_portals_state` locks, unlocks (Extended Unlock until
 locked again), or momentarily unlocks many portals in one call — the given
 `portalKeys` or every portal — issuing one command per portal sequentially and
 never stopping on a single failure; its result partitions the portals into
@@ -323,6 +325,23 @@ For example, `"maintenance office"` matches a reader described as
 descriptions. The result also lists `portalsWithoutDescriptions`: portals none
 of whose readers has a description, which can only be found by name. It issues
 no commands beyond those two.
+
+`get_reader_access_history` is for finding out who actually badges through a
+given reader — useful, for example, when a reader has no `DESCRIPTION` and
+`find_portals` can't locate it by name. `GetAccessHistory` has no
+`READERKEY`/`PORTALKEY` filter, so this tool reads and filters client-side.
+Rather than a date range (a real one proved unworkable live — see
+`specs/archive/get-reader-access-history.md`'s Goal section), it scans a fixed-size
+window of the most recent `SCANWINDOW` system-wide records (default 2000):
+one cheap `MAXRECORDS: '1'` call discovers the current maximum `LOGID`, then
+the tool walks forward from `maxLogid - SCANWINDOW` via its own
+`AFTERLOGID`/`NEXTLOGID` pagination loop (a separate shape from `NEXTKEY`),
+keeping only the records whose `READERKEY` matches. Each matching record's
+`PERSONID` is enriched with `FIRSTNAME`/`LASTNAME` via one `GetPerson` call
+per distinct person (a lookup failure — e.g. for an operator-style
+`PERSONID` — leaves those two fields blank rather than failing the call).
+The result is capped at `MAXMATCHES` (default 100, earliest matches first)
+with a `truncated` flag.
 
 ### Write tools and Destructive tools
 
@@ -664,7 +683,7 @@ npm run test:live
 ```
 
 This calls all read tools except `get_unlock_window`/`get_daily_unlock_window`
-(34 of the 36 — see **Tools exposed** below) against a **real, configured** controller and
+(35 of the 37 — see **Tools exposed** below) against a **real, configured** controller and
 prints a PASS/FAIL line per tool plus a summary, exiting non-zero if
 anything failed. It only runs if `NETBOX_BASE_URL`, `NETBOX_USERNAME`, and
 `NETBOX_PASSWORD` are all set (loaded from `.env` if present); otherwise it
