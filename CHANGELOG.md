@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-09-15
+
+### Changed
+- Version-only release to sync npm's published README with GitHub's -- npm snapshots the
+  README at publish time and doesn't update it on its own.
+  ([#37](https://github.com/J-MaFf/s2-netbox-mcp/pull/37),
+  [#39](https://github.com/J-MaFf/s2-netbox-mcp/pull/39))
+
 ## [0.2.2] — 2026-09-15
 
 ### Added
