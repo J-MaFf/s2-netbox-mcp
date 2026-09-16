@@ -37,6 +37,7 @@ function record(overrides: Partial<Record<string, string>> = {}): Record<string,
     READER: '02OF01B READER',
     READERKEY: '190',
     PORTALKEY: '57',
+    PORTALNAME: '02OF01B',
     DTTM: '2026-09-15 19:26:42',
     NODEDTTM: '2026-09-15 19:26:42',
     TYPE: '1',
@@ -208,6 +209,19 @@ describe('fetchReaderAccessHistory', () => {
 });
 
 describe('getReaderAccessHistory', () => {
+  it('carries PORTALNAME through on every match, matching the native field GetAccessHistory already returns', async () => {
+    const { client } = scriptedClient({
+      [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
+        discoveryPage(1000),
+        accessPage([record({ LOGID: '1', READERKEY: '190', PORTALKEY: '57', PORTALNAME: '02OF01B' })], '2'),
+      ],
+    });
+
+    const result = await getReaderAccessHistory(client, { READERKEY: '190', RESOLVEDESCRIPTIONS: false });
+
+    expect(result.matches).toEqual([expect.objectContaining({ PORTALKEY: '57', PORTALNAME: '02OF01B' })]);
+  });
+
   it('R7: calls GetPerson exactly once per distinct PERSONID and attaches names to every matching record', async () => {
     const { client, calls } = scriptedClient({
       [NBAPI_COMMANDS.GET_ACCESS_HISTORY]: [
