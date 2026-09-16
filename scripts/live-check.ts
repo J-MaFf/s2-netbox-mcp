@@ -7,6 +7,8 @@ import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
 import { asRecord, asRecordList, text } from '../src/paging.js';
 import { enrichWithPersonNames } from '../src/personEnrichment.js';
 import { enrichWithReaderDescriptions, fetchReaderDescriptions } from '../src/readerDescriptions.js';
+import { fetchTimeSpecGroupNames } from '../src/timeSpecGroupNames.js';
+import { fetchReaderGroupNames } from '../src/readerGroupNames.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -421,6 +423,52 @@ async function runGetPortalsResolveDescriptionsCheck(client: NetboxClient): Prom
   }
 }
 
+/**
+ * get_access_level's RESOLVEGROUPNAMES: true (default) path is hand-rolled
+ * inline in its tool handler (src/tools/accessLevel.ts), same as the checks
+ * above, so this check drives the same building blocks directly: one
+ * GetAccessLevel call, then fetchTimeSpecGroupNames/fetchReaderGroupNames
+ * (src/timeSpecGroupNames.ts, src/readerGroupNames.ts) -- asserting at
+ * least one non-empty resolved group name for whichever axis/axes carry a
+ * non-empty key on the real controller (R10 of
+ * specs/archive/access-level-resolve-group-names.md). A known-good live case,
+ * verified this session: ACCESSLEVELKEY "1" resolves TIMESPECGROUPKEY "1"
+ * to "Always" and READERGROUPKEY "22" to "Master Door Access - all doors".
+ */
+async function runGetAccessLevelResolveGroupNamesCheck(client: NetboxClient, accessLevelKey: string): Promise<CheckResult> {
+  const name = 'get_access_level (RESOLVEGROUPNAMES: true, default)';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY: accessLevelKey });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const timeSpecGroupKey = text(details.TIMESPECGROUPKEY);
+    const readerGroupKey = text(details.READERGROUPKEY);
+    if (timeSpecGroupKey === '' && readerGroupKey === '') {
+      return { name, pass: true, summary: 'SKIPPED (this access level carries neither TIMESPECGROUPKEY nor READERGROUPKEY to resolve)' };
+    }
+    const timeSpecGroupName =
+      timeSpecGroupKey === '' ? '' : ((await fetchTimeSpecGroupNames(client)).get(timeSpecGroupKey) ?? '');
+    const readerGroupName = readerGroupKey === '' ? '' : ((await fetchReaderGroupNames(client)).get(readerGroupKey) ?? '');
+    if (timeSpecGroupKey !== '' && timeSpecGroupName === '') {
+      return { name, pass: false, summary: `TIMESPECGROUPKEY "${timeSpecGroupKey}" did not resolve to a non-empty TIMESPECGROUPNAME` };
+    }
+    if (readerGroupKey !== '' && readerGroupName === '') {
+      return { name, pass: false, summary: `READERGROUPKEY "${readerGroupKey}" did not resolve to a non-empty READERGROUPNAME` };
+    }
+    return {
+      name,
+      pass: true,
+      summary:
+        `OK ACCESSLEVELKEY "${accessLevelKey}": TIMESPECGROUPKEY "${timeSpecGroupKey}" -> TIMESPECGROUPNAME="${timeSpecGroupName}", ` +
+        `READERGROUPKEY "${readerGroupKey}" -> READERGROUPNAME="${readerGroupName}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -455,6 +503,7 @@ async function main(): Promise<number> {
   results.push(
     await runCheck(client, 'get_access_level', NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY: accessLevelKey })
   );
+  results.push(await runGetAccessLevelResolveGroupNamesCheck(client, accessLevelKey));
 
   const accessLevelGroups = await runCheck(
     client,
