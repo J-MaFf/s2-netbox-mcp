@@ -25,11 +25,14 @@ describe('registerHolidayTools (R8 reads)', () => {
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_HOLIDAY, params: { HOLIDAYKEY: '1' } }]);
   });
 
-  it('get_holidays takes only STARTFROMKEY', () => {
+  it('get_holidays takes no parameters (GetHolidays has no documented calling parameters) and calls GetHolidays with an empty PARAMS map', async () => {
     const server = new FakeServer();
-    const { client } = fakeClient();
+    const { client, calls } = fakeClient();
     registerHolidayTools(server as unknown as McpServer, client, WRITES_OFF);
-    expect(Object.keys(byName(server, 'get_holidays').schema)).toEqual(['STARTFROMKEY']);
+    const reg = byName(server, 'get_holidays');
+    expect(Object.keys(reg.schema)).toEqual([]);
+    await reg.handler({});
+    expect(calls).toEqual([{ command: NBAPI_COMMANDS.GET_HOLIDAYS, params: {} }]);
   });
 });
 

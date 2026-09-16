@@ -148,6 +148,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   silently discarded by this tool's own record transform, unlike `get_access_history`/
   `get_card_access_details`, which already pass it through untouched
   ([#70](https://github.com/J-MaFf/s2-netbox-mcp/issues/70)).
+- `get_holidays` no longer sends an undocumented `STARTFROMKEY` parameter. Doc p.157 documents
+  zero calling parameters for `GetHolidays` -- the worked example request has an empty `PARAMS`
+  block -- and `STARTFROMKEY`/"Invalid STARTFROMKEY" actually belongs to the neighboring
+  `GetLocations` entry (not implemented by this server), which this tool appears to have been
+  copy-pasted from. `get_holidays` now takes no parameters at all and always issues `GetHolidays`
+  with an empty `PARAMS` map
+  ([#83](https://github.com/J-MaFf/s2-netbox-mcp/issues/83)).
 
 ## [0.3.0] — 2026-09-16
 

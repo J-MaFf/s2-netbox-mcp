@@ -23,9 +23,10 @@ export function registerHolidayTools(server: McpServer, client: NetboxClient, ga
 
   server.tool(
     'get_holidays',
-    'Lists holiday keys configured on the NetBox system (wraps NBAPI GetHolidays). Returns a comma-separated key string, not a list of records — use get_holiday per key for details.',
-    { STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.') },
-    async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_HOLIDAYS, mergeParams({ STARTFROMKEY }))
+    'Lists holiday keys configured on the NetBox system (wraps NBAPI GetHolidays). Returns a comma-separated key string, not a ' +
+      'list of records — use get_holiday per key for details. GetHolidays has no documented calling parameters (no pagination).',
+    {},
+    async () => runNbapiTool(client, NBAPI_COMMANDS.GET_HOLIDAYS, {})
   );
 
   if (gate.writesEnabled) {

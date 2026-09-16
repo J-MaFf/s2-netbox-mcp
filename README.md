@@ -303,7 +303,7 @@ surrounding file and location differ.
 | `get_time_spec_group`        | `GetTimeSpecGroup`       | `TIMESPECGROUPKEY`            |
 | `get_time_spec_groups`       | `GetTimeSpecGroups`      | — (optional `STARTFROMKEY`/`RESOLVEMEMBERNAMES`) |
 | `get_holiday`                | `GetHoliday`             | `HOLIDAYKEY`                  |
-| `get_holidays`               | `GetHolidays`            | — (optional `STARTFROMKEY`)   |
+| `get_holidays`               | `GetHolidays`            | — (no calling parameters)     |
 | `get_portal_group`           | `GetPortalGroup`         | `PORTALGROUPKEY` (optional `RESOLVEGROUPNAMES`) |
 | `get_portal_groups`          | `GetPortalGroups`        | — (optional `STARTFROMKEY`/`RESOLVEGROUPNAMES`) |
 | `get_reader_group`           | `GetReaderGroup`         | `READERGROUPKEY`              |
