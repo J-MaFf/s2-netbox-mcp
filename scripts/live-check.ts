@@ -3,6 +3,7 @@ import { loadConfigFromEnv, NetboxConfigError } from '../src/config.js';
 import { NetboxClient } from '../src/netboxClient.js';
 import { NBAPI_COMMANDS, type NbapiCommandName } from '../src/commands.js';
 import { findPortals } from '../src/portalSearch.js';
+import { getReaderAccessHistory } from '../src/readerAccessHistory.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
@@ -163,6 +164,27 @@ async function runFindPortalsCheck(client: NetboxClient, portalName: string | un
   }
 }
 
+/** get_reader_access_history is composite (GetAccessHistory, filtered
+ * client-side, enriched with GetPerson), so it is checked by driving it
+ * directly against a real READERKEY and asserting the call completes
+ * without throwing over the tool's default 2000-record scan window. */
+async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: string | undefined): Promise<CheckResult> {
+  const name = 'get_reader_access_history';
+  if (!readerKey) {
+    return { name, pass: true, summary: 'SKIPPED (no READERKEY found in get_readers results to test against)' };
+  }
+  try {
+    const result = await getReaderAccessHistory(client, { READERKEY: readerKey });
+    return {
+      name,
+      pass: true,
+      summary: `OK ${result.matchCount} match(es) for READERKEY ${readerKey} over the most recent ${result.scanWindow} records (truncated=${result.truncated})`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -229,6 +251,8 @@ async function main(): Promise<number> {
   results.push(await runCheck(client, 'get_reader', NBAPI_COMMANDS.GET_READER, { READERKEY: readerKey }));
 
   results.push(await runFindPortalsCheck(client, findFirstMatchingId(portals.data, /^NAME$/i)));
+
+  results.push(await runGetReaderAccessHistoryCheck(client, findFirstMatchingId(readers.data, /READERKEY/i)));
 
   results.push(await runCheck(client, 'get_card_formats', NBAPI_COMMANDS.GET_CARD_FORMATS, {}));
 
