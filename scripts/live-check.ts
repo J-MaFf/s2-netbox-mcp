@@ -11,12 +11,15 @@ import { fetchTimeSpecGroupNames } from '../src/timeSpecGroupNames.js';
 import { fetchTimeSpecNames } from '../src/timeSpecNames.js';
 import { fetchReaderGroupNames } from '../src/readerGroupNames.js';
 import { fetchPartitionNames } from '../src/partitionNames.js';
+import { getUnlockWindow, type UnlockWindowSettings } from '../src/unlockWindow/executor.js';
+import { getDailyUnlockWindow, type DailyUnlockWindowSettings } from '../src/unlockWindow/dailyExecutor.js';
 import type { NbapiParams } from '../src/xml.js';
 
 /**
  * Opt-in live-controller smoke test (satisfies acceptance criterion C19/R29).
- * Covers all 34 read tools (16 pre-existing + the 18 added in this stage)
- * and issues no write/control command.
+ * Covers all 37 always-registered read tools and issues no write/control
+ * command. (This count has grown since the script's original 34; kept in
+ * sync here rather than restated per-addition.)
  *
  * `npm test` never runs this file and never requires a `.env` to exist.
  * This script is invoked separately via `npm run test:live`, and only
@@ -197,6 +200,40 @@ async function runGetReaderAccessHistoryCheck(client: NetboxClient, readerKey: s
       summary:
         `OK ${result.matchCount} match(es) for READERKEY ${readerKey} over the most recent ${result.scanWindow} records ` +
         `(truncated=${result.truncated}), READERDESCRIPTION="${result.READERDESCRIPTION}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** get_unlock_window is read-only and always registered, but issues no
+ * request parameters of its own to drive with `runCheck` -- it's a status
+ * report over several paginated Get commands. A managed window may or may
+ * not currently exist; both are valid, passing outcomes, so this only
+ * asserts the call completes without throwing. */
+async function runGetUnlockWindowCheck(client: NetboxClient, settings: UnlockWindowSettings): Promise<CheckResult> {
+  const name = 'get_unlock_window';
+  try {
+    const status = await getUnlockWindow(client, settings);
+    return {
+      name,
+      pass: true,
+      summary: `OK configured=${status.configured}, activeNow=${status.activeNow}`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Same shape as runGetUnlockWindowCheck, for the daily recurring feature. */
+async function runGetDailyUnlockWindowCheck(client: NetboxClient, settings: DailyUnlockWindowSettings): Promise<CheckResult> {
+  const name = 'get_daily_unlock_window';
+  try {
+    const status = await getDailyUnlockWindow(client, settings);
+    return {
+      name,
+      pass: true,
+      summary: `OK configured=${status.configured}, activeNow=${status.activeNow}`,
     };
   } catch (err) {
     return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
@@ -871,6 +908,16 @@ async function main(): Promise<number> {
   );
   results.push(await runCheck(client, 'get_floors', NBAPI_COMMANDS.GET_FLOORS, {}, { acceptEmptyCollectionFail: true }));
   results.push(await runCheck(client, 'ping_app', NBAPI_COMMANDS.PING_APP, {}));
+
+  results.push(
+    await runGetUnlockWindowCheck(client, { holidayGroups: config.unlockHolidayGroups, namePrefix: config.unlockNamePrefix })
+  );
+  results.push(
+    await runGetDailyUnlockWindowCheck(client, {
+      holidayGroup: config.dailyUnlockHolidayGroup,
+      namePrefix: config.dailyUnlockNamePrefix,
+    })
+  );
 
   await client.logout();
 
