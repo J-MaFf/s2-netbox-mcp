@@ -16,7 +16,7 @@ reader, is a site code (e.g. `"01OF05A"`), not a human-readable location — tha
 each reader's own `DESCRIPTION`, which `GetReaders` (a separate command) provides.
 
 **This spec depends on, and reuses, the sibling spec's shared module** —
-`specs/get-access-history-resolve-descriptions.md` introduces `src/readerDescriptions.ts` with
+`specs/archive/get-access-history-resolve-descriptions.md` introduces `src/readerDescriptions.ts` with
 `fetchReaderDescriptions(client): Promise<Map<string, string>>` (READERKEY -> DESCRIPTION, one
 full-table `GetReaders` fetch). **Build that spec first**; this one imports from the module it
 creates rather than duplicating the fetch-and-map logic.
@@ -108,7 +108,7 @@ prefixed ones where a natural name exists).
 
 ## Constraints
 
-- Requires `specs/get-access-history-resolve-descriptions.md` to be implemented first —
+- Requires `specs/archive/get-access-history-resolve-descriptions.md` to be implemented first —
   `src/readerDescriptions.ts` must exist before this spec can import from it. Do not duplicate
   `fetchReaderDescriptions`'s logic if that dependency isn't ready yet; block instead.
 - TypeScript, matching this project's existing style; no new runtime dependencies.

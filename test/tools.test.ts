@@ -1084,6 +1084,52 @@ describe('registerEventsTools', () => {
       expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('READERDESCRIPTION');
     });
 
+    it('R2b: a failing GetReaders call does not break get_access_history -- the ACCESS records still return successfully, just without READERDESCRIPTION', async () => {
+      const server = new FakeServer();
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.GET_READERS) {
+            throw new Error('transient GetReaders failure');
+          }
+          return {
+            notFound: false,
+            data: {
+              ACCESSES: {
+                ACCESS: [
+                  { LOGID: '1', PERSONID: '00208', READER: 'R1', READERKEY: '190', PORTALKEY: '57', DTTM: 'd1', NODEDTTM: 'n1', TYPE: '1', REASON: '' },
+                ],
+              },
+              NEXTLOGID: '2',
+            },
+          };
+        },
+      } as unknown as NetboxClient;
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_access_history');
+
+      const result = await reg.handler({});
+
+      expect(calls.some((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.NEXTLOGID).toBe('2');
+      expect(parsed.ACCESSES.ACCESS).toEqual([
+        {
+          LOGID: '1',
+          PERSONID: '00208',
+          READER: 'R1',
+          READERKEY: '190',
+          PORTALKEY: '57',
+          DTTM: 'd1',
+          NODEDTTM: 'n1',
+          TYPE: '1',
+          REASON: '',
+          READERDESCRIPTION: '',
+        },
+      ]);
+    });
+
     it('RESOLVENAMES and RESOLVEDESCRIPTIONS are independent: RESOLVENAMES true + RESOLVEDESCRIPTIONS false calls GetPerson but never GetReaders', async () => {
       const server = new FakeServer();
       const { client, calls } = scriptedEventsClient({

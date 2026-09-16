@@ -247,7 +247,7 @@ async function runGetAccessHistoryResolveNamesCheck(client: NetboxClient): Promi
  * enrichWithReaderDescriptions helper (src/readerDescriptions.ts) --
  * asserting every enriched record carries a non-undefined READERDESCRIPTION
  * key, and that at least one record's READERDESCRIPTION is non-empty (R9 of
- * specs/get-access-history-resolve-descriptions.md).
+ * specs/archive/get-access-history-resolve-descriptions.md).
  */
 async function runGetAccessHistoryResolveDescriptionsCheck(client: NetboxClient): Promise<CheckResult> {
   const name = 'get_access_history (RESOLVEDESCRIPTIONS: true, default)';

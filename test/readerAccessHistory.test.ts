@@ -513,6 +513,36 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
     expect('READERDESCRIPTION' in parsed).toBe(false);
   });
 
+  it("R2b: a failing GetReaders call does not break get_reader_access_history -- the primary matches still return successfully, with top-level READERDESCRIPTION: ''", async () => {
+    let accessHistoryCalls = 0;
+    const client = {
+      call: async (command: string) => {
+        if (command === NBAPI_COMMANDS.GET_READERS) {
+          throw new Error('transient GetReaders failure');
+        }
+        if (command === NBAPI_COMMANDS.GET_ACCESS_HISTORY) {
+          accessHistoryCalls++;
+          return accessHistoryCalls === 1
+            ? discoveryPage(1000)
+            : accessPage([record({ LOGID: '1', READERKEY: '190', PERSONID: '00208' })], '2');
+        }
+        if (command === NBAPI_COMMANDS.GET_PERSON) {
+          return { notFound: false, data: { PERSONID: '00208', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' } };
+        }
+        throw new Error(`unexpected ${command} call`);
+      },
+    } as unknown as NetboxClient;
+    const { handler } = registerGetReaderAccessHistory(client);
+
+    const result = await handler({ READERKEY: '190' });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.matches).toEqual([expect.objectContaining({ LOGID: '1', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola' })]);
+    expect(parsed.truncated).toBe(false);
+    expect(parsed.READERDESCRIPTION).toBe('');
+  });
+
   it('surfaces NBAPI failures as tool errors', async () => {
     const client = {
       call: async () => {

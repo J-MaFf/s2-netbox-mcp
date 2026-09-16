@@ -5,7 +5,7 @@ import type { NbapiCallResult, NetboxClient } from '../src/netboxClient.js';
 
 /**
  * Unit tests for the shared reader-description enrichment helper (see
- * specs/get-access-history-resolve-descriptions.md R1/R2) -- used by
+ * specs/archive/get-access-history-resolve-descriptions.md R1/R2) -- used by
  * get_access_history and get_card_access_details's per-record
  * RESOLVEDESCRIPTIONS path, and get_reader_access_history's single
  * top-level READERDESCRIPTION field (see test/readerAccessHistory.test.ts
@@ -109,6 +109,18 @@ describe('fetchReaderDescriptions (R1)', () => {
 
     expect(result.size).toBe(0);
   });
+
+  it('R1/R2b: does not throw when the underlying GetReaders call itself throws -- resolves to an empty Map instead', async () => {
+    const client = {
+      call: async () => {
+        throw new Error('transient GetReaders failure');
+      },
+    } as unknown as NetboxClient;
+
+    const result = await fetchReaderDescriptions(client);
+
+    expect(result).toEqual(new Map());
+  });
 });
 
 describe('enrichWithReaderDescriptions (R2)', () => {
@@ -189,7 +201,7 @@ describe('enrichWithReaderDescriptions (R2)', () => {
   });
 });
 
-describe('enrichWithReaderDescriptions failure isolation (R2b)', () => {
+describe('enrichWithReaderDescriptions failure isolation (R2b, inherited from fetchReaderDescriptions per R1)', () => {
   it('does not throw when the underlying GetReaders call itself throws -- every record gets READERDESCRIPTION: \'\' instead', async () => {
     const client = {
       call: async () => {
