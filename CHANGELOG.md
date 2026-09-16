@@ -24,6 +24,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `src/tools/threatLevel.ts`'s module comment previously (and incorrectly) claimed no such read
   command existed in the Command reference -- it does; it just wasn't wired in
   ([#77](https://github.com/J-MaFf/s2-netbox-mcp/issues/77)).
+- `search_person_data` gains nine filter fields documented for NBAPI `SearchPersonData` (doc p.262)
+  but previously absent from the tool's schema: `CONTACTEMAIL`, `MOBILEPHONE`, `CARDFORMAT`,
+  `CARDSTATUS`, `MSUENABLED`, `BLUEDIAMONDENABLED`, `NOTES`, `VEHICLELICNUM`, `VEHICLETAGNUM`.
+  Found via the same `docs/reference/NetBox_API_V2.pdf` conformance review as `get_threat_levels`
+  above -- this repo's original implementation was written against an older Feb-2020 NBAPI v1 doc
+  revision that didn't yet document these fields
+  ([#78](https://github.com/J-MaFf/s2-netbox-mcp/issues/78)).
 - `get_portal_groups` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the exact
   same flag name and opt-*out* default as the singular `get_portal_group`'s own `RESOLVEGROUPNAMES`
   below -- this is that tool's explicitly-planned follow-on): unless explicitly set to `false`,
