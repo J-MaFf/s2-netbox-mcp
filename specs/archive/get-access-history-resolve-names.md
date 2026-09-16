@@ -1,5 +1,15 @@
 # Spec: `RESOLVENAMES` person-name enrichment for `get_access_history`
 
+> **Archived, 2026-09-16.** Built via the forge skill in
+> [PR #52](https://github.com/J-MaFf/s2-netbox-mcp/pull/52) (`Fixes #51`, also `Fixes #47`). All 12
+> acceptance criteria passed (blind evaluator, round 1), including a live run against the real
+> controller during generation (`RESOLVENAMES: true` enriched 999 records, e.g.
+> `FULLNAME="Michi Nakano"`). One spec defect was found and corrected before evaluation: R12/C12's
+> verify clause originally called for zero `OLDESTDTTM`/`NEWESTDTTM` occurrences across the whole
+> of `test/tools.test.ts`, which would have meant deleting correct, unrelated coverage for
+> `get_card_access_details`'s own legitimate `OLDESTDTTM` field — narrowed to
+> `get_access_history`'s own schema assertion, as reflected in the R12/C12 text below.
+
 ## Goal
 
 Let callers of `get_access_history` opt in to having each returned access record enriched with
