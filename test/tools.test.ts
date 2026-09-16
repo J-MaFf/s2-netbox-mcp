@@ -1408,14 +1408,241 @@ describe('registerEventsTools', () => {
     ]);
   });
 
-  it('list_events takes no parameters and calls ListEvents', async () => {
-    const server = new FakeServer();
-    const { client, calls } = fakeClient();
-    registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
-    const reg = byName(server, 'list_events');
-    expect(Object.keys(reg.schema)).toEqual([]);
-    await reg.handler({});
-    expect(calls).toEqual([{ command: NBAPI_COMMANDS.LIST_EVENTS, params: {} }]);
+  describe('list_events (spec: list-events-resolve-partition-names)', () => {
+    it('R1: schema is exactly RESOLVEPARTITIONNAMES', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+      expect(Object.keys(reg.schema).sort()).toEqual(['RESOLVEPARTITIONNAMES']);
+    });
+
+    it('R2: RESOLVEPARTITIONNAMES omitted (default true) enriches every event with PARTITIONNAME via exactly one GetPartitions call, including an unmatched PARTITIONID resolving to an empty string', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.LIST_EVENTS]: [
+          {
+            notFound: false,
+            data: {
+              EVENTS: {
+                EVENT: [
+                  {
+                    ID: '1',
+                    NAME: 'Front Lobby Intercom Unlock Event',
+                    PARTITIONID: '1',
+                    ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+                  },
+                  {
+                    ID: '8',
+                    NAME: 'Front Lobby Auto Operator 01OF01A',
+                    PARTITIONID: '1',
+                    ACTIONS: { ACTION: ['Log Event', 'action 2', 'Action 1'] },
+                  },
+                  {
+                    ID: '9',
+                    NAME: 'Event In An Unknown Partition',
+                    PARTITIONID: '99',
+                    ACTIONS: { ACTION: ['Log Event'] },
+                  },
+                ],
+              },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_PARTITIONS]: [
+          {
+            notFound: false,
+            data: {
+              PARTITIONS: { PARTITION: { PARTITIONKEY: '1', NAME: 'Master', DESCRIPTION: 'The default partition' } },
+              NEXTKEY: '-1',
+            },
+          },
+        ],
+      });
+      const server = new FakeServer();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({});
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.LIST_EVENTS)).toHaveLength(1);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PARTITIONS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.EVENTS.EVENT).toEqual([
+        {
+          ID: '1',
+          NAME: 'Front Lobby Intercom Unlock Event',
+          PARTITIONID: '1',
+          ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+          PARTITIONNAME: 'Master',
+        },
+        {
+          ID: '8',
+          NAME: 'Front Lobby Auto Operator 01OF01A',
+          PARTITIONID: '1',
+          ACTIONS: { ACTION: ['Log Event', 'action 2', 'Action 1'] },
+          PARTITIONNAME: 'Master',
+        },
+        {
+          ID: '9',
+          NAME: 'Event In An Unknown Partition',
+          PARTITIONID: '99',
+          ACTIONS: { ACTION: ['Log Event'] },
+          PARTITIONNAME: '',
+        },
+      ]);
+    });
+
+    it('R2: RESOLVEPARTITIONNAMES explicitly true behaves the same as omitting it', async () => {
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.LIST_EVENTS]: [
+          { notFound: false, data: { EVENTS: { EVENT: [{ ID: '1', NAME: 'X', PARTITIONID: '1' }] } } },
+        ],
+        [NBAPI_COMMANDS.GET_PARTITIONS]: [
+          { notFound: false, data: { PARTITIONS: { PARTITION: { PARTITIONKEY: '1', NAME: 'Master' } } } },
+        ],
+      });
+      const server = new FakeServer();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({ RESOLVEPARTITIONNAMES: true });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PARTITIONS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.EVENTS.EVENT).toEqual([{ ID: '1', NAME: 'X', PARTITIONID: '1', PARTITIONNAME: 'Master' }]);
+    });
+
+    it('R3: RESOLVEPARTITIONNAMES explicitly false makes zero GetPartitions calls and returns events byte-identical to the pre-change ListEvents pass-through, with no PARTITIONNAME key added', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: {
+          EVENTS: {
+            EVENT: [
+              {
+                ID: '1',
+                NAME: 'Front Lobby Intercom Unlock Event',
+                PARTITIONID: '1',
+                ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+              },
+            ],
+          },
+        },
+      });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({ RESOLVEPARTITIONNAMES: false });
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.LIST_EVENTS, params: {} }]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toEqual({
+        EVENTS: {
+          EVENT: [
+            {
+              ID: '1',
+              NAME: 'Front Lobby Intercom Unlock Event',
+              PARTITIONID: '1',
+              ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+            },
+          ],
+        },
+      });
+      expect(parsed.EVENTS.EVENT[0]).not.toHaveProperty('PARTITIONNAME');
+    });
+
+    it('R4: RESOLVEPARTITIONNAMES true (default) with a notFound ListEvents response produces the same standard not-found text as RESOLVEPARTITIONNAMES: false would, and never calls GetPartitions', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({ notFound: true, data: undefined });
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({});
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.LIST_EVENTS, params: {} }]);
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+    });
+
+    it('R4: RESOLVEPARTITIONNAMES true (default) with a thrown NbapiFailError produces the same standard mapped error text as the plain path, and never calls GetPartitions', async () => {
+      const server = new FakeServer();
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({});
+
+      expect(calls).toEqual([{ command: NBAPI_COMMANDS.LIST_EVENTS, params: {} }]);
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+    });
+
+    it("R5: a thrown GetPartitions call does not break the tool call -- every event's PARTITIONNAME resolves to '' with ACTIONS and other fields intact", async () => {
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.LIST_EVENTS) {
+            return {
+              notFound: false,
+              data: {
+                EVENTS: {
+                  EVENT: [
+                    {
+                      ID: '1',
+                      NAME: 'Front Lobby Intercom Unlock Event',
+                      PARTITIONID: '1',
+                      ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+                    },
+                  ],
+                },
+              },
+            };
+          }
+          if (command === NBAPI_COMMANDS.GET_PARTITIONS) {
+            throw new Error('transient GetPartitions failure');
+          }
+          throw new Error(`unexpected call: ${command}`);
+        },
+      } as unknown as NetboxClient;
+      const server = new FakeServer();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      const result = await reg.handler({});
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.EVENTS.EVENT).toEqual([
+        {
+          ID: '1',
+          NAME: 'Front Lobby Intercom Unlock Event',
+          PARTITIONID: '1',
+          ACTIONS: { ACTION: ['Log Event', 'Unlock Door'] },
+          PARTITIONNAME: '',
+        },
+      ]);
+    });
+
+    it('R6: description mentions RESOLVEPARTITIONNAMES and its default-true behavior', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerEventsTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'list_events');
+
+      expect(reg.description).toContain('RESOLVEPARTITIONNAMES');
+      expect(reg.description.toLowerCase()).toContain('true');
+    });
   });
 
   describe('get_access_history (spec: get-access-history-resolve-names)', () => {

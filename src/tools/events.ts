@@ -17,6 +17,7 @@ import { getReaderAccessHistory } from '../readerAccessHistory.js';
 import { asRecord, asRecordList, text, type XmlRecord } from '../paging.js';
 import { enrichWithPersonNames } from '../personEnrichment.js';
 import { enrichWithReaderDescriptions } from '../readerDescriptions.js';
+import { fetchPartitionNames } from '../partitionNames.js';
 
 /**
  * Event/history/activity tools: the existing three read tools
@@ -62,6 +63,16 @@ import { enrichWithReaderDescriptions } from '../readerDescriptions.js';
  *
  * trigger_event is routed to NETBOX_EVENT_API_PATH automatically by
  * NetboxClient (R6) — this module never references a request path itself.
+ *
+ * list_events' RESOLVEPARTITIONNAMES (specs/archive/list-events-resolve-
+ * partition-names.md) resolves each returned event's bare PARTITIONID into a
+ * human-readable PARTITIONNAME, backed by src/partitionNames.ts's
+ * fetchPartitionNames -- a single GetPartitions call per call to this tool
+ * (GetPartitions takes no STARTFROMKEY and already answers every partition
+ * in one response, so there is no paginated walk to make here, unlike
+ * RESOLVEDESCRIPTIONS' GetReaders fetch above). Defaults to true (opt-out),
+ * same inverted default as RESOLVEDESCRIPTIONS, for the same reason: the
+ * fetch is fixed-cost and doesn't scale with how many events come back.
  */
 
 /** Normalizes an ACCESS record's PERSONID to a definite string (satisfying
@@ -95,9 +106,45 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
 
   server.tool(
     'list_events',
-    'Lists the event types/definitions known to the NetBox system (wraps NBAPI ListEvents). No parameters required.',
-    {},
-    async () => runNbapiTool(client, NBAPI_COMMANDS.LIST_EVENTS, {})
+    'Lists the event types/definitions known to the NetBox system (wraps NBAPI ListEvents). ' +
+      'RESOLVEPARTITIONNAMES defaults to true — on by default, the same inverted opt-out default used by this ' +
+      "codebase's other fixed-cost enrichments: each returned event is enriched with a PARTITIONNAME field " +
+      "resolved from its PARTITIONID via one GetPartitions fetch per call, not per event (GetPartitions costs " +
+      'the same whether it resolves one event or a thousand). Set RESOLVEPARTITIONNAMES: false to skip it.',
+    {
+      RESOLVEPARTITIONNAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional (default true — on by default; an opt-out, not opt-in, default). Enriches each returned ' +
+            'event with PARTITIONNAME resolved from its PARTITIONID via one GetPartitions fetch per call (not ' +
+            'per event). Set to false to skip it and get the plain ListEvents response.'
+        ),
+    },
+    async ({ RESOLVEPARTITIONNAMES }): Promise<ToolTextResult> => {
+      const resolvePartitionNames = RESOLVEPARTITIONNAMES !== false;
+      if (!resolvePartitionNames) {
+        return runNbapiTool(client, NBAPI_COMMANDS.LIST_EVENTS, {});
+      }
+      try {
+        const result = await client.call(NBAPI_COMMANDS.LIST_EVENTS, {});
+        if (result.notFound) {
+          return notFoundResult();
+        }
+        const details = asRecord(result.data);
+        const events = asRecord(details.EVENTS);
+        const records: XmlRecord[] = asRecordList(events.EVENT);
+        const namesByPartitionKey = await fetchPartitionNames(client);
+        const enriched = records.map((record) => ({
+          ...record,
+          PARTITIONNAME: namesByPartitionKey.get(text(record.PARTITIONID)) ?? '',
+        }));
+        const responseData = { ...details, EVENTS: { ...events, EVENT: enriched } };
+        return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
+      } catch (err) {
+        return toolErrorResult(err);
+      }
+    }
   );
 
   server.tool(

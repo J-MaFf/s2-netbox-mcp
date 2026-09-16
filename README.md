@@ -291,7 +291,7 @@ surrounding file and location differ.
 | `get_outputs`                | `GetOutputs`             | — (optional `STARTFROMKEY`)   |
 | `find_portals`               | `GetPortals` + `GetReaders` (composite) | `query` (search terms) |
 | `get_event_history`          | `GetEventHistory`        | — (optional `EVENTNAME`/`STARTDTTM`/`ENDDTTM`/`NEXTKEY`) |
-| `list_events`                | `ListEvents`             | —                             |
+| `list_events`                | `ListEvents`             | — (optional `RESOLVEPARTITIONNAMES`, default `true`) |
 | `get_access_history`         | `GetAccessHistory`       | — (optional `STARTLOGID`/`AFTERLOGID`/`ORDER`/`MAXRECORDS`/`ENCODEDNUM`/`HOTSTAMP`/`CARDFORMAT`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
 | `get_reader_access_history`  | `GetAccessHistory` + `GetPerson` + `GetReaders` (composite) | `READERKEY` (optional `SCANWINDOW`/`MAXMATCHES`/`RESOLVEDESCRIPTIONS`) |
 | `get_time_spec`              | `GetTimeSpec`            | `TIMESPECKEY`                 |
@@ -495,6 +495,23 @@ empty/absent `UNLOCKTIMESPECGROUPKEY` skips the fetch entirely and yields
 the primary `GetPortalGroup` data (including `PORTALS`) intact. Set
 `RESOLVEGROUPNAMES: false` to skip the fetch and get the response back
 exactly as `GetPortalGroup` provides it.
+
+`list_events` accepts `RESOLVEPARTITIONNAMES` (default **`true`** — on by
+default, the same opt-*out* default as the other `RESOLVE*` flags above):
+unless explicitly set to `false`, each returned event's bare `PARTITIONID`
+is resolved into a new sibling `PARTITIONNAME` field via one `GetPartitions`
+fetch per call — not per event, since `GetPartitions` takes no
+`STARTFROMKEY` at all and always answers every partition in a single
+response, so the cost never scales with how many events come back. This is
+backed by the new `src/partitionNames.ts` helper, mirroring
+`src/readerDescriptions.ts`'s shape exactly (a `Map`-returning fetch
+function that never throws). An event whose `PARTITIONID` has no match in
+the fetched map resolves to `PARTITIONNAME: ''`, and if the underlying
+`GetPartitions` fetch itself fails, every event's `PARTITIONNAME` resolves
+to `''` and the call still succeeds with every other field (including
+`ACTIONS`) intact — an enrichment failure never loses the primary data. Set
+`RESOLVEPARTITIONNAMES: false` to skip the `GetPartitions` call and get the
+response back exactly as `ListEvents` provides it.
 
 ### Write tools and Destructive tools
 

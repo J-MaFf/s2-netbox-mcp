@@ -21,6 +21,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and never resolved -- no NBAPI read command for threat level groups exists in this server's
   command surface at all
   ([#63](https://github.com/J-MaFf/s2-netbox-mcp/issues/63)).
+- `list_events` gains a `RESOLVEPARTITIONNAMES: boolean` parameter (default `true`/on, the same
+  opt-*out* default as `get_access_level`'s `RESOLVEGROUPNAMES`/`get_portals`'s
+  `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, each returned event's bare
+  `PARTITIONID` is resolved into a new sibling `PARTITIONNAME` field, via one fixed-cost
+  `GetPartitions` fetch per call (not per event -- `GetPartitions` takes no `STARTFROMKEY` and
+  always answers every partition in a single response, so the cost never scales with how many
+  events come back). A new shared module, `src/partitionNames.ts`, exports
+  `fetchPartitionNames`, mirroring `src/readerDescriptions.ts`'s never-throws `Map`-returning
+  shape exactly: an unmatched `PARTITIONID` resolves to `PARTITIONNAME: ''`, and if the
+  underlying `GetPartitions` fetch itself fails, every event's `PARTITIONNAME` resolves to `''`
+  while every other field (including `ACTIONS`) stays intact
+  ([#65](https://github.com/J-MaFf/s2-netbox-mcp/issues/65)).
 - `get_access_level` gains a `RESOLVEGROUPNAMES: boolean` parameter (default `true`/on, the
   same opt-*out* default as `get_portals`/`get_access_history`/`get_card_access_details`'s own
   `RESOLVEDESCRIPTIONS`): unless explicitly set to `false`, it resolves the response's bare
