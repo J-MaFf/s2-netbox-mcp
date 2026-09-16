@@ -17,6 +17,7 @@ import {
 } from '../toolHelpers.js';
 import { asRecord, asRecordList, text, type XmlRecord } from '../paging.js';
 import { enrichWithReaderDescriptions } from '../readerDescriptions.js';
+import { enrichWithPersonNames } from '../personEnrichment.js';
 
 // SearchPersonData supports UDF1-UDF20 as search filters (per the Command
 // reference). Generated rather than hand-typed twenty times over.
@@ -132,6 +133,20 @@ const personCommonOptionalFields = {
  * records returned. Bypasses runNbapiTool for the same reason
  * get_access_history's RESOLVENAMES path does: the async enrichment can't
  * run inside runNbapiTool's synchronous formatSuccess callback.
+ *
+ * get_card_access_details's RESOLVENAMES (specs/get-card-access-details-
+ * resolve-names.md) is an independent flag over the same response. Unlike
+ * get_access_history's RESOLVENAMES (one GetPerson call per distinct
+ * PERSONID across many records), GetCardAccessDetails' response carries
+ * exactly one PERSONID at the *top level* -- a card belongs to one person --
+ * so this is a single GetPerson lookup per call, reusing
+ * src/personEnrichment.ts's enrichWithPersonNames as-is via a
+ * single-element array (its simplest, already-handled "one distinct
+ * PERSONID" path). The four resulting fields land on the top level of the
+ * response object, alongside PERSONID/DISABLED/EXPDATE -- never duplicated
+ * onto each ACCESS record, since every record shares that one PERSONID by
+ * construction. Defaults to false/off, matching this codebase's usual
+ * optional-boolean convention (unlike RESOLVEDESCRIPTIONS above).
  */
 function withStringReaderKey(raw: XmlRecord): XmlRecord & { READERKEY: string } {
   return { ...raw, READERKEY: text(raw.READERKEY) };
@@ -187,12 +202,24 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
       'parameter. RESOLVEDESCRIPTIONS defaults to true — an inverted, opt-*out* default (unlike most optional ' +
       "booleans in this codebase): each returned ACCESS record is enriched with the reader's human-readable " +
       'READERDESCRIPTION via one GetReaders full-table fetch per call (not per record); set ' +
-      'RESOLVEDESCRIPTIONS: false to skip it.',
+      'RESOLVEDESCRIPTIONS: false to skip it. Set RESOLVENAMES: true to enrich the response with the card ' +
+      "owner's FIRSTNAME/LASTNAME/FULLNAME/NOTES (default false — off) via a single GetPerson lookup for the " +
+      "card's one PERSONID — cheaper than get_access_history's RESOLVENAMES, which pays one GetPerson call per " +
+      'distinct person across many records, since a card has exactly one owner. The four fields land on the ' +
+      'top level of the response, alongside PERSONID/DISABLED/EXPDATE, not on each ACCESS record.',
     {
       ENCODEDNUM: z.string().describe('Required. The encoded card number whose access details should be retrieved.'),
       CARDFORMAT: z.string().describe('Required. The card format of ENCODEDNUM.'),
       MAXRECORDS: z.string().optional().describe('Optional. Maximum number of access records to return.'),
       OLDESTDTTM: z.string().optional().describe('Optional. Oldest date/time to include in the returned access records.'),
+      RESOLVENAMES: z
+        .boolean()
+        .optional()
+        .describe(
+          "Optional (default false). Enrich the top level of the response with the card owner's " +
+            'FIRSTNAME/LASTNAME/FULLNAME/NOTES via a single GetPerson lookup for the response\'s top-level ' +
+            'PERSONID (one lookup per call, not one per ACCESS record — a card has exactly one owner).'
+        ),
       RESOLVEDESCRIPTIONS: z
         .boolean()
         .optional()
@@ -202,8 +229,9 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
             'via one GetReaders full-table fetch per call (not per record). Set to false to skip it.'
         ),
     },
-    async ({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
-      if (RESOLVEDESCRIPTIONS === false) {
+    async ({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM, RESOLVENAMES, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
+      const resolveDescriptions = RESOLVEDESCRIPTIONS !== false;
+      if (!RESOLVENAMES && !resolveDescriptions) {
         return runNbapiTool(
           client,
           NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS,
@@ -218,11 +246,30 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         if (result.notFound) {
           return notFoundResult();
         }
-        const details = asRecord(result.data);
+        let details = asRecord(result.data);
         const accesses = asRecord(details.ACCESSES);
-        const records = asRecordList(accesses.ACCESS).map(withStringReaderKey);
-        const enriched = await enrichWithReaderDescriptions(client, records);
-        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: enriched } };
+        let records: XmlRecord[] = asRecordList(accesses.ACCESS);
+        if (resolveDescriptions) {
+          records = await enrichWithReaderDescriptions(client, records.map(withStringReaderKey));
+        }
+        if (RESOLVENAMES) {
+          // Exactly one PERSONID for the whole response (R3/R4 of
+          // specs/archive/get-card-access-details-resolve-names.md) -- a
+          // single-element array is the correct way to exercise the shared
+          // helper here, since it already treats "one distinct PERSONID" as
+          // its simplest case (including an empty-string PERSONID, which
+          // skips the GetPerson call and yields empty-string fields with no
+          // special-casing needed here).
+          const [enrichedTop] = await enrichWithPersonNames(client, [{ PERSONID: text(details.PERSONID) }]);
+          details = {
+            ...details,
+            FIRSTNAME: enrichedTop.FIRSTNAME,
+            LASTNAME: enrichedTop.LASTNAME,
+            FULLNAME: enrichedTop.FULLNAME,
+            NOTES: enrichedTop.NOTES,
+          };
+        }
+        const responseData = { ...details, ACCESSES: { ...accesses, ACCESS: records } };
         return { content: [{ type: 'text', text: formatAsJson(responseData) }] };
       } catch (err) {
         return toolErrorResult(err);

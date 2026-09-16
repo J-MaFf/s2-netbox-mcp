@@ -129,7 +129,7 @@ describe('registerPersonTools', () => {
     registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
     const reg = byName(server, 'get_card_access_details');
     expect(Object.keys(reg.schema).sort()).toEqual(
-      ['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS', 'OLDESTDTTM', 'RESOLVEDESCRIPTIONS'].sort()
+      ['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS', 'OLDESTDTTM', 'RESOLVENAMES', 'RESOLVEDESCRIPTIONS'].sort()
     );
     expect(Object.keys(reg.schema)).not.toContain('PERSONID');
   });
@@ -148,6 +148,298 @@ describe('registerPersonTools', () => {
     expect(calls).toEqual([
       { command: NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
     ]);
+  });
+
+  describe('get_card_access_details RESOLVENAMES (spec: get-card-access-details-resolve-names)', () => {
+    it('R1: schema is exactly CARDFORMAT/ENCODEDNUM/MAXRECORDS/OLDESTDTTM/RESOLVENAMES/RESOLVEDESCRIPTIONS', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+      expect(Object.keys(reg.schema).sort()).toEqual(
+        ['CARDFORMAT', 'ENCODEDNUM', 'MAXRECORDS', 'OLDESTDTTM', 'RESOLVENAMES', 'RESOLVEDESCRIPTIONS'].sort()
+      );
+    });
+
+    it('R2: RESOLVENAMES omitted (and RESOLVEDESCRIPTIONS explicitly false) makes exactly one GetCardAccessDetails call, no GetPerson call, and returns the plain (unenriched) response', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: { PERSONID: '_41', DISABLED: '0', EXPDATE: 'null', ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] }, NEXTLOGID: '2' },
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVEDESCRIPTIONS: false });
+
+      expect(calls).toEqual([
+        { command: NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
+      ]);
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        PERSONID: '_41',
+        DISABLED: '0',
+        EXPDATE: 'null',
+        ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] },
+        NEXTLOGID: '2',
+      });
+    });
+
+    it('R2: RESOLVENAMES explicitly false (and RESOLVEDESCRIPTIONS explicitly false) makes exactly one GetCardAccessDetails call, no GetPerson call, and returns the plain (unenriched) response', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: { PERSONID: '_41', DISABLED: '0', EXPDATE: 'null', ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] }, NEXTLOGID: '2' },
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({
+        RESOLVENAMES: false,
+        RESOLVEDESCRIPTIONS: false,
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+      });
+
+      expect(calls).toEqual([
+        { command: NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, params: { ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26' } },
+      ]);
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        PERSONID: '_41',
+        DISABLED: '0',
+        EXPDATE: 'null',
+        ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] },
+        NEXTLOGID: '2',
+      });
+    });
+
+    it('R3: RESOLVENAMES true attaches FIRSTNAME/LASTNAME/FULLNAME/NOTES to the TOP LEVEL of the response (not per ACCESS record), with exactly one GetPerson call', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS]: [
+          {
+            notFound: false,
+            data: {
+              PERSONID: '_41',
+              DISABLED: '0',
+              EXPDATE: 'null',
+              ACCESSES: {
+                ACCESS: [
+                  { LOGID: '49809', DTTM: 'd', NODEDTTM: 'n', TYPE: '1', REASON: '', READERKEY: '52', PORTALKEY: '18', PORTALNAME: '02RB06' },
+                ],
+              },
+              NEXTLOGID: '49805',
+            },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [
+          { notFound: false, data: { PERSONID: '_41', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola', NOTES: 'VIP' } },
+        ],
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      // RESOLVEDESCRIPTIONS: false isolates this test to RESOLVENAMES's own
+      // enrichment behavior -- their independence/combination is covered
+      // separately below.
+      const result = await reg.handler({
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+        RESOLVENAMES: true,
+        RESOLVEDESCRIPTIONS: false,
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toEqual({
+        PERSONID: '_41',
+        DISABLED: '0',
+        EXPDATE: 'null',
+        FIRSTNAME: 'Joey',
+        LASTNAME: 'Maffiola',
+        FULLNAME: 'Joey Maffiola',
+        NOTES: 'VIP',
+        ACCESSES: {
+          ACCESS: [
+            { LOGID: '49809', DTTM: 'd', NODEDTTM: 'n', TYPE: '1', REASON: '', READERKEY: '52', PORTALKEY: '18', PORTALNAME: '02RB06' },
+          ],
+        },
+        NEXTLOGID: '49805',
+      });
+      // Enrichment fields must not have leaked onto the ACCESS record itself.
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('FIRSTNAME');
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('FULLNAME');
+
+      const personCalls = calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON);
+      expect(personCalls).toHaveLength(1);
+      expect(personCalls[0].params).toEqual({ PERSONID: '_41' });
+    });
+
+    it('R4: RESOLVENAMES true with a top-level PERSONID of the empty string makes zero GetPerson calls and sets empty-string enrichment fields', async () => {
+      const server = new FakeServer();
+      const { client, calls } = fakeClient({
+        notFound: false,
+        data: { PERSONID: '', DISABLED: '0', EXPDATE: 'null', ACCESSES: { ACCESS: [] }, NEXTLOGID: '2' },
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+        RESOLVENAMES: true,
+        RESOLVEDESCRIPTIONS: false,
+      });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toHaveLength(0);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.PERSONID).toBe('');
+      expect(parsed.FIRSTNAME).toBe('');
+      expect(parsed.LASTNAME).toBe('');
+      expect(parsed.FULLNAME).toBe('');
+      expect(parsed.NOTES).toBe('');
+    });
+
+    it('R5: RESOLVENAMES true with a notFound GetCardAccessDetails response produces the same standard not-found text as the plain path', async () => {
+      const server = new FakeServer();
+      const { client } = fakeClient({ notFound: true, data: undefined });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVENAMES: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Not found: the NetBox controller returned NOT FOUND for this query.' }],
+      });
+    });
+
+    it('R5: RESOLVENAMES true with a thrown NbapiFailError produces the same standard mapped error text as the plain path', async () => {
+      const server = new FakeServer();
+      const client = {
+        call: async () => {
+          throw new NbapiFailError('NOT PERMITTED');
+        },
+      } as unknown as NetboxClient;
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({ ENCODEDNUM: '0012345', CARDFORMAT: 'Standard26', RESOLVENAMES: true });
+
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'NetBox NBAPI command failed: NOT PERMITTED' }],
+        isError: true,
+      });
+    });
+
+    it('R6: a failing GetPerson lookup does not break get_card_access_details -- the call still succeeds, with empty-string enrichment fields', async () => {
+      const server = new FakeServer();
+      const calls: Array<{ command: string; params: unknown }> = [];
+      const client = {
+        call: async (command: string, params: unknown) => {
+          calls.push({ command, params });
+          if (command === NBAPI_COMMANDS.GET_PERSON) {
+            throw new Error('transient GetPerson failure');
+          }
+          return {
+            notFound: false,
+            data: {
+              PERSONID: '_41',
+              DISABLED: '0',
+              EXPDATE: 'null',
+              ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] },
+              NEXTLOGID: '2',
+            },
+          };
+        },
+      } as unknown as NetboxClient;
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+        RESOLVENAMES: true,
+        RESOLVEDESCRIPTIONS: false,
+      });
+
+      expect(calls.some((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.PERSONID).toBe('_41');
+      expect(parsed.FIRSTNAME).toBe('');
+      expect(parsed.LASTNAME).toBe('');
+      expect(parsed.FULLNAME).toBe('');
+      expect(parsed.NOTES).toBe('');
+    });
+
+    it('R7: description mentions RESOLVENAMES', () => {
+      const server = new FakeServer();
+      const { client } = fakeClient();
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      expect(reg.description).toContain('RESOLVENAMES');
+    });
+
+    it('RESOLVENAMES and RESOLVEDESCRIPTIONS are independent: RESOLVENAMES true + RESOLVEDESCRIPTIONS false calls GetPerson but never GetReaders', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS]: [
+          {
+            notFound: false,
+            data: { PERSONID: '_41', ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] }, NEXTLOGID: '2' },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [
+          { notFound: false, data: { PERSONID: '_41', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola', NOTES: '' } },
+        ],
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+        RESOLVENAMES: true,
+        RESOLVEDESCRIPTIONS: false,
+      });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toHaveLength(1);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(0);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.FULLNAME).toBe('Joey Maffiola');
+      expect(parsed.ACCESSES.ACCESS[0]).not.toHaveProperty('READERDESCRIPTION');
+    });
+
+    it('RESOLVENAMES and RESOLVEDESCRIPTIONS true together enrich the top level with names and each ACCESS record with descriptions', async () => {
+      const server = new FakeServer();
+      const { client, calls } = scriptedEventsClient({
+        [NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS]: [
+          {
+            notFound: false,
+            data: { PERSONID: '_41', ACCESSES: { ACCESS: [{ LOGID: '1', READERKEY: '52' }] }, NEXTLOGID: '2' },
+          },
+        ],
+        [NBAPI_COMMANDS.GET_PERSON]: [
+          { notFound: false, data: { PERSONID: '_41', FIRSTNAME: 'Joey', LASTNAME: 'Maffiola', NOTES: '' } },
+        ],
+        [NBAPI_COMMANDS.GET_READERS]: [
+          { notFound: false, data: { READERS: { READER: { READERKEY: '52', DESCRIPTION: 'HALLWAY' } }, NEXTKEY: '-1' } },
+        ],
+      });
+      registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
+      const reg = byName(server, 'get_card_access_details');
+
+      const result = await reg.handler({
+        ENCODEDNUM: '0012345',
+        CARDFORMAT: 'Standard26',
+        RESOLVENAMES: true,
+        RESOLVEDESCRIPTIONS: true,
+      });
+
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_PERSON)).toHaveLength(1);
+      expect(calls.filter((c) => c.command === NBAPI_COMMANDS.GET_READERS)).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.FULLNAME).toBe('Joey Maffiola');
+      expect(parsed.ACCESSES.ACCESS[0].READERDESCRIPTION).toBe('HALLWAY');
+    });
   });
 
   describe('get_card_access_details RESOLVEDESCRIPTIONS (spec: get-access-history-resolve-descriptions)', () => {

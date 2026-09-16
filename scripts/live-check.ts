@@ -282,6 +282,51 @@ async function runGetAccessHistoryResolveDescriptionsCheck(client: NetboxClient)
 }
 
 /**
+ * get_card_access_details's RESOLVENAMES: true path
+ * (specs/archive/get-card-access-details-resolve-names.md). Unlike
+ * get_access_history's RESOLVENAMES check above -- which enriches every
+ * ACCESS record's own PERSONID -- GetCardAccessDetails' response carries
+ * exactly one PERSONID at the top level, so this drives one
+ * GetCardAccessDetails call for a real card, then the shared
+ * enrichWithPersonNames helper over a single-element array containing just
+ * that top-level PERSONID (R3/R4).
+ */
+async function runGetCardAccessDetailsResolveNamesCheck(
+  client: NetboxClient,
+  encodedNum: string | undefined,
+  cardFormat: string | undefined
+): Promise<CheckResult> {
+  const name = 'get_card_access_details (RESOLVENAMES: true)';
+  if (!encodedNum || !cardFormat) {
+    return { name, pass: true, summary: 'SKIPPED (no ENCODEDNUM/CARDFORMAT found in search_person_data results to test against)' };
+  }
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_CARD_ACCESS_DETAILS, { ENCODEDNUM: encodedNum, CARDFORMAT: cardFormat });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result; nothing to enrich)' };
+    }
+    const details = asRecord(result.data);
+    const personId = text(details.PERSONID);
+    const [enriched] = await enrichWithPersonNames(client, [{ PERSONID: personId }]);
+    if (
+      enriched.FIRSTNAME === undefined ||
+      enriched.LASTNAME === undefined ||
+      enriched.FULLNAME === undefined ||
+      enriched.NOTES === undefined
+    ) {
+      return { name, pass: false, summary: `enriched top-level result missing an expected key: ${JSON.stringify(enriched)}` };
+    }
+    return {
+      name,
+      pass: true,
+      summary: `OK PERSONID="${personId}" enriched to FULLNAME="${enriched.FULLNAME}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * get_card_access_details's RESOLVEDESCRIPTIONS: true (default) path,
  * checked the same way as get_access_history's above: one
  * GetCardAccessDetails call for a real card, then enrichWithReaderDescriptions
@@ -422,6 +467,7 @@ async function main(): Promise<number> {
     });
   }
   results.push(await runGetCardAccessDetailsResolveDescriptionsCheck(client, encodedNum, cardFormat));
+  results.push(await runGetCardAccessDetailsResolveNamesCheck(client, encodedNum, cardFormat));
 
   results.push(await runCheck(client, 'get_event_history', NBAPI_COMMANDS.GET_EVENT_HISTORY, {}));
   results.push(await runCheck(client, 'list_events', NBAPI_COMMANDS.LIST_EVENTS, {}));
