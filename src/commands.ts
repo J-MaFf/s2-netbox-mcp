@@ -6,13 +6,15 @@
  * elsewhere in the codebase references these constants (e.g.
  * `NBAPI_COMMANDS.GET_PERSON`) rather than inlining a new string literal, so a
  * grep of the source tree for command-name literals stays exhaustive here.
- * `test/commandAllowlist.test.ts` enforces both the exact 81-command set and
+ * `test/commandAllowlist.test.ts` enforces both the exact 105-command set and
  * the confinement rule.
  *
  * This is a closed set: no command may be added here that isn't one of the
- * 81 explicitly enumerated by the spec (session lifecycle, reads, portal/
- * output actions, adds, deletes, modifies, removes, person/credential
- * writes, event/activity writes, and partition/UDF-list commands). Whether a
+ * 105 explicitly enumerated commands (the original 81 — session lifecycle,
+ * reads, portal/output actions, adds, deletes, modifies, removes,
+ * person/credential writes, event/activity writes, and partition/UDF-list
+ * commands — plus the 24 NBAPI v2 commands wired in by
+ * specs/archive/nbapi-v2-full-conformance.md). Whether a
  * given tool built on top of one of these commands is actually *reachable*
  * at runtime is controlled separately by `NETBOX_ENABLE_WRITES` /
  * `NETBOX_ENABLE_DESTRUCTIVE` gating in `src/index.ts` and `src/tools/*.ts`.
@@ -118,6 +120,49 @@ export const NBAPI_COMMANDS = {
 
   // Partitions (1)
   SWITCH_PARTITION: 'SwitchPartition',
+
+  // --- NBAPI v2 full-conformance batch (24) -------------------------------
+  // Every command below is documented in the April-2025 NBAPI version 2 guide
+  // (#API2-UG-8) and in none of the April-2024 version 1 guide — see
+  // docs/reference/nbapi-command-diff.md for the full three-way diff.
+
+  // Portal state/location reads (3)
+  GET_PORTAL_STATES: 'GetPortalStates',
+  GET_PORTAL_STATUSES: 'GetPortalStatuses',
+  GET_LOCATIONS: 'GetLocations',
+
+  // Alarm/duty-log (2)
+  GET_ALARMS: 'GetAlarms',
+  ADD_DUTY_LOG: 'AddDutyLog',
+
+  // Photo ID read (1)
+  GET_PICTURE: 'GetPicture',
+
+  // Virtual (mobile) credentials (3) — RemoveVirtualCredentialRequest is destructive
+  GET_VIRTUAL_CREDENTIAL_REQUEST: 'GetVirtualCredentialRequest',
+  ADD_VIRTUAL_CREDENTIAL_REQUEST: 'AddVirtualCredentialRequest',
+  REMOVE_VIRTUAL_CREDENTIAL_REQUEST: 'RemoveVirtualCredentialRequest',
+
+  // Mercury panel hardware (5) — DeleteMercuryPanel is destructive
+  GET_MERCURY_PANELS: 'GetMercuryPanels',
+  GET_MERCURY_PANEL: 'GetMercuryPanel',
+  ADD_MERCURY_PANEL: 'AddMercuryPanel',
+  MODIFY_MERCURY_PANEL: 'ModifyMercuryPanel',
+  DELETE_MERCURY_PANEL: 'DeleteMercuryPanel',
+
+  // Network node hardware (5) — DeleteNetworkNode is destructive
+  GET_NETWORK_NODES: 'GetNetworkNodes',
+  GET_NETWORK_NODE: 'GetNetworkNode',
+  ADD_NETWORK_NODE: 'AddNetworkNode',
+  MODIFY_NETWORK_NODE: 'ModifyNetworkNode',
+  DELETE_NETWORK_NODE: 'DeleteNetworkNode',
+
+  // SIO hardware (5) — DeleteSio is destructive
+  GET_SIOS: 'GetSios',
+  GET_SIO: 'GetSio',
+  ADD_SIO: 'AddSio',
+  MODIFY_SIO: 'ModifySio',
+  DELETE_SIO: 'DeleteSio',
 } as const;
 
 export type NbapiCommandName = (typeof NBAPI_COMMANDS)[keyof typeof NBAPI_COMMANDS];

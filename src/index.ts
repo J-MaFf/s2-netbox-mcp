@@ -17,6 +17,8 @@ import { registerPortalGroupTools } from './tools/portalGroup.js';
 import { registerReaderGroupTools } from './tools/readerGroup.js';
 import { registerThreatLevelTools } from './tools/threatLevel.js';
 import { registerPartitionTools } from './tools/partition.js';
+import { registerHardwareTools } from './tools/hardware.js';
+import { registerAlarmTools } from './tools/alarm.js';
 import { registerMiscTools } from './tools/misc.js';
 import { registerUnlockWindowTools } from './tools/unlockWindow.js';
 import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
@@ -26,15 +28,15 @@ import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
  * transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
  *
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
- * only the read-only tool surface (16 v0.2.0 tools + the 18 R8 read tools +
- * the read-only composites `get_unlock_window`/`get_daily_unlock_window` =
- * 36 tools) is registered — byte-for-byte the same read-only posture as
- * before, plus the new read tools. With NETBOX_ENABLE_WRITES truthy, the 45
- * R9/R11-R20 write tools and the five composite write tools
- * (`set_portals_state`, `schedule_unlock_window`, `cancel_unlock_window`,
+ * only the read-only tool surface is registered — 50 tools, byte-for-byte the
+ * same read-only posture as before plus the 12 NBAPI v2 read tools added by
+ * specs/archive/nbapi-v2-full-conformance.md. With NETBOX_ENABLE_WRITES truthy the
+ * non-destructive write tools (including the five composites
+ * `set_portals_state`, `schedule_unlock_window`, `cancel_unlock_window`,
  * `schedule_daily_unlock_window`, `cancel_daily_unlock_window`) are also
- * registered, except the 11 destructive tools, which additionally require
- * NETBOX_ENABLE_DESTRUCTIVE.
+ * registered, for 97 tools, and with NETBOX_ENABLE_DESTRUCTIVE as well the
+ * 15 destructive tools bring the total to 112. `test/registration.test.ts`
+ * asserts all three counts against this exact registration sequence.
  */
 
 let config;
@@ -77,6 +79,8 @@ registerPortalGroupTools(server, client, gate);
 registerReaderGroupTools(server, client, gate);
 registerThreatLevelTools(server, client, gate);
 registerPartitionTools(server, client, gate);
+registerHardwareTools(server, client, gate);
+registerAlarmTools(server, client, gate);
 registerMiscTools(server, client);
 registerUnlockWindowTools(server, client, gate, {
   holidayGroups: config.unlockHolidayGroups,

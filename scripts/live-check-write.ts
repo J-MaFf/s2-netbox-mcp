@@ -33,6 +33,8 @@ import {
   estimateControllerClock,
   findStrikeOutput,
   formatDurationHMS,
+  formatLocationKeys,
+  formatUsernameRequirementFinding,
   isPortalStateNotChangedError,
   parseCardFormatName,
   parseLiveCheckWriteArgs,
@@ -54,7 +56,14 @@ import {
  *     group), and a threat level (plus a threat level group), asserting
  *     every read-back, then confirms InsertActivity, a UDF list item
  *     round-trip (or SKIPPED if no UDF list exists), and SwitchPartition
- *     back to the session's own partition. The portal group's unlock time
+ *     back to the session's own partition. Per specs/nbapi-v2-full-
+ *     conformance.md R11 it also renames the temp time spec via
+ *     ModifyTimeSpec's NAME (a), creates a second time spec group with its
+ *     TIMESPECKEYS membership seeded at creation (b), asserts AddPerson still
+ *     succeeds with no USERNAME/ROLE/AUTHTYPE and then probes whether setting
+ *     USERNAME alone makes ROLE/AUTHTYPE mandatory (c, the #79 question --
+ *     both outcomes pass and the ERRMSG is printed), and adds a duty log for
+ *     the temp person via AddDutyLog (e). The portal group's unlock time
  *     spec group is *Never*, and the holiday is in 2099, so nothing here can
  *     unlock a door. SetThreatLevel, AddPartition, permanently purging a
  *     person, and TriggerEvent are never used (#13).
@@ -89,6 +98,11 @@ import {
  *     — the only place this script ever calls TriggerEvent — routed through
  *     the same NetboxClient.call used everywhere else, so NETBOX_EVENT_API_PATH
  *     still applies; the path actually used is printed (never credentials).
+ *     A third, `set_threat_level_locations`, issues SetThreatLevel with the
+ *     v2-only LOCATIONKEYS parameter (keys discovered from GetLocations at
+ *     run time, SKIP-passing when the controller has none) — specs/nbapi-v2-
+ *     full-conformance.md R11 (d). It is deliberately a supervised action and
+ *     never a default step, because it changes the live threat level.
  *     Requires the same credentials/NETBOX_ENABLE_WRITES=true as (a),
  *     but never NETBOX_ENABLE_DESTRUCTIVE (no deletes happen). Refuses (exit
  *     2, no network) when combined with `--go`, when the action name is
@@ -121,7 +135,13 @@ function sleep(ms: number): Promise<void> {
 
 const NAMES = {
   timeSpec: `${LIVE_PREFIX} timespec`,
+  /** R11 (a): the name modify_time_spec renames the temp time spec to. Keeps
+   * the LIVE_PREFIX so cleanupLeftovers still finds it if the run aborts. */
+  timeSpecRenamed: `${LIVE_PREFIX} timespec renamed`,
   timeSpecGroup: `${LIVE_PREFIX} tsg`,
+  /** R11 (b): a second group, created with its membership seeded in the
+   * AddTimeSpecGroup call rather than filled in by a later Modify. */
+  timeSpecGroupSeeded: `${LIVE_PREFIX} tsg seeded`,
   holiday: `${LIVE_PREFIX} holiday`,
   readerGroup: `${LIVE_PREFIX} readergroup`,
   portalGroup: `${LIVE_PREFIX} portalgroup`,
@@ -497,6 +517,55 @@ async function timeSpecAndGroupRoundTrip(client: NetboxClient, holidayGroup: num
       return `ENDTIME 10:00, HOLIDAYGROUPS ${holidayGroup}`;
     })) && allPassed;
 
+  // R11 (a): ModifyTimeSpec's NAME field — a rename, not just a field edit.
+  // The unreleased batch added NAME to modify_time_spec's schema but never
+  // exercised it live; GetTimeSpecs must reflect the new name.
+  allPassed =
+    (await step('modify_time_spec (NAME rename) -> get_time_specs shows the new name', async () => {
+      await client.call(NBAPI_COMMANDS.MODIFY_TIME_SPEC, { TIMESPECKEY: specKey, NAME: NAMES.timeSpecRenamed });
+      const specs = await fetchTimeSpecs(client);
+      const renamed = specs.find((spec) => spec.TIMESPECKEY === specKey);
+      assertTrue(`GetTimeSpecs still lists ${specKey}`, renamed !== undefined);
+      assertEqual('NAME', renamed!.NAME, NAMES.timeSpecRenamed);
+      assertTrue('the old name is gone from GetTimeSpecs', !specs.some((spec) => spec.NAME === NAMES.timeSpec));
+      return `TIMESPECKEY ${specKey} renamed to "${NAMES.timeSpecRenamed}"`;
+    })) && allPassed;
+
+  // R11 (b): AddTimeSpecGroup's TIMESPECKEYS field — membership seeded at
+  // creation time. The unreleased batch added TIMESPECKEYS to
+  // add_time_spec_group's schema; until now only ModifyTimeSpecGroup's
+  // TIMESPECKEYS had ever been exercised live (above).
+  allPassed =
+    (await step('add_time_spec_group (TIMESPECKEYS seeded) -> get_time_spec_groups shows the member', async () => {
+      let seededKey = '';
+      const result = await client.call(
+        NBAPI_COMMANDS.ADD_TIME_SPEC_GROUP,
+        mergeParams({
+          NAME: NAMES.timeSpecGroupSeeded,
+          DESCRIPTION: 'created by npm run test:live:write',
+          ...wrapList('TIMESPECKEYS', 'TIMESPECKEY', [specKey]),
+        })
+      );
+      seededKey = text(asRecord(result.data).TIMESPECGROUPKEY);
+      if (!seededKey) {
+        seededKey = (await fetchTimeSpecGroups(client)).find((group) => group.NAME === NAMES.timeSpecGroupSeeded)?.TIMESPECGROUPKEY ?? '';
+        info('AddTimeSpecGroup returned no key; resolved it by NAME from GetTimeSpecGroups');
+      }
+      assertTrue('a TIMESPECGROUPKEY was resolved', seededKey !== '');
+      try {
+        const group = (await fetchTimeSpecGroups(client)).find((candidate) => candidate.TIMESPECGROUPKEY === seededKey);
+        assertTrue(`GetTimeSpecGroups lists ${seededKey}`, group !== undefined);
+        assertSameSet('TIMESPECKEYS seeded at creation', group!.TIMESPECKEYS, [specKey]);
+        return `TIMESPECGROUPKEY ${seededKey} created with members [${specKey}]`;
+      } finally {
+        // Clean up after itself regardless of the assertion outcome; the
+        // time spec itself is deleted by the step below.
+        await client
+          .call(NBAPI_COMMANDS.DELETE_TIME_SPEC_GROUP, { TIMESPECGROUPKEY: seededKey })
+          .catch((err: unknown) => info(`cleanup could not remove time spec group ${seededKey}: ${errorText(err)}`));
+      }
+    })) && allPassed;
+
   allPassed =
     (await step('delete_time_spec -> get_time_spec', async () => {
       await client.call(NBAPI_COMMANDS.DELETE_TIME_SPEC, { TIMESPECKEY: specKey });
@@ -673,8 +742,12 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
   const preExisting = await removeExistingLivecheckPersons(client);
   if (preExisting.length > 0) info(`removed pre-existing "${NAMES.person}" person(s) from a previous run: ${preExisting.join(', ')}`);
 
+  // R11 (c), first half: the regression guard for #79. AddPerson's own FAIL
+  // list says ROLE and AUTHTYPE are mandatory ("ROLE is a mandatory field for
+  // AddPerson."), but this call sends neither — nor USERNAME — and must keep
+  // succeeding, which is why src/tools/person.ts models all three as optional.
   allPassed =
-    (await step('add_person -> get_person', async () => {
+    (await step('add_person WITHOUT USERNAME/ROLE/AUTHTYPE -> get_person (regression guard, #79)', async () => {
       const result = await client.call(NBAPI_COMMANDS.ADD_PERSON, {
         LASTNAME: NAMES.person,
         FIRSTNAME: 'Test',
@@ -685,7 +758,38 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
       const person = await readPerson(client, personId);
       assertTrue(`GetPerson ${personId} found it`, person !== undefined);
       assertEqual('LASTNAME', person!.LASTNAME, NAMES.person);
-      return `PERSONID ${personId}`;
+      return `PERSONID ${personId} (no USERNAME, no ROLE, no AUTHTYPE — still SUCCESS)`;
+    })) && allPassed;
+
+  // R11 (c), second half: the open question from #79 — does setting USERNAME
+  // make ROLE/AUTHTYPE mandatory? Both answers are valid findings, so both
+  // PASS this step; the controller's own ERRMSG is printed either way and
+  // formatted by formatUsernameRequirementFinding for STATUS.md/CHANGELOG.md.
+  allPassed =
+    (await step('add_person WITH USERNAME but no ROLE/AUTHTYPE (#79 finding — both outcomes pass)', async () => {
+      const username = `mcplivecheck${Date.now()}`;
+      let usernamePersonId = '';
+      let finding: string;
+      try {
+        const result = await client.call(NBAPI_COMMANDS.ADD_PERSON, {
+          LASTNAME: NAMES.person,
+          FIRSTNAME: 'Username',
+          USERNAME: username,
+          NOTES: 'created by npm run test:live:write (#79 probe)',
+        });
+        usernamePersonId = text(asRecord(result.data).PERSONID);
+        finding = formatUsernameRequirementFinding({ succeeded: true });
+      } catch (err) {
+        const errmsg = err instanceof NbapiFailError ? err.errmsg : errorText(err);
+        finding = formatUsernameRequirementFinding({ succeeded: false, errmsg });
+      }
+      info(`#79 FINDING: ${finding}`);
+      if (usernamePersonId) {
+        await client
+          .call(NBAPI_COMMANDS.REMOVE_PERSON, { PERSONID: usernamePersonId })
+          .catch((err: unknown) => info(`cleanup could not remove #79 probe person ${usernamePersonId}: ${errorText(err)}`));
+      }
+      return finding;
     })) && allPassed;
 
   allPassed =
@@ -744,6 +848,26 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
       const stillThere = person?.CARDS.some((c) => c.CREDENTIALID === credentialId) ?? false;
       assertTrue('the credential is gone from GetPerson', !stillThere);
       return `CREDENTIALID ${credentialId} removed (identified via ${form})`;
+    })) && allPassed;
+
+  // R11 (e): AddDutyLog, one of the 24 NBAPI v2 commands wired in by
+  // specs/archive/nbapi-v2-full-conformance.md. Attributed to the temp person, so the
+  // entry is disposable. The guide documents only three FAIL messages
+  // (Missing PERSONID / Missing LOGTEXT / Invalid PERSONID); any of those is
+  // recorded as a pass-with-note, anything else fails the step.
+  allPassed =
+    (await step('add_duty_log (temp person) -> SUCCESS or a documented FAIL', async () => {
+      const logText = `${LIVE_PREFIX} duty log ${new Date().toISOString()}`;
+      try {
+        await client.call(NBAPI_COMMANDS.ADD_DUTY_LOG, mergeParams({ PERSONID: personId, LOGTEXT: logText }));
+        return `LOGTEXT "${logText}" for PERSONID ${personId}`;
+      } catch (err) {
+        const errmsg = err instanceof NbapiFailError ? err.errmsg : errorText(err);
+        if (/Missing PERSONID|Missing LOGTEXT|Invalid PERSONID|NOT FOUND/i.test(errmsg)) {
+          return `documented FAIL (recorded, not a defect): "${errmsg}"`;
+        }
+        throw err;
+      }
     })) && allPassed;
 
   allPassed =
@@ -1185,6 +1309,23 @@ async function runSingleAction(
     info(`Resolved strike output "${match.NAME}" (OUTPUTKEY ${outputKey}) for portal "${portal.NAME}"`);
   }
 
+  // R11 (d): set_threat_level_locations scopes SetThreatLevel to specific
+  // locations via the v2-only LOCATIONKEYS parameter. The keys come from
+  // GetLocations at run time; a controller with no locations SKIP-passes
+  // rather than sending an empty LOCATIONKEYS.
+  let locationKeys: string | undefined;
+  if (actionSpec.needsLocationKeys) {
+    const locations = await fetchAllPages(client, NBAPI_COMMANDS.GET_LOCATIONS, 'LOCATIONS', 'LOCATION', {
+      emptyOnNotFoundFail: true,
+    });
+    locationKeys = formatLocationKeys(locations.map((location) => text(location.LOCATIONKEY)));
+    if (locationKeys === '') {
+      log(`SKIPPED: --action ${actionSpec.name} needs at least one location, and GetLocations returned none on this controller.`);
+      return 0;
+    }
+    info(`Resolved LOCATIONKEYS "${locationKeys}" from GetLocations (${locations.length} location(s))`);
+  }
+
   const ctx = { portalName: portal.NAME, value };
 
   if (actionSpec.kind === 'setPortalsState') {
@@ -1202,7 +1343,11 @@ async function runSingleAction(
     return 1;
   }
 
-  const params = buildActionParams(actionSpec, { PORTALKEY: portal.PORTALKEY, OUTPUTKEY: outputKey }, value);
+  const params = buildActionParams(
+    actionSpec,
+    { PORTALKEY: portal.PORTALKEY, OUTPUTKEY: outputKey, LOCATIONKEYS: locationKeys },
+    value
+  );
   info(`Using NBAPI path: ${client.pathFor(actionSpec.command!)}`);
   log(`Sending ${actionSpec.command} ${JSON.stringify(params)}`);
   try {

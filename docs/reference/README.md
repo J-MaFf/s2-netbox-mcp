@@ -25,15 +25,27 @@ Each was reviewed page-by-page before being committed to confirm that.
 All four downloaded from a NetBox controller's own help portal (Getting
 Started > Guides and Technical Notes > Programming Guides).
 
+Alongside them, **`nbapi-command-diff.md`** is this project's own analysis of
+the two API guides against the server's implemented command set — see below.
+
 This server's specs and tools were originally built against an earlier NBAPI
 v1 edition (LenelS2 doc #API-UG-14, February 2020, current with S2 NetBox
 Release 5.0), per [README.md](../../README.md) — a different, older revision
 of the same v1 command set than `NetBox_API_V1.pdf` above. NBAPI v1 was
 deprecated in NetBox 5.6 (November 2022) and retired in NetBox 6.0 in favor
-of v2 — see the End-of-Support Notice on page 1 of `NetBox_API_V2.pdf`. A
-diff pass across all three documents' Command Reference sections would
-confirm whether any tool in this server needs updating for newer/changed
-commands or parameters; that has not been done yet.
+of v2 — see the End-of-Support Notice on page 1 of `NetBox_API_V2.pdf`.
+
+That diff pass is **done**, on 2026-09-17:
+[**`nbapi-command-diff.md`**](nbapi-command-diff.md) in this directory is a
+command-by-command and parameter-by-parameter comparison of the v1-2024
+guide, the v2-2025 guide and this server's tool surface, with a row for every
+command either guide documents. It also records three findings that close
+long-standing questions: neither guide has any Add/Modify/Delete command for
+elevators or floors, this server already speaks v2 over the same
+`/nbws/goforms/nbapi` endpoint (so the End-of-Support Notice is a non-event
+here), and `Data_Operations.pdf` describes a UI/NAS feature with no API to
+wrap. Every command it lists as unimplemented is unimplemented on purpose,
+with the reason in its row.
 
 ©2025 Honeywell International Inc. All Rights Reserved. Included here as
 LenelS2's standard customer-facing product documentation, not modified from

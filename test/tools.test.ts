@@ -32,12 +32,20 @@ const WRITES_ON = { writesEnabled: true, destructiveEnabled: true };
 const WRITES_OFF = { writesEnabled: false, destructiveEnabled: false };
 
 describe('registerPersonTools', () => {
-  it('registers exactly get_person, search_person_data, get_card_access_details, get_card_formats when writes are off', () => {
+  it('registers exactly the six read tools when writes are off', () => {
     const server = new FakeServer();
     const { client } = fakeClient();
     registerPersonTools(server as unknown as McpServer, client, WRITES_OFF);
     expect(server.registrations.map((r) => r.name).sort()).toEqual(
-      ['get_card_access_details', 'get_card_formats', 'get_person', 'search_person_data'].sort()
+      [
+        'get_card_access_details',
+        'get_card_formats',
+        'get_person',
+        'search_person_data',
+        // NBAPI v2 full-conformance spec R2.
+        'get_picture',
+        'get_virtual_credential_request',
+      ].sort()
     );
   });
 
@@ -57,6 +65,11 @@ describe('registerPersonTools', () => {
         'add_credential',
         'modify_credential',
         'remove_credential',
+        // NBAPI v2 full-conformance spec R2-R4.
+        'get_picture',
+        'get_virtual_credential_request',
+        'add_virtual_credential_request',
+        'remove_virtual_credential_request',
       ].sort()
     );
   });
@@ -1212,7 +1225,17 @@ describe('registerPortalTools', () => {
     const { client } = fakeClient();
     registerPortalTools(server as unknown as McpServer, client, WRITES_OFF);
     expect(server.registrations.map((r) => r.name).sort()).toEqual(
-      ['find_portals', 'get_portals', 'get_reader', 'get_readers', 'get_outputs'].sort()
+      [
+        'find_portals',
+        'get_portals',
+        'get_reader',
+        'get_readers',
+        'get_outputs',
+        // NBAPI v2 full-conformance spec R2.
+        'get_portal_states',
+        'get_portal_statuses',
+        'get_locations',
+      ].sort()
     );
     expect(server.registrations.map((r) => r.name)).not.toContain('get_portal');
   });

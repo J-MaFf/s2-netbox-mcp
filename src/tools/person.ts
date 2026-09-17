@@ -321,7 +321,67 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
     async () => runNbapiTool(client, NBAPI_COMMANDS.GET_CARD_FORMATS, {})
   );
 
+  // --- NBAPI v2-only person reads ------------------------------------------
+  // GetPicture and the three VirtualCredentialRequest commands are documented
+  // only in the April-2025 NBAPI v2 guide (#API2-UG-8). Photo *upload* stays
+  // out of scope: it is a multipart POST to /nbws/goforms/upload, not an NBAPI
+  // XML command at all.
+
+  server.tool(
+    'get_picture',
+    "Returns a person's photo ID image (wraps NBAPI GetPicture). The response's PICTURE field is a Base64-encoded " +
+      'JPEG and may be very large — a full-size badge photo runs to hundreds of kilobytes of Base64 text, so prefer ' +
+      'PICTUREURL when you only need to identify the file. The response also carries PERSONID, PICTUREURL, LASTNAME, ' +
+      'FIRSTNAME and LASTMOD. The payload is passed through unmodified: this tool neither decodes, resizes nor ' +
+      'truncates the Base64 string. A person with no photo answers FAIL with "No picture URL for this person ID" or ' +
+      '"Picture file does not exist"; an oversized image answers "Person picture image file size exceeds maximum to ' +
+      'be returned/exported".',
+    {
+      PERSONID: z.string().describe('Required. The PERSONID of the person whose picture should be retrieved.'),
+    },
+    async ({ PERSONID }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PICTURE, { PERSONID })
+  );
+
+  server.tool(
+    'get_virtual_credential_request',
+    'Retrieves a mobile (virtual) credential and its assignment state for a person and card format ' +
+      '(wraps NBAPI GetVirtualCredentialRequest). Returns CARDFORMAT, PERSONID and STATUS. A card format the ' +
+      'controller does not know answers FAIL with "CARDFORMAT NOT FOUND"; use get_card_formats for valid names.',
+    {
+      PERSONID: z.string().describe('Required. The PERSONID the credential is assigned to.'),
+      CARDFORMAT: z.string().describe('Required. Name of the card format used to decode the credential (see get_card_formats).'),
+    },
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args))
+  );
+
   if (gate.writesEnabled) {
+    server.tool(
+      'add_virtual_credential_request',
+      'WRITE: Adds a mobile (virtual) credential to a person record (wraps NBAPI AddVirtualCredentialRequest). ' +
+        'Both PERSONID and CARDFORMAT are mandatory. This issues a real mobile credential to the person — it is ' +
+        'the mobile-credential counterpart of add_credential, not a dry run.',
+      {
+        PERSONID: z.string().describe('Required. The PERSONID to add the mobile credential to.'),
+        CARDFORMAT: z.string().describe('Required. Name of the card format used to decode the credential (see get_card_formats).'),
+      },
+      async (args) =>
+        runNbapiTool(client, NBAPI_COMMANDS.ADD_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args), formatWriteSuccess)
+    );
+
+    if (gate.destructiveEnabled) {
+      server.tool(
+        'remove_virtual_credential_request',
+        'DESTRUCTIVE: Removes a mobile (virtual) credential assignment from a person ' +
+          '(wraps NBAPI RemoveVirtualCredentialRequest). Requires NETBOX_ENABLE_DESTRUCTIVE.',
+        {
+          PERSONID: z.string().describe('Required. The PERSONID whose mobile credential should be removed.'),
+          CARDFORMAT: z.string().describe('Required. Name of the card format of the credential to remove (see get_card_formats).'),
+        },
+        async (args) =>
+          runNbapiTool(client, NBAPI_COMMANDS.REMOVE_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args), formatWriteSuccess)
+      );
+    }
+
     server.tool(
       'add_person',
       `WRITE: Creates a new person record (wraps NBAPI AddPerson). ${AD_SYNC_CAUTION} ${ACCESSLEVELS_REPLACES_WARNING}`,
