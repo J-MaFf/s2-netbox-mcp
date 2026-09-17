@@ -40,12 +40,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `scripts/live-check-write.ts`'s `AddPerson` round-trip already succeeds against a real NetBox
   6.2.0 controller without them, and `ModifyPerson`'s FAIL list has no matching error. All seven
   are modeled as optional (closing the "can't set them at all" gap) rather than required.
-  **#79 resolution: PENDING MAINTAINER RUN.** `scripts/live-check-write.ts` now settles this
-  directly — one `AddPerson` with no `USERNAME`/`ROLE`/`AUTHTYPE` (the regression guard) and a
-  second with `USERNAME` but still no `ROLE`/`AUTHTYPE` (the probe) — but that script writes to a
-  live controller and is run by the maintainer, never by an automated loop. This line is replaced
-  with the controller's own answer, verbatim, once that run is pasted in; it is a placeholder and
-  not a result ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79),
+  **#79 resolved, live-confirmed 2026-09-17.** `scripts/live-check-write.ts` settled this
+  directly against a real NetBox 6.2.0 controller: `AddPerson` with no `USERNAME`/`ROLE`/`AUTHTYPE`
+  still succeeds (the regression guard holds), but `AddPerson` with `USERNAME` set and `ROLE`/
+  `AUTHTYPE` omitted **fails** with `ERRMSG "Missing ROLE"`. So `ROLE`/`AUTHTYPE` become mandatory
+  the moment `USERNAME` is set — callers must supply all three together or none of them; the doc's
+  "required" marking on `USERNAME`/`ROLE`/`AUTHTYPE` was correct in this conditional sense, not
+  unconditionally required as first read ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79),
   [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 - `modify_time_spec` gains an optional `NAME` field, letting a time spec be renamed. Doc p.248
   documents `NAME` as a `ModifyTimeSpec` calling parameter, with dedicated FAIL messages
@@ -203,8 +204,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   without live coverage — `modify_time_spec`'s `NAME` rename, `add_time_spec_group`'s seeded
   `TIMESPECKEYS`, the `add_person` `USERNAME`/`ROLE`/`AUTHTYPE` question from #79, and
   `add_duty_log` — plus a supervised `--action set_threat_level_locations` that exercises
-  `set_threat_level`'s new `LOCATIONKEYS` against keys discovered from `GetLocations`
-  ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+  `set_threat_level`'s new `LOCATIONKEYS` against keys discovered from `GetLocations`. All four
+  default steps (plus the pre-existing suite) **passed** against the reference controller (NetBox
+  6.2.0) on 2026-09-17: **41/42 steps passed**; the sole failure was a pre-existing, unrelated
+  controller-clock-skew guard (not a step this PR added), which also skipped the script's separate
+  real-portal-unlock phase (c) as a result — the `set_threat_level_locations` supervised action was
+  not run in this session ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 
 ### Changed
 - `README.md`'s "Out of scope" list no longer says "Photo ID handling (`GetPicture` and photo

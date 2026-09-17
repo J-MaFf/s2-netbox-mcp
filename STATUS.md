@@ -68,18 +68,26 @@ had shipped without live coverage (`get_threat_levels`, the `PARTITIONKEY` filte
 validates `CARDSTATUS` against the controller's configured card statuses, so the check reuses a
 status read off a real card rather than an invented string.
 
-**Live write verification — PENDING MAINTAINER RUN.** `scripts/live-check-write.ts` gained steps
-for `modify_time_spec`'s `NAME` rename, `add_time_spec_group`'s seeded `TIMESPECKEYS`, the
-`add_person` `USERNAME`/`ROLE`/`AUTHTYPE` probe for
-[#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79), and `add_duty_log`, plus a supervised
-`--action set_threat_level_locations`. That script writes to a live controller, so it is run by the
-maintainer, never by an automated loop; its N/N summary and the #79 finding text replace this
-paragraph once pasted in. **Nothing below is a substitute for that run.**
+**Live write verification — run 2026-09-17 against the reference controller (NetBox 6.2.0),
+maintainer-supervised (`npx tsx scripts/live-check-write.ts`):**
 
-> **#79 finding: PENDING MAINTAINER RUN.** Does setting `USERNAME` make `ROLE`/`AUTHTYPE`
-> mandatory on `AddPerson`? The step is written and both outcomes pass it; the controller's own
-> answer goes here verbatim (and in `CHANGELOG.md`) once `npx tsx scripts/live-check-write.ts` has
-> been run. This is a placeholder, not a result.
+```
+Summary: 42 step(s), 41 passed, 1 failed.
+```
+
+All four new steps passed: `modify_time_spec`'s `NAME` rename, `add_time_spec_group`'s seeded
+`TIMESPECKEYS`, both `add_person` steps for the #79 probe, and `add_duty_log`. The single failure
+is a pre-existing, unrelated controller-clock-skew guard (not new in this PR) — it also skipped
+the script's separate real-portal-unlock phase (c) as a result. The `set_threat_level_locations`
+supervised `--action` was not exercised in this run.
+
+> **#79 finding, resolved.** Does setting `USERNAME` make `ROLE`/`AUTHTYPE` mandatory on
+> `AddPerson`? **Yes.** `AddPerson` with no `USERNAME`/`ROLE`/`AUTHTYPE` still succeeds (the
+> regression guard holds — the earlier optional-fields change from
+> [#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79) didn't break the no-auth-fields path).
+> `AddPerson` with `USERNAME` set but `ROLE`/`AUTHTYPE` omitted **fails** with
+> `ERRMSG "Missing ROLE"`. Conclusion: callers must supply `USERNAME`, `ROLE`, and `AUTHTYPE`
+> together, or omit all three — there is no valid partial combination.
 
 **Command diff.** [`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md) is
 a 118-row, command-by-command and parameter-by-parameter comparison of the v1-2024 guide, the
@@ -354,7 +362,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#53](https://github.com/J-MaFf/s2-netbox-mcp/issues/53) | `RESOLVEDESCRIPTIONS` reader-description enrichment on `get_access_history`/`get_reader_access_history`/`get_card_access_details` | [#54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54) |
 | [#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55) | `get_card_access_details` `RESOLVENAMES` person-name enrichment (single top-level lookup) | [#56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56) |
 | [#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57) | `get_portals` `RESOLVEDESCRIPTIONS` reader-description enrichment (nested reader objects) | [#58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58) |
-| [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100) | NBAPI v2 full conformance: the 24 remaining v2 commands (allowlist 81 -> 105, tools 38/77/88 -> 50/97/112), live verification of the 12 new reads plus four unreleased read gaps (64/64 on 2026-09-17), the three-way command diff report, and the README/STATUS/CHANGELOG refresh | PR pending on `feat/nbapi-v2-full-conformance` |
+| [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100) | NBAPI v2 full conformance: the 24 remaining v2 commands (allowlist 81 -> 105, tools 38/77/88 -> 50/97/112), live verification of the 12 new reads plus four unreleased read gaps (64/64 on 2026-09-17), maintainer-run write verification (41/42 on 2026-09-17; the #79 `ROLE`/`AUTHTYPE` question resolved), the three-way command diff report, and the README/STATUS/CHANGELOG refresh | [#101](https://github.com/J-MaFf/s2-netbox-mcp/pull/101) |
 
 ### Open Issues
 
@@ -365,27 +373,25 @@ enforced client-side via her `mcp_config.json`, not by the NetBox account itself
 
 ## Natural Next Steps
 
-1. **Run `npx tsx scripts/live-check-write.ts`** and paste the output. It is the one gap in this
-   branch: the four new write steps and the #79 finding are written and unit-tested but have never
-   been executed, and the loop that wrote them is not allowed to run a write script. Until then the
-   `PENDING MAINTAINER RUN` markers above and in `CHANGELOG.md` stand.
-2. **Cut the release.** `[Unreleased]` in `CHANGELOG.md` has grown well past a patch: 24 new tools,
+1. **Cut the release.** `[Unreleased]` in `CHANGELOG.md` has grown well past a patch: 24 new tools,
    full v2 command conformance, plus the earlier enrichment and field-addition work. Nothing here
    removes or renames an existing tool, so a minor bump (`v0.4.0`) fits. Deliberately deferred — no
    `package.json`/`server.json` bump or tag has been made.
-3. **Smithery listing**, if wanted: it requires connecting the maintainer's own GitHub account
+2. **Smithery listing**, if wanted: it requires connecting the maintainer's own GitHub account
    through Smithery's dashboard (OAuth), which cannot be automated from here.
-4. **MAC authentication is still blocked** on an undocumented checksum. Neither vendor guide
+3. **MAC authentication is still blocked** on an undocumented checksum. Neither vendor guide
    explains how the MAC digest is computed, so session login remains the only supported auth path
    (README Out-of-scope). Nothing in the v2 guide changed this.
-5. **Optional: use `get_portal_statuses` for unlock-window read-back.** `get_unlock_window` and
+4. **Optional: use `get_portal_statuses` for unlock-window read-back.** `get_unlock_window` and
    `get_daily_unlock_window` currently infer whether a window is active from the managed portal
    group, time specs and holidays — configuration, not reality. `get_portal_statuses` now gives the
    doors' actual state, so those tools could report "the controller says these portals are in
    Extended Unlock right now" instead of "they should be". Deliberately not done in
    [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100); noted here as the obvious follow-on.
-6. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
-7. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
+5. **Keep NTP running on the controller** — the live-check-write run on 2026-09-17 caught it
+   00:12:43 off, failing the clock-skew guard and skipping the real-portal-unlock phase. Same
+   recurring issue as previously noted (it was ~4h35m off once before).
+6. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
 
 Two items that used to live here are now **answered and closed**, per
