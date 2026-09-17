@@ -8,7 +8,9 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC_DIR = join(ROOT, 'src');
 const SCRIPTS_DIR = join(ROOT, 'scripts');
 
-// R4: the exact 81-command closed set. Confined to src/commands.ts only.
+// R4: the exact 105-command closed set (the original 81 plus the 24 NBAPI v2
+// commands added by specs/nbapi-v2-full-conformance.md R1). Confined to
+// src/commands.ts only.
 const EXPECTED_COMMANDS = [
   // Session lifecycle + v0.2.0 reads (17)
   'Login',
@@ -101,13 +103,48 @@ const EXPECTED_COMMANDS = [
   'InsertActivity',
   // Partition switch (1)
   'SwitchPartition',
+  // --- NBAPI v2 full-conformance batch (24) ---
+  // Portal state/location reads (3)
+  'GetPortalStates',
+  'GetPortalStatuses',
+  'GetLocations',
+  // Alarm/duty-log (2)
+  'GetAlarms',
+  'AddDutyLog',
+  // Photo ID read (1)
+  'GetPicture',
+  // Virtual (mobile) credentials (3)
+  'GetVirtualCredentialRequest',
+  'AddVirtualCredentialRequest',
+  'RemoveVirtualCredentialRequest',
+  // Mercury panel hardware (5)
+  'GetMercuryPanels',
+  'GetMercuryPanel',
+  'AddMercuryPanel',
+  'ModifyMercuryPanel',
+  'DeleteMercuryPanel',
+  // Network node hardware (5)
+  'GetNetworkNodes',
+  'GetNetworkNode',
+  'AddNetworkNode',
+  'ModifyNetworkNode',
+  'DeleteNetworkNode',
+  // SIO hardware (5)
+  'GetSios',
+  'GetSio',
+  'AddSio',
+  'ModifySio',
+  'DeleteSio',
 ];
 
-// R4: the rewritten forbidden list — GetPicture, StreamEvents, GetPortal, and
-// the seven deprecated commands. None of these may ever appear as a quoted
-// literal anywhere in src/ or scripts/.
+// R4: the rewritten forbidden list — StreamEvents, GetPortal, and the seven
+// deprecated commands. None of these may ever appear as a quoted literal
+// anywhere in src/ or scripts/. GetPicture is deliberately NOT on this list
+// any more: it moved from "out of scope" to "implemented" in
+// specs/nbapi-v2-full-conformance.md (only photo *upload*, the multipart POST
+// to /nbws/goforms/upload, remains out of scope — and it is not an NBAPI
+// command at all, so it has no literal to forbid).
 const FORBIDDEN_COMMAND_LITERALS = [
-  'GetPicture',
   'StreamEvents',
   'GetPortal',
   'EditPerson',
@@ -133,12 +170,12 @@ function listTsFiles(dir: string): string[] {
   return out;
 }
 
-describe('R4: 81-command NBAPI allowlist', () => {
-  it('NBAPI_COMMANDS contains exactly the 81 documented commands, no more, no less', () => {
+describe('R4: 105-command NBAPI allowlist', () => {
+  it('NBAPI_COMMANDS contains exactly the 105 documented commands, no more, no less', () => {
     const values = Object.values(NBAPI_COMMANDS).sort();
     expect(values).toEqual([...EXPECTED_COMMANDS].sort());
-    expect(values).toHaveLength(81);
-    expect(new Set(values).size).toBe(81); // no duplicates
+    expect(values).toHaveLength(105);
+    expect(new Set(values).size).toBe(105); // no duplicates
   });
 
   it('no forbidden (out-of-scope/deprecated) command literal appears anywhere in src/ or scripts/', () => {
@@ -155,7 +192,7 @@ describe('R4: 81-command NBAPI allowlist', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('every one of the 80 allowed command name literals is confined to src/commands.ts', () => {
+  it('every one of the 105 allowed command name literals is confined to src/commands.ts', () => {
     const files = [...listTsFiles(SRC_DIR), ...listTsFiles(SCRIPTS_DIR)].filter((f) => f !== join(SRC_DIR, 'commands.ts'));
     const offenders: string[] = [];
     for (const file of files) {

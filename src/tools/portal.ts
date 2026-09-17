@@ -140,6 +140,60 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
     async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_OUTPUTS, mergeParams({ STARTFROMKEY }))
   );
 
+  // --- NBAPI v2-only portal state / location reads -------------------------
+  // GetPortalStates, GetPortalStatuses and GetLocations are documented only in
+  // the April-2025 NBAPI v2 guide (#API2-UG-8). get_portal_statuses is the
+  // first NBAPI read of *live* portal state this server has had: everything
+  // else here reads configuration.
+
+  server.tool(
+    'get_portal_states',
+    'Lists the portal states the NetBox system defines (wraps NBAPI GetPortalStates). Returns STATEKEY/STATENAME ' +
+      'pairs — the vocabulary get_portal_statuses reports against, and the values its STATEKEY filter accepts.',
+    {
+      PORTALSTATES: z
+        .enum(['TRUE', 'FALSE'])
+        .optional()
+        .describe(
+          'Optional. "TRUE" returns portal states across all partitions; omitted, the controller returns states for the default or currently switched partition.'
+        ),
+    },
+    async ({ PORTALSTATES }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_STATES, mergeParams({ PORTALSTATES }))
+  );
+
+  server.tool(
+    'get_portal_statuses',
+    'Returns the live status of portals (doors) — the current state of each door, not its configuration ' +
+      '(wraps NBAPI GetPortalStatuses). Each PORTALSTATUS block carries PORTALKEY, PORTALNAME, STATEKEY, STATENAME, ' +
+      'THREATLEVELNAME, LOCATIONKEY, LOCATIONNAME, TYPEKEY and PARTITIONKEY. Filter by portal, state, partition or ' +
+      'location; use get_portal_states for the STATEKEY vocabulary and get_locations for LOCATIONKEY values.',
+    {
+      ALLPARTITIONS: z.enum(['TRUE', 'FALSE']).optional().describe('Optional. "TRUE" to report portal status across all partitions.'),
+      PORTALKEY: z.string().optional().describe('Optional. Report status for this portal only.'),
+      STATEKEY: z.string().optional().describe('Optional. Report only portals currently in this state (see get_portal_states).'),
+      PARTITIONKEY: z.string().optional().describe('Optional. Report status for portals in this partition only.'),
+      LOCATIONKEY: z.string().optional().describe('Optional. Report status for portals at this location only (see get_locations).'),
+    },
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_STATUSES, mergeParams(args))
+  );
+
+  server.tool(
+    'get_locations',
+    'Lists the locations configured on the NetBox system (wraps NBAPI GetLocations). Each record carries ' +
+      'LOCATIONKEY, PARTITIONKEY and a nested PARENTLOCATION { PARENTKEY, NAME } block, so the result describes a ' +
+      'location tree. LOCATIONKEY values feed get_portal_statuses and set_threat_level.',
+    {
+      ALLPARTITIONS: z.enum(['TRUE', 'FALSE']).optional().describe('Optional. "TRUE" to list locations across all partitions.'),
+      STARTFROMKEY: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Pagination cursor to continue listing from a previous call. (Not in the guide's Calling Parameters list, but its documented FAIL messages include \"Invalid STARTFROMKEY\".)"
+        ),
+    },
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_LOCATIONS, mergeParams(args))
+  );
+
   server.tool(
     'find_portals',
     'Finds portals (doors) by location or name. Portal names are site codes (e.g. 01OF05A), so this also ' +

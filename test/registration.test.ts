@@ -10,6 +10,8 @@ import { registerPortalGroupTools } from '../src/tools/portalGroup.js';
 import { registerReaderGroupTools } from '../src/tools/readerGroup.js';
 import { registerThreatLevelTools } from '../src/tools/threatLevel.js';
 import { registerPartitionTools } from '../src/tools/partition.js';
+import { registerHardwareTools } from '../src/tools/hardware.js';
+import { registerAlarmTools } from '../src/tools/alarm.js';
 import { registerMiscTools } from '../src/tools/misc.js';
 import { registerUnlockWindowTools } from '../src/tools/unlockWindow.js';
 import { registerDailyUnlockWindowTools } from '../src/tools/dailyUnlockWindow.js';
@@ -42,6 +44,8 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
   registerReaderGroupTools(server as unknown as McpServer, client, gate);
   registerThreatLevelTools(server as unknown as McpServer, client, gate);
   registerPartitionTools(server as unknown as McpServer, client, gate);
+  registerHardwareTools(server as unknown as McpServer, client, gate);
+  registerAlarmTools(server as unknown as McpServer, client, gate);
   registerMiscTools(server as unknown as McpServer, client);
   registerUnlockWindowTools(server as unknown as McpServer, client, gate, { holidayGroups: [8, 7, 6], namePrefix: 'MCP Unlock Window' });
   registerDailyUnlockWindowTools(server as unknown as McpServer, client, gate, { holidayGroup: 5, namePrefix: 'MCP Daily Unlock Window' });
@@ -88,6 +92,19 @@ const READ_TOOLS = [
   'get_unlock_window',
   // Daily-unlock-window spec R9: likewise always registered.
   'get_daily_unlock_window',
+  // NBAPI v2 full-conformance spec R2: the 12 new read tools.
+  'get_portal_states',
+  'get_portal_statuses',
+  'get_locations',
+  'get_alarms',
+  'get_picture',
+  'get_mercury_panels',
+  'get_mercury_panel',
+  'get_network_nodes',
+  'get_network_node',
+  'get_sios',
+  'get_sio',
+  'get_virtual_credential_request',
 ];
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = [
@@ -132,6 +149,15 @@ const NON_DESTRUCTIVE_WRITE_TOOLS = [
   // Daily-unlock-window spec R4/R8: likewise, registered only with NETBOX_ENABLE_WRITES.
   'schedule_daily_unlock_window',
   'cancel_daily_unlock_window',
+  // NBAPI v2 full-conformance spec R3: the 8 new non-destructive write tools.
+  'add_duty_log',
+  'add_virtual_credential_request',
+  'add_mercury_panel',
+  'modify_mercury_panel',
+  'add_network_node',
+  'modify_network_node',
+  'add_sio',
+  'modify_sio',
 ];
 
 // The composite write tools need a stateful controller to succeed, so their
@@ -147,7 +173,8 @@ const COMPOSITE_WRITE_TOOLS = [
   'cancel_daily_unlock_window',
 ];
 
-// The 11 destructive tools (R2), named exactly as the spec lists them.
+// The 15 destructive tools — the original 11 (R2) plus the 4 added by
+// specs/nbapi-v2-full-conformance.md R4 — named exactly as the specs list them.
 const DESTRUCTIVE_TOOLS = [
   'delete_access_level',
   'delete_access_level_group',
@@ -160,14 +187,18 @@ const DESTRUCTIVE_TOOLS = [
   'remove_person',
   'remove_threat_level',
   'remove_threat_level_group',
+  'remove_virtual_credential_request',
+  'delete_mercury_panel',
+  'delete_network_node',
+  'delete_sio',
 ];
 
 describe('R1/C1: registration matrix', () => {
-  it('registers exactly the 38 read tools (16 v0.2.0 + 18 R8 + get_unlock_window + get_daily_unlock_window + get_reader_access_history + get_threat_levels) when NETBOX_ENABLE_WRITES is off', () => {
+  it('registers exactly the 50 read tools (the 38 pre-existing + the 12 NBAPI v2 read tools) when NETBOX_ENABLE_WRITES is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
-    expect(server.registrations).toHaveLength(38);
+    expect(server.registrations).toHaveLength(50);
   });
 
   it('with writes off, no tool that can issue a write command is registered', () => {
@@ -185,23 +216,23 @@ describe('R1/C1: registration matrix', () => {
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
   });
 
-  it('registers the 38 read tools + 39 non-destructive write tools (34 pass-through + 5 composite) when writes are on and destructive is off', () => {
+  it('registers the 50 read tools + 47 non-destructive write tools (42 pass-through + 5 composite) when writes are on and destructive is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: false });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS].sort());
-    expect(names).toHaveLength(77);
+    expect(names).toHaveLength(97);
     for (const destructive of DESTRUCTIVE_TOOLS) {
       expect(names).not.toContain(destructive);
     }
   });
 
-  it('registers all 88 tools (38 read + 39 write + 11 destructive) when both flags are on', () => {
+  it('registers all 112 tools (50 read + 47 write + 15 destructive) when both flags are on', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
-    expect(names).toHaveLength(88);
+    expect(names).toHaveLength(112);
   });
 });
 
@@ -255,6 +286,32 @@ describe('R3/C3: every write tool description is prefixed and every write succes
     add_partition: { NAME: 'P', TIMEZONE: 'UTC' },
     switch_partition: { PARTITIONKEY: '1' },
     modify_udf_list_items: { UDFLISTKEY: '1', LISTITEMS: [{ ITEMNAME: 'X', DELETE: '0' }] },
+    // NBAPI v2 full-conformance spec R3/R4.
+    add_duty_log: { PERSONID: '1', LOGTEXT: 'note' },
+    add_virtual_credential_request: { PERSONID: '1', CARDFORMAT: 'Standard26' },
+    remove_virtual_credential_request: { PERSONID: '1', CARDFORMAT: 'Standard26' },
+    add_mercury_panel: {
+      NAME: 'MP1',
+      TYPE: 'MP4502',
+      ENABLED: 'TRUE',
+      PARTITIONKEY: '1',
+      NETWORK: { IPADDRESS: '10.45.0.2', TLSSECURE: 'FALSE' },
+    },
+    modify_mercury_panel: { MERCURYKEY: '1', NAME: 'MP1', ENABLED: 'TRUE', NETWORK: { IPADDRESS: '10.45.0.2', TLSSECURE: 'FALSE' } },
+    delete_mercury_panel: { MERCURYKEY: '1' },
+    add_network_node: {
+      NAME: 'N1',
+      TYPE: 'Node',
+      ENABLED: 'TRUE',
+      PARTITIONKEY: '1',
+      UNIQUEIDENTIFIER: '0011223344556677',
+      DHCPENABLED: 'TRUE',
+    },
+    modify_network_node: { NODEKEY: '1' },
+    delete_network_node: { NODEKEY: '1' },
+    add_sio: { MERCURYKEY: '1', NAME: 'S1', MODEL: 'MS-ICS', CHANNEL: '0', ADDRESS: '6', REVINPUT: 'FALSE' },
+    modify_sio: { SIOKEY: '1', NAME: 'S1', REVINPUT: 'FALSE' },
+    delete_sio: { SIOKEY: '1' },
   };
 
   it('covers every pass-through write and destructive tool name with a sample-args entry', () => {
