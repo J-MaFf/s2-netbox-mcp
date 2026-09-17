@@ -47,11 +47,12 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
   server.tool(
     'modify_threat_level',
     'WRITE: Modifies an existing threat level (wraps NBAPI ModifyThreatLevel). Note: a live 6.2.0 controller rejected this ' +
-      'call without SEQNUM (#13), so SEQNUM is required here even though the doc does not mark it as such.',
+      'call without SEQNUM (#13) or COLOR (#87), so both are required here even though the doc only implies it by omitting ' +
+      'an "(optional)" tag rather than stating it outright.',
     {
       LEVELNAME: z.string().describe('Required. Name of the threat level to modify.'),
       SEQNUM: z.string().describe('Required. Sequence/order number for the threat level. A live controller rejected the call without it.'),
-      COLOR: COLOR_ENUM.optional().describe('Optional. Display color for the threat level.'),
+      COLOR: COLOR_ENUM.describe('Required. Display color for the threat level. A live controller rejected the call without it.'),
     },
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, mergeParams(args), formatWriteSuccess)
   );
