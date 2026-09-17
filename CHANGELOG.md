@@ -141,6 +141,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `THREATLEVELGROUPKEY` is out of scope and never resolved -- no NBAPI read command for threat
   level groups exists in this server's command surface at all
   ([#61](https://github.com/J-MaFf/s2-netbox-mcp/issues/61)).
+- `set_threat_level` gains an optional `LOCATIONKEYS` field (comma-separated location keys),
+  letting a threat-level change be scoped to specific locations/readers instead of always applying
+  system-wide, matching the vendor doc's documented `SetThreatLevel` parameter.
+  ([#88](https://github.com/J-MaFf/s2-netbox-mcp/issues/88)).
 
 ### Changed
 - `add_holiday`'s `HOLIDAYGROUPS` is now a required field (previously optional). Doc p.90 marks it
