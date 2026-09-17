@@ -25,7 +25,81 @@ Registry](https://registry.modelcontextprotocol.io) as `io.github.J-MaFf/s2-netb
 to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Trusted Publishing
 (OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again.
 
-## Current State — 2026-09-16
+## Current State — 2026-09-17
+
+### Full NBAPI v2 command conformance (unreleased)
+
+Issue [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100), branch
+`feat/nbapi-v2-full-conformance`, spec `specs/nbapi-v2-full-conformance.md`. The server now wraps
+**every** command the April-2025 NBAPI v2 guide (#API2-UG-8) documents and that fits a
+request/response tool, and both vendor guides have been diffed against it end to end.
+
+**Numbers, as asserted by the test suite:**
+
+| Measure | Before | After |
+|---|---|---|
+| `NBAPI_COMMANDS` allowlist (`src/commands.ts`) | 81 | **105** |
+| Tools with both gates off (read-only) | 38 | **50** |
+| Tools with `NETBOX_ENABLE_WRITES` | 77 | **97** |
+| Tools with both gates on | 88 | **112** |
+| Unit tests (`npx vitest run`) | 662 in 33 files | **745 in 38 files** |
+| `scripts/live-check.ts` checks | 45 | **64** |
+
+The 24 new commands, all v2-only: `GetPortalStates`, `GetPortalStatuses`, `GetLocations`,
+`GetAlarms`, `GetPicture`, `GetVirtualCredentialRequest`, `AddVirtualCredentialRequest`,
+`RemoveVirtualCredentialRequest`, `AddDutyLog`, and the full Mercury panel / network node / SIO
+hardware surface (`Get`/`Add`/`Modify`/`Delete` for each). Two new tool modules,
+`src/tools/hardware.ts` and `src/tools/alarm.ts`, plus additions to `src/tools/portal.ts` and
+`src/tools/person.ts`.
+
+`get_portal_statuses` is the notable one: it is the first NBAPI read of **live** portal state this
+server has had. Everything else reads configuration; this returns the current state of each door.
+
+**Live read verification — run 2026-09-17 against the reference controller (NetBox 6.2.0):**
+
+```
+Summary: 64 tools checked, 64 passed, 0 failed.
+```
+
+All 12 new read tools PASS or SKIP-pass, and so do the four read behaviours the unreleased batch
+had shipped without live coverage (`get_threat_levels`, the `PARTITIONKEY` filter on
+`get_access_levels`/`get_access_level_groups`, the nine new `search_person_data` filters, and
+`get_holidays`' empty `PARAMS` block). One live finding came out of it: `SearchPersonData`
+validates `CARDSTATUS` against the controller's configured card statuses, so the check reuses a
+status read off a real card rather than an invented string.
+
+**Live write verification — PENDING MAINTAINER RUN.** `scripts/live-check-write.ts` gained steps
+for `modify_time_spec`'s `NAME` rename, `add_time_spec_group`'s seeded `TIMESPECKEYS`, the
+`add_person` `USERNAME`/`ROLE`/`AUTHTYPE` probe for
+[#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79), and `add_duty_log`, plus a supervised
+`--action set_threat_level_locations`. That script writes to a live controller, so it is run by the
+maintainer, never by an automated loop; its N/N summary and the #79 finding text replace this
+paragraph once pasted in. **Nothing below is a substitute for that run.**
+
+> **#79 finding: PENDING MAINTAINER RUN.** Does setting `USERNAME` make `ROLE`/`AUTHTYPE`
+> mandatory on `AddPerson`? The step is written and both outcomes pass it; the controller's own
+> answer goes here verbatim (and in `CHANGELOG.md`) once `npx tsx scripts/live-check-write.ts` has
+> been run. This is a placeholder, not a result.
+
+**Command diff.** [`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md) is
+a 118-row, command-by-command and parameter-by-parameter comparison of the v1-2024 guide, the
+v2-2025 guide and this server. Three findings from it are now recorded permanently rather than
+left to be rediscovered:
+
+- **Elevators and floors have no write API.** Neither guide documents any
+  `Add`/`Modify`/`Delete` command for either. This closes what was item 2 of the previous "Natural
+  Next Steps" — `get_elevators`/`get_floors` are read-only because the vendor API is.
+- **The server already speaks v2.** Same `/nbws/goforms/nbapi` endpoint, same XML envelope, same
+  "Enable V2" switch the README already requires. The v1 end-of-support notice does not affect it.
+- **Data Operations has no API.** It is a web-UI and NAS-polling feature; there is nothing to wrap,
+  and no tooling was built.
+
+**Hardware caveat.** The twelve Mercury/network-node/SIO tools are **not live-verified**: the
+reference controller has no Mercury panels and no SIOs, so their reads SKIP-pass and their writes
+have never been issued against real hardware. `src/tools/hardware.ts`'s header and the README both
+say so. Live-exercising hardware CRUD was deliberately out of scope.
+
+## Previous State — 2026-09-16
 
 ### Person/reader-description enrichment across access-record tools (`v0.3.0`)
 
@@ -230,12 +304,15 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `src/tools/dailyUnlockWindow.ts` | Registers `get_daily_unlock_window` (always) and `schedule_daily_unlock_window` / `cancel_daily_unlock_window` (writes on) |
 | `src/netboxClient.ts` | NBAPI XML client: session login/logout, retry-once-on-expiry, error mapping, per-command request path, RESPONSE-level field merge |
 | `src/config.ts` | Environment-variable configuration, including the write-tool gates and the unlock-window variables |
-| `src/commands.ts` | The closed 81-command NBAPI allowlist |
+| `src/commands.ts` | The closed 105-command NBAPI allowlist — full command-level conformance with the April-2025 NBAPI v2 guide |
+| `src/tools/hardware.ts` | Mercury panel / network node / SIO tools (6 reads, 6 writes, 3 destructive deletes). Nested `NETWORK`/`SIOCHANNELSETTINGS` blocks, closed `TYPE` enums, `TRUE`/`FALSE` string booleans. **Not live-verified** — no Mercury/SIO hardware on the reference controller |
+| `src/tools/alarm.ts` | `get_alarms` (read) and `add_duty_log` (write). The v2 alarm-queue workflow commands (`AckAlarm`, `AckEvent`, `AlarmClearActions`, `AlarmSetOwner`, `EventClearActions`) are deliberately not wired in |
+| `docs/reference/nbapi-command-diff.md` | The three-way command diff: v1-2024 guide vs v2-2025 guide vs this server, 118 command rows plus a parameter-level diff of all 81 pre-existing commands, and the elevators/floors, protocol and Data Operations findings |
 | `src/xml.ts` | NBAPI XML request building (nested/array PARAMS) / response parsing |
 | `src/errors.ts` | APIERROR code descriptions, `NbapiApiError`/`NbapiFailError` |
 | `src/toolHelpers.ts` | `runNbapiTool`, `ToolGateFlags`, `formatWriteSuccess`, `clientGuardError`/`destructiveFlagRequired`, `wrapList` |
-| `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `misc`, `unlockWindow`, `dailyUnlockWindow` |
-| `scripts/live-check.ts` | Opt-in live read-only smoke test (`npm run test:live`) — all 34 pass-through/`find_portals` read tools |
+| `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `hardware`, `alarm`, `misc`, `unlockWindow`, `dailyUnlockWindow` |
+| `scripts/live-check.ts` | Opt-in live read-only smoke test (`npm run test:live`) — 64 checks covering every always-registered read tool |
 | `scripts/live-check-write.ts`, `scripts/liveCheckWriteHelpers.ts` | Opt-in live write smoke test (`npm run test:live:write`) and its unit-tested pure helpers |
 | `scripts/live-check-write-daily.ts` | Opt-in live write smoke test for the daily window (`npm run test:live:write:daily`) |
 | `test/fakeNetbox.ts` | Stateful in-memory controller double for the composite tools' tests (reproduces the live 6.2.0 quirks) |
@@ -277,6 +354,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#53](https://github.com/J-MaFf/s2-netbox-mcp/issues/53) | `RESOLVEDESCRIPTIONS` reader-description enrichment on `get_access_history`/`get_reader_access_history`/`get_card_access_details` | [#54](https://github.com/J-MaFf/s2-netbox-mcp/pull/54) |
 | [#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55) | `get_card_access_details` `RESOLVENAMES` person-name enrichment (single top-level lookup) | [#56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56) |
 | [#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57) | `get_portals` `RESOLVEDESCRIPTIONS` reader-description enrichment (nested reader objects) | [#58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58) |
+| [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100) | NBAPI v2 full conformance: the 24 remaining v2 commands (allowlist 81 -> 105, tools 38/77/88 -> 50/97/112), live verification of the 12 new reads plus four unreleased read gaps (64/64 on 2026-09-17), the three-way command diff report, and the README/STATUS/CHANGELOG refresh | PR pending on `feat/nbapi-v2-full-conformance` |
 
 ### Open Issues
 
@@ -287,22 +365,34 @@ enforced client-side via her `mcp_config.json`, not by the NetBox account itself
 
 ## Natural Next Steps
 
-1. If you want Smithery listed too, it requires connecting the maintainer's own GitHub account
-   through Smithery's dashboard (OAuth) — not something automatable from here.
-2. Elevators/floors (`GetElevators`/`GetFloors`) have no add/modify/delete tools, and it's not
-   confirmed whether that's because the vendor NBAPI has no write commands for them or whether
-   it's simply unexplored. (Threat levels turned out to be the opposite asymmetry — a documented
-   `GetThreatLevels` read command existed in the vendor doc all along but was never wired in; now
-   fixed by `get_threat_levels`, issue [#77](https://github.com/J-MaFf/s2-netbox-mcp/issues/77).)
-   Worth checking against LenelS2 doc #API-UG-14 if that matters for your use case.
-3. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
-4. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
+1. **Run `npx tsx scripts/live-check-write.ts`** and paste the output. It is the one gap in this
+   branch: the four new write steps and the #79 finding are written and unit-tested but have never
+   been executed, and the loop that wrote them is not allowed to run a write script. Until then the
+   `PENDING MAINTAINER RUN` markers above and in `CHANGELOG.md` stand.
+2. **Cut the release.** `[Unreleased]` in `CHANGELOG.md` has grown well past a patch: 24 new tools,
+   full v2 command conformance, plus the earlier enrichment and field-addition work. Nothing here
+   removes or renames an existing tool, so a minor bump (`v0.4.0`) fits. Deliberately deferred — no
+   `package.json`/`server.json` bump or tag has been made.
+3. **Smithery listing**, if wanted: it requires connecting the maintainer's own GitHub account
+   through Smithery's dashboard (OAuth), which cannot be automated from here.
+4. **MAC authentication is still blocked** on an undocumented checksum. Neither vendor guide
+   explains how the MAC digest is computed, so session login remains the only supported auth path
+   (README Out-of-scope). Nothing in the v2 guide changed this.
+5. **Optional: use `get_portal_statuses` for unlock-window read-back.** `get_unlock_window` and
+   `get_daily_unlock_window` currently infer whether a window is active from the managed portal
+   group, time specs and holidays — configuration, not reality. `get_portal_statuses` now gives the
+   doors' actual state, so those tools could report "the controller says these portals are in
+   Extended Unlock right now" instead of "they should be". Deliberately not done in
+   [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100); noted here as the obvious follow-on.
+6. Keep NTP running on the controller — the live check caught it roughly 4h35m off once already.
+7. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
-5. Newer **NBAPI v1** (doc #API-UG-22, April 2024) and **v2** (doc #API2-UG-8, April 2025) guides
-   are now in `docs/reference/`, alongside the original 2020 v1 doc this server was built against
-   (#API-UG-14) — see [#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75). Worth a diff pass
-   against the current Command Reference to check for new/changed commands or parameters, including
-   whether it answers item 2 above.
+
+Two items that used to live here are now **answered and closed**, per
+[`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md): the elevator/floor
+write question (there are no such commands in either guide, so there is nothing to build) and the
+"diff the newer NBAPI guides" task ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75) — done
+2026-09-17).
 
 ## Prerequisites to Run
 

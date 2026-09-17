@@ -13,9 +13,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documentation. Downloaded from a NetBox controller's help portal; all are
   generic vendor content with no site-specific data, reviewed page-by-page
   before committing. This server's tools were built against an earlier NBAPI
-  v1 edition (doc #API-UG-14, 2020); neither newer NBAPI edition has yet been
-  diffed against the current command reference
-  ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75)).
+  v1 edition (doc #API-UG-14, 2020); both newer NBAPI editions have since been
+  diffed against the command reference, and the result is recorded in
+  [`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md)
+  ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75),
+  [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 - Added `get_threat_levels` (wraps NBAPI `GetThreatLevels`, optional `ALLPARTITIONS` filter),
   always registered regardless of the write gates, like every other read tool. Found via a full
   conformance review of `docs/reference/NetBox_API_V2.pdf` against the 81-command allowlist: the
@@ -37,10 +39,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `USERNAME`/`ROLE`/`AUTHTYPE` "required," and `AddPerson`'s own FAIL list confirms it — but
   `scripts/live-check-write.ts`'s `AddPerson` round-trip already succeeds against a real NetBox
   6.2.0 controller without them, and `ModifyPerson`'s FAIL list has no matching error. All seven
-  are modeled as optional (closing the "can't set them at all" gap) rather than required, pending
-  live confirmation of when the requirement actually applies — most likely only once `USERNAME` is
-  set, i.e. only for a person who should also get a NetBox login account
-  ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79)).
+  are modeled as optional (closing the "can't set them at all" gap) rather than required.
+  **#79 resolution: PENDING MAINTAINER RUN.** `scripts/live-check-write.ts` now settles this
+  directly — one `AddPerson` with no `USERNAME`/`ROLE`/`AUTHTYPE` (the regression guard) and a
+  second with `USERNAME` but still no `ROLE`/`AUTHTYPE` (the probe) — but that script writes to a
+  live controller and is run by the maintainer, never by an automated loop. This line is replaced
+  with the controller's own answer, verbatim, once that run is pasted in; it is a placeholder and
+  not a result ([#79](https://github.com/J-MaFf/s2-netbox-mcp/issues/79),
+  [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 - `modify_time_spec` gains an optional `NAME` field, letting a time spec be renamed. Doc p.248
   documents `NAME` as a `ModifyTimeSpec` calling parameter, with dedicated FAIL messages
   confirming it's live ("Time Spec name already exists...", "Time Spec name cannot be null.") --
@@ -145,8 +151,69 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   letting a threat-level change be scoped to specific locations/readers instead of always applying
   system-wide, matching the vendor doc's documented `SetThreatLevel` parameter.
   ([#88](https://github.com/J-MaFf/s2-netbox-mcp/issues/88)).
+- **Full command-level conformance with the April-2025 NBAPI v2 guide (doc #API2-UG-8).** The
+  command allowlist in `src/commands.ts` grows from 81 to **105** entries and the tool surface from
+  38/77/88 to **50/97/112** (reads / + writes / + destructive). Every command below is documented
+  in the v2 guide and in neither edition of the v1 guide
+  ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)):
+  - *Portal state and locations* — `get_portal_states` (`GetPortalStates`), `get_portal_statuses`
+    (`GetPortalStatuses`) and `get_locations` (`GetLocations`). `get_portal_statuses` is the first
+    NBAPI read of **live** portal state this server has had: every other read returns
+    configuration, this one returns the current state of each door (`STATEKEY`/`STATENAME`,
+    `THREATLEVELNAME`, `LOCATIONKEY`/`LOCATIONNAME`). `get_locations` also accepts `STARTFROMKEY`,
+    which the guide omits from its Calling Parameters list but names in its FAIL messages
+    ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+  - *Alarms and duty log* — `get_alarms` (`GetAlarms`, filterable by partition, alarm ID, event ID,
+    activity ID or owner) and `add_duty_log` (`AddDutyLog`, write tier), in a new
+    `src/tools/alarm.ts`. The guide's alarm-queue **workflow** commands (`AckAlarm`, `AckEvent`,
+    `AlarmClearActions`, `AlarmSetOwner`, `EventClearActions`) remain deliberately unimplemented
+    ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+  - *Photo ID and mobile credentials* — `get_picture` (`GetPicture`; returns the Base64 JPEG in
+    `PICTURE` unmodified, alongside `PICTUREURL`/`LASTNAME`/`FIRSTNAME`/`LASTMOD`),
+    `get_virtual_credential_request`, `add_virtual_credential_request` (write) and
+    `remove_virtual_credential_request` (destructive), all four in `src/tools/person.ts`
+    ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+  - *Hardware* — a new `src/tools/hardware.ts` with the full Mercury panel, network node and SIO
+    surface: `get_mercury_panels`/`get_mercury_panel`/`add_mercury_panel`/`modify_mercury_panel`/
+    `delete_mercury_panel`, `get_network_nodes`/`get_network_node`/`add_network_node`/
+    `modify_network_node`/`delete_network_node`, and `get_sios`/`get_sio`/`add_sio`/`modify_sio`/
+    `delete_sio`. `NETWORK` and `SIOCHANNELSETTINGS` are nested zod objects that serialise to
+    nested XML elements rather than flattened siblings; `TYPE` is a closed enum on both add tools;
+    every doc-"boolean" parameter is a `TRUE`/`FALSE` string, because `src/xml.ts` would otherwise
+    put a JavaScript `true` on the wire. **Not live-verified** — the reference controller has no
+    Mercury or SIO hardware, which the module header and the README both say
+    ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+- Added [`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md): a
+  command-by-command and parameter-by-parameter diff of the April-2024 v1 guide, the April-2025 v2
+  guide and this server's implemented set — 118 rows covering every command either guide documents
+  (including the seven both list only as deprecated), plus sections settling three standing
+  questions: neither guide has any Add/Modify/Delete command for elevators or floors, this server
+  already speaks v2 over the same `/nbws/goforms/nbapi` endpoint, and Data Operations is a UI/NAS
+  feature with no API to wrap. Closes the "not yet diffed" caveat carried by the
+  `docs/reference/` entry above and by the README's opening note
+  ([#75](https://github.com/J-MaFf/s2-netbox-mcp/issues/75),
+  [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+- `scripts/live-check.ts` (read-only) grows from 45 to 64 checks: one for each of the 12 new read
+  tools, plus the four read behaviours the entries above shipped without live coverage —
+  `get_threat_levels`, the `PARTITIONKEY` filter on `get_access_levels`/`get_access_level_groups`,
+  the nine new `search_person_data` filters, and `get_holidays`' now-empty `PARAMS` block (asserted
+  on the wire, not just in the schema). **64/64 passed** against the reference controller (NetBox
+  6.2.0) on 2026-09-17 ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
+- `scripts/live-check-write.ts` gains steps for the four write behaviours the entries above shipped
+  without live coverage — `modify_time_spec`'s `NAME` rename, `add_time_spec_group`'s seeded
+  `TIMESPECKEYS`, the `add_person` `USERNAME`/`ROLE`/`AUTHTYPE` question from #79, and
+  `add_duty_log` — plus a supervised `--action set_threat_level_locations` that exercises
+  `set_threat_level`'s new `LOCATIONKEYS` against keys discovered from `GetLocations`
+  ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 
 ### Changed
+- `README.md`'s "Out of scope" list no longer says "Photo ID handling (`GetPicture` and photo
+  upload)". Reading a person's photo is now supported (`get_picture`); only photo **upload** is out
+  of scope, and it is out of scope because it is a multipart POST to `/nbws/goforms/upload` rather
+  than an NBAPI XML command at all. Three new out-of-scope bullets record findings from the command
+  diff instead of leaving them to be rediscovered: elevator/floor **writes** do not exist in either
+  NBAPI edition, Data Operations has no API, and the alarm-queue workflow commands are deliberately
+  unimplemented ([#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100)).
 - `add_holiday`'s `HOLIDAYGROUPS` is now a required field (previously optional). Doc p.90 marks it
   required with no "(optional)" tag, and a live-controller probe confirmed it: `AddHoliday` without
   `HOLIDAYGROUPS` fails with "At least one holiday group must be selected."

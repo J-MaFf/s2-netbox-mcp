@@ -11,8 +11,11 @@ partitions/UDF lists — as MCP tools usable from any MCP-compatible client
 > (`Web-Based API for S2 NetBox and S2 Global`, LenelS2 doc #API-UG-14).
 > Newer NBAPI **v1** (doc #API-UG-22, April 2024) and **v2** (doc #API2-UG-8,
 > April 2025) guides also exist — see [`docs/reference/`](docs/reference/)
-> for reference copies; this server's tools were built against the original
-> 2020 v1 doc and have not yet been diffed against either newer edition.
+> for reference copies. Both have now been diffed against this server's tool
+> surface command by command and parameter by parameter:
+> [`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md)
+> records the result, including which documented commands are deliberately
+> not implemented and why.
 
 > [!WARNING]
 > **This connects to a real physical security system.** With the wrong
@@ -317,6 +320,18 @@ surrounding file and location differ.
 | `get_threat_levels`          | `GetThreatLevels`        | — (optional `ALLPARTITIONS`)  |
 | `get_unlock_window`          | `GetPortalGroups` + `GetPortalGroup` + `GetTimeSpecGroups` + `GetTimeSpecs` + `GetHolidays` + `GetHoliday` (composite) | — |
 | `get_daily_unlock_window`    | `GetPortalGroups` + `GetPortalGroup` + `GetTimeSpecGroups` + `GetTimeSpecs` + `GetHolidays` (composite) | — |
+| `get_portal_states`          | `GetPortalStates`        | — (optional `PORTALSTATES`)   |
+| `get_portal_statuses`        | `GetPortalStatuses`      | — (optional `ALLPARTITIONS`/`PORTALKEY`/`STATEKEY`/`PARTITIONKEY`/`LOCATIONKEY`; the live state of each door, not its configuration) |
+| `get_locations`              | `GetLocations`           | — (optional `ALLPARTITIONS`/`STARTFROMKEY`) |
+| `get_alarms`                 | `GetAlarms`              | — (optional `ALLPARTITIONS`/`PARTITIONKEY`/`ID`/`EVENTID`/`ACTIVITYID`/`OWNERID`) |
+| `get_picture`                | `GetPicture`             | `PERSONID` (returns a Base64 JPEG in `PICTURE`; may be large) |
+| `get_virtual_credential_request` | `GetVirtualCredentialRequest` | `PERSONID`, `CARDFORMAT`  |
+| `get_mercury_panels`         | `GetMercuryPanels`       | — (optional `ALLPARTITIONS`/`PARTITIONKEY`/`MERCURYKEY`/`NAME`) |
+| `get_mercury_panel`          | `GetMercuryPanel`        | `MERCURYKEY`                  |
+| `get_network_nodes`          | `GetNetworkNodes`        | — (optional `ALLPARTITIONS`/`PARTITIONKEY`/`NODEKEY`/`UNIQUEIDENTIFIER`/`NAME`) |
+| `get_network_node`           | `GetNetworkNode`         | `NODEKEY` (optional `PARTITIONKEY`) |
+| `get_sios`                   | `GetSios`                | `MERCURYKEY` (no unfiltered SIO listing exists) |
+| `get_sio`                    | `GetSio`                 | `SIOKEY`                      |
 
 There is deliberately no `get_portal` (singular) tool — no such NBAPI command
 exists; only `GetPortals` (plural) does. `get_card_access_details` and
@@ -637,6 +652,27 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `cancel_unlock_window`        | `ModifyPortalGroup`, `DeleteHoliday`, `ModifyTimeSpecGroup`, `DeleteTimeSpec` — managed objects only — plus reads (composite) | — | write |
 | `schedule_daily_unlock_window` | `AddHoliday`/`ModifyHoliday`, `AddTimeSpec`/`ModifyTimeSpec`, `AddTimeSpecGroup`/`ModifyTimeSpecGroup`, `AddPortalGroup`/`ModifyPortalGroup`, plus reads (composite) | `startDate`, `endDate`, `dailyStartTime`, `dailyEndTime` (`portalKeys`, `acknowledgeSideEffects`, `dryRun` optional) | write |
 | `cancel_daily_unlock_window`  | `ModifyPortalGroup`, `DeleteHoliday`, `ModifyTimeSpecGroup`, `DeleteTimeSpec` — managed objects only — plus reads (composite) | — | write |
+| `add_duty_log`                | `AddDutyLog`               | `PERSONID`, `LOGTEXT` (optional `ACTIVITYID`/`PARTITIONKEY`) | write |
+| `add_virtual_credential_request` | `AddVirtualCredentialRequest` | `PERSONID`, `CARDFORMAT`                  | write       |
+| `remove_virtual_credential_request` | `RemoveVirtualCredentialRequest` | `PERSONID`, `CARDFORMAT`            | destructive |
+| `add_mercury_panel`           | `AddMercuryPanel`          | `NAME`, `TYPE`, `ENABLED`, `PARTITIONKEY`, `NETWORK` (nested: `IPADDRESS`, `TLSSECURE`) | write |
+| `modify_mercury_panel`        | `ModifyMercuryPanel`       | `MERCURYKEY`, `NAME`, `ENABLED`, `NETWORK` (nested: `IPADDRESS`, `TLSSECURE`) | write |
+| `delete_mercury_panel`        | `DeleteMercuryPanel`       | `MERCURYKEY`                                     | destructive |
+| `add_network_node`            | `AddNetworkNode`           | `NAME`, `TYPE`, `ENABLED`, `PARTITIONKEY`, `UNIQUEIDENTIFIER`, `DHCPENABLED` | write |
+| `modify_network_node`         | `ModifyNetworkNode`        | `NODEKEY`                                        | write       |
+| `delete_network_node`         | `DeleteNetworkNode`        | `NODEKEY`                                        | destructive |
+| `add_sio`                     | `AddSio`                   | `MERCURYKEY`, `NAME`, `MODEL`, `CHANNEL`, `ADDRESS`, `REVINPUT` | write |
+| `modify_sio`                  | `ModifySio`                | `SIOKEY`, `NAME`, `REVINPUT`                     | write       |
+| `delete_sio`                  | `DeleteSio`                | `SIOKEY`                                         | destructive |
+
+The twelve hardware tools (`*_mercury_panel`, `*_network_node`, `*_sio` —
+six writes and three destructive deletes, plus the six reads in the table
+above) are **not live-verified**: the reference controller this project is
+developed against has no Mercury panels and no SIOs, so their read tools
+SKIP-pass in `npm run test:live` and their write tools have never been issued
+against real hardware. They are built to the April-2025 NBAPI v2 guide alone
+— see the header comment in `src/tools/hardware.ts` and
+[`docs/reference/nbapi-command-diff.md`](docs/reference/nbapi-command-diff.md).
 
 `modify_portal_group` and `modify_reader_group` always replace the group's
 membership with the `PORTALKEYS`/`READERKEYS` you send — on this controller
@@ -1089,7 +1125,20 @@ window first), and `npm test` never runs it.
 
 ## Out of scope
 
-- Photo ID handling (`GetPicture` and photo upload)
+- Photo **upload** — the multipart POST to `/nbws/goforms/upload`, which is
+  not an NBAPI XML command at all. Reading a person's photo **is** supported:
+  `get_picture` wraps `GetPicture` and returns the Base64 JPEG unmodified.
+- Elevator and floor **writes** — not a choice: neither the v1 nor the v2
+  guide documents any `Add`/`Modify`/`Delete` command for elevators or
+  floors, so `get_elevators`/`get_floors` are read-only because the API is.
+  See [the diff report](docs/reference/nbapi-command-diff.md).
+- **Data Operations** (bulk person import/export) — the LenelS2 Data
+  Operations guide describes a web-UI and NAS-polling feature with no API of
+  its own, so there is nothing to wrap. No import-file builder, export parser
+  or NAS automation is planned.
+- Alarm-queue **workflow** commands (`AckAlarm`, `AckEvent`,
+  `AlarmClearActions`, `AlarmSetOwner`, `EventClearActions`) — `get_alarms`
+  reads alarms, but this server does not drive an operator alarm queue.
 - `StreamEvents` / the persistent `/appdevent/nbapi/event` push feed
 - MAC-based authentication (session-login only)
 - The S2 Global API variant
