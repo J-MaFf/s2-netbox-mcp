@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-17
+
 ### Added
 - `NetboxClient` exposes `lastServerDate`, parsed from the HTTP `Date` header on the most recent
   NBAPI response. `scripts/live-check-write.ts`'s controller clock-skew guard now uses it as the

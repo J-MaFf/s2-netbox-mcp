@@ -1,6 +1,6 @@
 {
   "name": "s2-netbox-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server exposing LenelS2 S2 NetBox NBAPI operations (persons/credentials, access levels, portals/readers, time specs, holidays, portal/reader groups, threat levels, events/activity, partitions/UDF lists) as MCP tools usable from any MCP-compatible client (Claude, Gemini/Antigravity, etc.); read-only by default, with write tools gated behind NETBOX_ENABLE_WRITES/NETBOX_ENABLE_DESTRUCTIVE.",
   "mcpName": "io.github.J-MaFf/s2-netbox-mcp",
   "type": "module",
