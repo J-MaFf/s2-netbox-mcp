@@ -147,6 +147,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   required with no "(optional)" tag, and a live-controller probe confirmed it: `AddHoliday` without
   `HOLIDAYGROUPS` fails with "At least one holiday group must be selected."
   ([#85](https://github.com/J-MaFf/s2-netbox-mcp/issues/85)).
+- `add_portal_group`'s `UNLOCKTIMESPECGROUPKEY` is now a required field (previously optional). Doc
+  p.101 marks it required with no "(optional)" tag, and a live-controller probe confirmed it:
+  `AddPortalGroup` without `UNLOCKTIMESPECGROUPKEY` fails with "Group must have a valid Timespec
+  assigned."
+  ([#86](https://github.com/J-MaFf/s2-netbox-mcp/issues/86)).
 
 ### Fixed
 - `get_reader_access_history` no longer drops the native `PORTALNAME` field that

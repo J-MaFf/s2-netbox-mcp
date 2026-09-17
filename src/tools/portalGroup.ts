@@ -195,7 +195,12 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
       {
         NAME: z.string().describe('Required. Name of the new portal group (max 64 characters).'),
         DESCRIPTION: z.string().optional().describe('Optional. Description of the portal group.'),
-        UNLOCKTIMESPECGROUPKEY: z.string().optional().describe('Optional. Time spec group controlling when member portals unlock.'),
+        UNLOCKTIMESPECGROUPKEY: z
+          .string()
+          .describe(
+            'Required. Time spec group controlling when member portals unlock. A live controller rejected ' +
+              'AddPortalGroup without it ("Group must have a valid Timespec assigned.").'
+          ),
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this portal group is scoped to.'),
         PORTALKEYS: z.array(z.string()).describe('Required. PORTALKEY values of the portals in this group.'),
       },

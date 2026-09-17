@@ -516,19 +516,21 @@ describe('registerPortalGroupTools (R8 reads)', () => {
 });
 
 describe('R13: portal group write tools', () => {
-  it('add_portal_group requires NAME + PORTALKEYS and wraps PORTALKEYS as <PORTALKEYS><PORTALKEY>...', async () => {
+  it('add_portal_group requires NAME + PORTALKEYS + UNLOCKTIMESPECGROUPKEY and wraps PORTALKEYS as <PORTALKEYS><PORTALKEY>...', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerPortalGroupTools(server as unknown as McpServer, client, WRITES_ON);
     const reg = byName(server, 'add_portal_group');
-    expect(Object.keys(reg.schema).sort()).toEqual(
+    const schema = reg.schema as Record<string, { isOptional: () => boolean }>;
+    expect(Object.keys(schema).sort()).toEqual(
       ['NAME', 'DESCRIPTION', 'UNLOCKTIMESPECGROUPKEY', 'THREATLEVELGROUPKEY', 'PORTALKEYS'].sort()
     );
-    await reg.handler({ NAME: 'LAB ALL ACCESS', PORTALKEYS: ['30', '32'] });
+    expect(schema.UNLOCKTIMESPECGROUPKEY.isOptional()).toBe(false);
+    await reg.handler({ NAME: 'LAB ALL ACCESS', PORTALKEYS: ['30', '32'], UNLOCKTIMESPECGROUPKEY: '5' });
     expect(calls).toEqual([
       {
         command: NBAPI_COMMANDS.ADD_PORTAL_GROUP,
-        params: { NAME: 'LAB ALL ACCESS', PORTALKEYS: { PORTALKEY: ['30', '32'] } },
+        params: { NAME: 'LAB ALL ACCESS', UNLOCKTIMESPECGROUPKEY: '5', PORTALKEYS: { PORTALKEY: ['30', '32'] } },
       },
     ]);
   });

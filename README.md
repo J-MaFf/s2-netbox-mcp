@@ -602,7 +602,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `add_holiday`                 | `AddHoliday`               | `HOLIDAYNAME`, `STARTDATE`, `ENDDATE`, `HOLIDAYGROUPS` | write       |
 | `modify_holiday`              | `ModifyHoliday`            | `HOLIDAYKEY`                                     | write       |
 | `delete_holiday`              | `DeleteHoliday`            | `HOLIDAYKEY`                                     | destructive |
-| `add_portal_group`            | `AddPortalGroup`           | `NAME`, `PORTALKEYS`                             | write       |
+| `add_portal_group`            | `AddPortalGroup`           | `NAME`, `PORTALKEYS`, `UNLOCKTIMESPECGROUPKEY`   | write       |
 | `modify_portal_group`         | `ModifyPortalGroup`        | `PORTALGROUPKEY`, `PORTALKEYS`                   | write       |
 | `delete_portal_group`         | `DeletePortalGroup`        | `PORTALGROUPKEY`                                 | destructive |
 | `add_reader_group`            | `AddReaderGroup`           | `NAME`, `READERKEYS`                             | write       |
