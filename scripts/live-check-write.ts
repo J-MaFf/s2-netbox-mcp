@@ -29,6 +29,7 @@ import {
   buildActionParams,
   clockOf,
   computeClockSkew,
+  computeClockSkewFromControllerTime,
   computeTestWindow,
   estimateControllerClock,
   findStrikeOutput,
@@ -1163,30 +1164,42 @@ async function fetchNewestAccessDttm(client: NetboxClient): Promise<string | und
 }
 
 /**
- * (b2): estimates the controller's clock from the newest GetAccessHistory
- * record and compares it with the host clock (R30 b2). Returns the skew
- * result so phase (c) can both gate on it and print an estimated controller
- * time in its HEADS-UP line.
+ * (b2): estimates the controller's clock and compares it with the host clock
+ * (R30 b2). Prefers the NBAPI response's HTTP `Date` header — set by the
+ * controller's own web server on every response, so it is fresh regardless
+ * of badge activity — falling back to the newest GetAccessHistory record's
+ * DTTM only if that header was unavailable. Returns the skew result so phase
+ * (c) can both gate on it and print an estimated controller time in its
+ * HEADS-UP line.
  */
 async function controllerClockCheck(client: NetboxClient): Promise<ClockSkewResult> {
   const newestDttm = await fetchNewestAccessDttm(client);
-  const skew = computeClockSkew(new Date(), newestDttm);
-  const name = 'controller clock check (newest access record vs host clock)';
+  const httpDate = client.lastServerDate;
+  const skew = httpDate
+    ? computeClockSkewFromControllerTime(new Date(), httpDate, 'http-date')
+    : computeClockSkew(new Date(), newestDttm);
+  const name = 'controller clock check (HTTP Date header vs host clock)';
   if (skew.status === 'ok' || skew.status === 'fail') {
-    const line = `controller clock ~${skew.controllerClock} (newest access record) vs host ${skew.hostClock} — skew ${formatDurationHMS(skew.skewSeconds ?? 0)}`;
+    const sourceLabel = skew.source === 'http-date' ? 'HTTP Date header' : 'newest access record';
+    const line = `controller clock ~${skew.controllerClock} (${sourceLabel}) vs host ${skew.hostClock} — skew ${formatDurationHMS(skew.skewSeconds ?? 0)}`;
     if (skew.status === 'ok') {
       results.push({ name, pass: true, summary: line });
       info(line);
     } else {
-      const summary = `controller clock skew: controller ${skew.controllerClock} vs host ${skew.hostClock}`;
+      const summary = `controller clock skew: controller ${skew.controllerClock} vs host ${skew.hostClock} (source: ${sourceLabel})`;
       results.push({ name, pass: false, summary });
       info(line);
       log(`[FAIL] ${summary}`);
-      log('hint: if the site has simply been quiet, badge any reader and re-run');
+      if (skew.source === 'http-date') {
+        log('hint: this is the controller\'s own HTTP Date header, independent of badge activity — the ' +
+          'controller\'s clock (or NTP) genuinely needs fixing.');
+      } else {
+        log('hint: if the site has simply been quiet, badge any reader and re-run');
+      }
     }
     return skew;
   }
-  log(`[WARN] no access history record was available to estimate the controller clock; skipping the skew gate`);
+  log(`[WARN] no HTTP Date header or access history record was available to estimate the controller clock; skipping the skew gate`);
   return skew;
 }
 

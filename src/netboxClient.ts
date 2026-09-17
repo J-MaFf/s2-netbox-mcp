@@ -6,12 +6,16 @@ import { buildRequestXml, parseResponseXml, type NbapiParams } from './xml.js';
 
 /** Minimal fetch-compatible signature, so tests can inject a hand-rolled HTTP
  * stub instead of hitting the network. Matches the subset of the global
- * `fetch`/undici `fetch` surface this client actually uses. */
+ * `fetch`/undici `fetch` surface this client actually uses. `headers` is
+ * optional so existing test stubs that never set it keep compiling — a
+ * missing `Date` header just means {@link NetboxClient.lastServerDate} stays
+ * `undefined`, same as any other genuinely absent header. */
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{
   ok: boolean;
   status: number;
   statusText: string;
   text(): Promise<string>;
+  headers?: { get(name: string): string | null };
 }>;
 
 export interface NbapiCallResult {
@@ -130,6 +134,7 @@ export class NetboxClient {
   private sessionId: string | null = null;
   private loginInFlight: Promise<void> | null = null;
   private commandSeq = 0;
+  private lastResponseDateHeader: string | undefined;
 
   constructor(config: NetboxConfig, fetchImpl?: FetchLike) {
     this.config = config;
@@ -149,6 +154,22 @@ export class NetboxClient {
   /** True once a session has been established and cached. Exposed for tests/diagnostics. */
   get hasSession(): boolean {
     return this.sessionId !== null;
+  }
+
+  /**
+   * Wall-clock time the controller's own web server reported on the most
+   * recent request, parsed from the HTTP `Date` response header. Unlike any
+   * NBAPI field, this is set by the controller's HTTP stack on *every*
+   * response regardless of command or outcome, so it is a badge-activity-
+   * independent signal of the controller's actual clock — used by
+   * `scripts/live-check-write.ts`'s clock-skew guard in preference to
+   * inferring the clock from the newest access-history record. `undefined`
+   * before any request has been made, or if the header is missing/unparseable.
+   */
+  get lastServerDate(): Date | undefined {
+    if (!this.lastResponseDateHeader) return undefined;
+    const date = new Date(this.lastResponseDateHeader);
+    return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
   private nextNum(): number {
@@ -177,6 +198,7 @@ export class NetboxClient {
       headers: { 'Content-Type': 'text/xml' },
       body: xml,
     });
+    this.lastResponseDateHeader = response.headers?.get('date') ?? undefined;
     if (!response.ok) {
       // Never include credentials or the request body here (R21) — only the
       // status code and the request path.

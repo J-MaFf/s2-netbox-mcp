@@ -15,6 +15,7 @@ import {
   buildActionParams,
   clockOf,
   computeClockSkew,
+  computeClockSkewFromControllerTime,
   computeTestWindow,
   estimateControllerClock,
   findStrikeOutput,
@@ -580,6 +581,7 @@ describe('R30 b2: controller clock skew estimate', () => {
       expect(result.controllerClock).toBe('08:04:00');
       expect(result.skewSeconds).toBe(94);
       expect(result.offsetSeconds).toBe(-94);
+      expect(result.source).toBe('access-record');
     });
 
     it('is ok exactly at the 2-minute boundary', () => {
@@ -622,6 +624,40 @@ describe('R30 b2: controller clock skew estimate', () => {
     it('is no-record when the DTTM does not parse', () => {
       const result = computeClockSkew(new Date(2026, 8, 15, 8, 5, 34), 'garbage');
       expect(result.status).toBe('no-record');
+    });
+  });
+
+  describe('computeClockSkewFromControllerTime (issue #102: HTTP Date header source)', () => {
+    it('is ok when the HTTP-Date-derived controller time agrees with the host within 2 minutes', () => {
+      const host = new Date(2026, 8, 17, 9, 22, 32);
+      const controllerDate = new Date(2026, 8, 17, 9, 21, 10); // 1m22s behind
+      const result = computeClockSkewFromControllerTime(host, controllerDate, 'http-date');
+      expect(result.status).toBe('ok');
+      expect(result.source).toBe('http-date');
+      expect(result.skewSeconds).toBe(82);
+    });
+
+    it('fails, tagged http-date, on the live-observed 2026-09-17 skew shape', () => {
+      const host = new Date(2026, 8, 17, 9, 22, 32);
+      const controllerDate = new Date(2026, 8, 17, 9, 9, 49); // ~12m43s behind
+      const result = computeClockSkewFromControllerTime(host, controllerDate, 'http-date');
+      expect(result.status).toBe('fail');
+      expect(result.source).toBe('http-date');
+      expect(result.skewSeconds).toBe(763);
+    });
+
+    it('is no-record (not tagged with a source) when there is no controller date to compare', () => {
+      const result = computeClockSkewFromControllerTime(new Date(2026, 8, 17, 9, 22, 32), undefined, 'http-date');
+      expect(result.status).toBe('no-record');
+      expect(result.source).toBeUndefined();
+    });
+
+    it('computeClockSkew delegates to it with source access-record, unchanged behaviour', () => {
+      const host = new Date(2026, 8, 15, 8, 5, 0);
+      const dttm = '2026-09-15 08:00:00';
+      const viaDttm = computeClockSkew(host, dttm);
+      const viaDirect = computeClockSkewFromControllerTime(host, parseControllerDttm(dttm), 'access-record');
+      expect(viaDttm).toEqual(viaDirect);
     });
   });
 
