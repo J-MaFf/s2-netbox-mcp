@@ -851,7 +851,7 @@ async function personRoundTrip(client: NetboxClient): Promise<boolean> {
     })) && allPassed;
 
   // R11 (e): AddDutyLog, one of the 24 NBAPI v2 commands wired in by
-  // specs/nbapi-v2-full-conformance.md. Attributed to the temp person, so the
+  // specs/archive/nbapi-v2-full-conformance.md. Attributed to the temp person, so the
   // entry is disposable. The guide documents only three FAIL messages
   // (Missing PERSONID / Missing LOGTEXT / Invalid PERSONID); any of those is
   // recorded as a pass-with-note, anything else fails the step.

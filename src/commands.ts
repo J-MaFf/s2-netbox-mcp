@@ -14,7 +14,7 @@
  * reads, portal/output actions, adds, deletes, modifies, removes,
  * person/credential writes, event/activity writes, and partition/UDF-list
  * commands — plus the 24 NBAPI v2 commands wired in by
- * specs/nbapi-v2-full-conformance.md). Whether a
+ * specs/archive/nbapi-v2-full-conformance.md). Whether a
  * given tool built on top of one of these commands is actually *reachable*
  * at runtime is controlled separately by `NETBOX_ENABLE_WRITES` /
  * `NETBOX_ENABLE_DESTRUCTIVE` gating in `src/index.ts` and `src/tools/*.ts`.

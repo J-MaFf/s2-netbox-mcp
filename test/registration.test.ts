@@ -174,7 +174,7 @@ const COMPOSITE_WRITE_TOOLS = [
 ];
 
 // The 15 destructive tools — the original 11 (R2) plus the 4 added by
-// specs/nbapi-v2-full-conformance.md R4 — named exactly as the specs list them.
+// specs/archive/nbapi-v2-full-conformance.md R4 — named exactly as the specs list them.
 const DESTRUCTIVE_TOOLS = [
   'delete_access_level',
   'delete_access_level_group',

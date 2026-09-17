@@ -30,7 +30,7 @@ import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
  * only the read-only tool surface is registered — 50 tools, byte-for-byte the
  * same read-only posture as before plus the 12 NBAPI v2 read tools added by
- * specs/nbapi-v2-full-conformance.md. With NETBOX_ENABLE_WRITES truthy the
+ * specs/archive/nbapi-v2-full-conformance.md. With NETBOX_ENABLE_WRITES truthy the
  * non-destructive write tools (including the five composites
  * `set_portals_state`, `schedule_unlock_window`, `cancel_unlock_window`,
  * `schedule_daily_unlock_window`, `cancel_daily_unlock_window`) are also

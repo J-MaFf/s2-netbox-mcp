@@ -7,7 +7,7 @@ import { FakeServer, byName, fakeClient } from './testUtils.js';
 
 /**
  * XML-shape tests for the three NBAPI v2-only reads added to
- * src/tools/portal.ts by specs/nbapi-v2-full-conformance.md R2:
+ * src/tools/portal.ts by specs/archive/nbapi-v2-full-conformance.md R2:
  * get_portal_states, get_portal_statuses and get_locations. The pre-existing
  * portal tools keep their own coverage in test/tools.test.ts.
  */

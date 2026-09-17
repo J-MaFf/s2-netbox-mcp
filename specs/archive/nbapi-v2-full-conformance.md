@@ -1,5 +1,11 @@
 # Spec: NBAPI v2 full conformance — remaining commands, live verification, doc diff, STATUS refresh
 
+> **Completed 2026-09-17.** Built via the `forge` skill, converged in one generator/evaluator
+> round — all 21 acceptance criteria plus C-final passed. Shipped in
+> [PR #101](https://github.com/J-MaFf/s2-netbox-mcp/pull/101) (`Fixes #100`), including the
+> maintainer-supervised `scripts/live-check-write.ts` run (41/42 steps passed; the one failure
+> was a pre-existing, unrelated controller-clock-skew guard) and the resulting #79 resolution.
+
 ## Goal
 Bring `s2-netbox-mcp` to full command-level conformance with LenelS2's April-2025 NBAPI v2 guide by
 wiring in the 24 documented commands it still lacks, live-verify the unreleased conformance batch

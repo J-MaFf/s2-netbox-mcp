@@ -1,6 +1,6 @@
 # NBAPI command diff: v1 (April 2024) vs v2 (April 2025) vs this server
 
-**Compiled 2026-09-17** for `specs/nbapi-v2-full-conformance.md` (R13–R16).
+**Compiled 2026-09-17** for `specs/archive/nbapi-v2-full-conformance.md` (R13–R16).
 
 Sources, all in this directory, read with `pdftotext -layout`:
 
@@ -22,7 +22,7 @@ module's own header comment.
 | Commands with a section in the v2-2025 Command Reference | 111 |
 | Commands deprecated by both guides (listed in a table, never given a section) | 7 |
 | **Union of the three — the row count of the table below** | **118** |
-| Implemented by this server before `specs/nbapi-v2-full-conformance.md` | 81 |
+| Implemented by this server before `specs/archive/nbapi-v2-full-conformance.md` | 81 |
 | Implemented by this server after it | 105 |
 
 Three facts worth stating plainly, because each contradicts a reasonable first guess:
@@ -41,7 +41,7 @@ Three facts worth stating plainly, because each contradicts a reasonable first g
 
 ### Reconciling with the spec's estimate
 
-`specs/nbapi-v2-full-conformance.md` R13 predicted "105 documented − 3 artefacts + `Login`/`Logout`
+`specs/archive/nbapi-v2-full-conformance.md` R13 predicted "105 documented − 3 artefacts + `Login`/`Logout`
 = 104 command rows". That arithmetic does not survive a full heading extraction, so this report
 carries **118** rows instead. The difference is entirely accounted for:
 
@@ -252,7 +252,7 @@ doc-"boolean" parameter in this codebase is therefore a `z.enum(['TRUE','FALSE']
 ## Parameter-level diff, v1-2024 vs v2-2025
 
 One row per command that this server implemented **before**
-`specs/nbapi-v2-full-conformance.md` — all 81, each appearing exactly once. Parameters were
+`specs/archive/nbapi-v2-full-conformance.md` — all 81, each appearing exactly once. Parameters were
 extracted from each command's "Calling Parameters" bullet list in both PDFs and set-diffed.
 
 The 24 commands added by that spec are omitted here for the obvious reason: every one of them is

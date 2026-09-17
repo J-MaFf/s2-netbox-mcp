@@ -7,7 +7,7 @@ import { FakeServer, byName, fakeClient } from './testUtils.js';
 
 /**
  * XML-shape tests for the four NBAPI v2-only person tools added to
- * src/tools/person.ts by specs/nbapi-v2-full-conformance.md R2-R4/R6:
+ * src/tools/person.ts by specs/archive/nbapi-v2-full-conformance.md R2-R4/R6:
  * get_picture plus the three VirtualCredentialRequest tools. The pre-existing
  * person tools keep their own coverage in test/tools.test.ts.
  */

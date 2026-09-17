@@ -9,7 +9,7 @@ const SRC_DIR = join(ROOT, 'src');
 const SCRIPTS_DIR = join(ROOT, 'scripts');
 
 // R4: the exact 105-command closed set (the original 81 plus the 24 NBAPI v2
-// commands added by specs/nbapi-v2-full-conformance.md R1). Confined to
+// commands added by specs/archive/nbapi-v2-full-conformance.md R1). Confined to
 // src/commands.ts only.
 const EXPECTED_COMMANDS = [
   // Session lifecycle + v0.2.0 reads (17)
@@ -141,7 +141,7 @@ const EXPECTED_COMMANDS = [
 // deprecated commands. None of these may ever appear as a quoted literal
 // anywhere in src/ or scripts/. GetPicture is deliberately NOT on this list
 // any more: it moved from "out of scope" to "implemented" in
-// specs/nbapi-v2-full-conformance.md (only photo *upload*, the multipart POST
+// specs/archive/nbapi-v2-full-conformance.md (only photo *upload*, the multipart POST
 // to /nbws/goforms/upload, remains out of scope — and it is not an NBAPI
 // command at all, so it has no literal to forbid).
 const FORBIDDEN_COMMAND_LITERALS = [

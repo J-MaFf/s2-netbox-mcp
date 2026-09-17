@@ -13,7 +13,7 @@ import { NBAPI_COMMANDS } from '../src/commands.js';
 
 /**
  * Unit tests for the helpers and steps added to the live WRITE script by
- * specs/nbapi-v2-full-conformance.md R11. The script itself is never executed
+ * specs/archive/nbapi-v2-full-conformance.md R11. The script itself is never executed
  * here (it writes to a real controller on import); the pure helpers are tested
  * directly and the step wiring is asserted by reading the script's source, the
  * same technique test/liveCheckWrite.test.ts already uses.

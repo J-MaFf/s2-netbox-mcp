@@ -21,7 +21,7 @@ import { parseCardFormatName } from './liveCheckWriteHelpers.js';
  * Covers all 50 always-registered read tools and issues no write/control
  * command. (This count has grown since the script's original 34 — most
  * recently by the 12 NBAPI v2 read tools of
- * specs/nbapi-v2-full-conformance.md R8 — and is kept in sync here rather
+ * specs/archive/nbapi-v2-full-conformance.md R8 — and is kept in sync here rather
  * than restated per-addition.) The same spec's R9 adds four checks for read
  * behaviour that shipped unverified in the unreleased batch:
  * get_threat_levels, the PARTITIONKEY filter on get_access_levels and

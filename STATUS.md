@@ -30,7 +30,7 @@ to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Tr
 ### Full NBAPI v2 command conformance (unreleased)
 
 Issue [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100), branch
-`feat/nbapi-v2-full-conformance`, spec `specs/nbapi-v2-full-conformance.md`. The server now wraps
+`feat/nbapi-v2-full-conformance`, spec `specs/archive/nbapi-v2-full-conformance.md`. The server now wraps
 **every** command the April-2025 NBAPI v2 guide (#API2-UG-8) documents and that fits a
 request/response tool, and both vendor guides have been diffed against it end to end.
 
