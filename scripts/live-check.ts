@@ -13,13 +13,20 @@ import { fetchReaderGroupNames } from '../src/readerGroupNames.js';
 import { fetchPartitionNames } from '../src/partitionNames.js';
 import { getUnlockWindow, type UnlockWindowSettings } from '../src/unlockWindow/executor.js';
 import { getDailyUnlockWindow, type DailyUnlockWindowSettings } from '../src/unlockWindow/dailyExecutor.js';
-import type { NbapiParams } from '../src/xml.js';
+import { buildParamsXml, type NbapiParams } from '../src/xml.js';
+import { parseCardFormatName } from './liveCheckWriteHelpers.js';
 
 /**
  * Opt-in live-controller smoke test (satisfies acceptance criterion C19/R29).
- * Covers all 37 always-registered read tools and issues no write/control
- * command. (This count has grown since the script's original 34; kept in
- * sync here rather than restated per-addition.)
+ * Covers all 50 always-registered read tools and issues no write/control
+ * command. (This count has grown since the script's original 34 — most
+ * recently by the 12 NBAPI v2 read tools of
+ * specs/nbapi-v2-full-conformance.md R8 — and is kept in sync here rather
+ * than restated per-addition.) The same spec's R9 adds four checks for read
+ * behaviour that shipped unverified in the unreleased batch:
+ * get_threat_levels, the PARTITIONKEY filter on get_access_levels and
+ * get_access_level_groups, the nine new SearchPersonData filters, and
+ * get_holidays' now-empty PARAMS block.
  *
  * `npm test` never runs this file and never requires a `.env` to exist.
  * This script is invoked separately via `npm run test:live`, and only
@@ -711,6 +718,209 @@ async function runGetTimeSpecGroupsResolveMemberNamesCheck(client: NetboxClient)
   }
 }
 
+// ---------------------------------------------------------------------------
+// NBAPI v2 full-conformance spec R8/R9
+// ---------------------------------------------------------------------------
+
+/**
+ * R8: `get_picture`. Drives GetPicture for a real PERSONID and PASSes on
+ * either SUCCESS or one of the guide's own documented FAIL messages for a
+ * person who simply has no photo on file — a controller whose person records
+ * carry no badge photos is a valid configuration, not a defect, and this
+ * check must not turn that into a red run.
+ */
+const GET_PICTURE_DOCUMENTED_FAILS = [
+  /No picture URL for this person ID/i,
+  /Picture file does not exist/i,
+  /Person picture image file size exceeds maximum/i,
+  /Error reading picture file/i,
+  /NOT FOUND/i,
+];
+
+async function runGetPictureCheck(client: NetboxClient, personId: string | undefined): Promise<CheckResult> {
+  const name = 'get_picture';
+  if (!personId) {
+    return { name, pass: true, summary: 'SKIPPED (no PERSONID found in search_person_data results to test against)' };
+  }
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_PICTURE, { PERSONID: personId });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result)' };
+    }
+    const details = asRecord(result.data);
+    const picture = text(details.PICTURE);
+    return {
+      name,
+      pass: true,
+      summary: `OK PERSONID ${personId}: PICTUREURL="${text(details.PICTUREURL)}", PICTURE Base64 length ${picture.length}`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (GET_PICTURE_DOCUMENTED_FAILS.some((pattern) => pattern.test(message))) {
+      return { name, pass: true, summary: `OK (documented FAIL for a person with no photo on file: ${message})` };
+    }
+    return { name, pass: false, summary: message };
+  }
+}
+
+/**
+ * R8: `get_virtual_credential_request`. Mobile credentials are a licensed
+ * NetBox feature, so a controller that has none answers the documented
+ * `CARDFORMAT NOT FOUND` FAIL — a passing outcome here, exactly like the
+ * empty-collection FAILs accepted elsewhere in this script.
+ */
+async function runGetVirtualCredentialRequestCheck(
+  client: NetboxClient,
+  personId: string | undefined,
+  cardFormat: string | undefined
+): Promise<CheckResult> {
+  const name = 'get_virtual_credential_request';
+  if (!personId || !cardFormat) {
+    return {
+      name,
+      pass: true,
+      summary: 'SKIPPED (needs a PERSONID from search_person_data and a CARDFORMAT name from get_card_formats)',
+    };
+  }
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_VIRTUAL_CREDENTIAL_REQUEST, { PERSONID: personId, CARDFORMAT: cardFormat });
+    if (result.notFound) {
+      return { name, pass: true, summary: 'OK (NOT FOUND -- a valid, documented non-error result)' };
+    }
+    const details = asRecord(result.data);
+    return {
+      name,
+      pass: true,
+      summary: `OK PERSONID ${personId}, CARDFORMAT "${cardFormat}": STATUS="${text(details.STATUS)}"`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/CARDFORMAT NOT FOUND/i.test(message) || /NOT FOUND/i.test(message)) {
+      return {
+        name,
+        pass: true,
+        summary: `OK (documented FAIL on a controller with no mobile-credential formats configured: ${message})`,
+      };
+    }
+    return { name, pass: false, summary: message };
+  }
+}
+
+/**
+ * R9: `get_threat_levels`. The unreleased batch added this tool but no live
+ * check for it. A stock NetBox ships six default threat levels, so this
+ * asserts at least one LEVELNAME comes back rather than accepting an empty
+ * collection.
+ */
+async function runGetThreatLevelsCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_threat_levels';
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_THREAT_LEVELS, {});
+    if (result.notFound) {
+      return { name, pass: false, summary: 'GetThreatLevels returned NOT FOUND; at least the six default threat levels were expected' };
+    }
+    const levelName = findFirstMatchingId(result.data, /^LEVELNAME$/i);
+    if (!levelName) {
+      return { name, pass: false, summary: `no LEVELNAME in the response: ${JSON.stringify(result.data ?? {})}` };
+    }
+    const details = asRecord(result.data);
+    const levels = asRecordList(asRecord(details.THREATLEVELS).THREATLEVEL);
+    return {
+      name,
+      pass: true,
+      summary: `OK ${levels.length || 'at least 1'} threat level(s), e.g. LEVELNAME="${levelName}"`,
+    };
+  } catch (err) {
+    return { name, pass: false, summary: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * R9: `get_holidays` with no parameters at all. The unreleased batch made
+ * this tool parameterless (its previous STARTFROMKEY was never documented);
+ * this asserts the PARAMS block really does go out empty, then that the
+ * controller still answers, so a future regression that re-introduces a
+ * parameter is caught on the wire rather than only in the schema.
+ */
+async function runGetHolidaysEmptyParamsCheck(client: NetboxClient): Promise<CheckResult> {
+  const name = 'get_holidays (empty PARAMS)';
+  const params: NbapiParams = {};
+  const serialised = buildParamsXml(params);
+  if (serialised !== '') {
+    return { name, pass: false, summary: `get_holidays would send a non-empty PARAMS body: <PARAMS>${serialised}</PARAMS>` };
+  }
+  try {
+    const result = await client.call(NBAPI_COMMANDS.GET_HOLIDAYS, params);
+    const body = result.notFound ? 'NOT FOUND' : JSON.stringify(result.data ?? {});
+    return { name, pass: true, summary: `OK sent <PARAMS></PARAMS> (no child elements); controller answered ${body.slice(0, 80)}` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/NOT FOUND/i.test(message)) {
+      return { name, pass: true, summary: `OK sent <PARAMS></PARAMS>; controller reports no holidays configured (${message})` };
+    }
+    return { name, pass: false, summary: message };
+  }
+}
+
+/**
+ * R9: the nine SearchPersonData filters the unreleased batch added (the v2
+ * guide documents them; the v1 guide does not). Each is issued as its own
+ * SearchPersonData call with a harmless value, and the controller must not
+ * reject any of them — "zero matches" and "NOT FOUND" are both fine, an
+ * "invalid parameter"-style FAIL is not.
+ */
+const NEW_SEARCH_PERSON_DATA_FILTERS: ReadonlyArray<readonly [string, string]> = [
+  ['CARDFORMAT', ''], // filled in from get_card_formats below
+  // CARDSTATUS is validated against the controller's configured card
+  // statuses -- a made-up value answers FAIL "Card status does not exist",
+  // which is a real rejection of the *value*, not of the filter. So this one
+  // is filled in from a live person record's own card (see below), which also
+  // makes it the only filter here that can actually match something.
+  ['CARDSTATUS', ''],
+  ['MSUENABLED', 'FALSE'],
+  ['BLUEDIAMONDENABLED', 'FALSE'],
+  ['CONTACTEMAIL', 'mcp-livecheck@example.invalid'],
+  ['MOBILEPHONE', '0000000000'],
+  ['NOTES', 'MCP livecheck no-such-note'],
+  ['VEHICLELICNUM', 'MCPLC0'],
+  ['VEHICLETAGNUM', 'MCPLC0'],
+];
+
+async function runSearchPersonDataNewFiltersCheck(
+  client: NetboxClient,
+  cardFormat: string | undefined,
+  cardStatus: string | undefined
+): Promise<CheckResult> {
+  const name = 'search_person_data (nine new v2 filters)';
+  const discovered: Record<string, string | undefined> = { CARDFORMAT: cardFormat, CARDSTATUS: cardStatus };
+  const failures: string[] = [];
+  const accepted: string[] = [];
+  for (const [filter, sample] of NEW_SEARCH_PERSON_DATA_FILTERS) {
+    const value = filter in discovered ? (discovered[filter] ?? '') : sample;
+    if (value === '') {
+      accepted.push(`${filter} (SKIPPED: no live ${filter} value available on this controller)`);
+      continue;
+    }
+    try {
+      const result = await client.call(NBAPI_COMMANDS.SEARCH_PERSON_DATA, { [filter]: value });
+      accepted.push(`${filter}${result.notFound ? ' (NOT FOUND)' : ''}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // A bare NOT FOUND means "no person matched", which is the whole point
+      // of sending a deliberately non-matching value.
+      if (/NOT FOUND/i.test(message)) {
+        accepted.push(`${filter} (FAIL/NOT FOUND)`);
+      } else {
+        failures.push(`${filter}: ${message}`);
+      }
+    }
+  }
+  if (failures.length > 0) {
+    return { name, pass: false, summary: `the controller rejected ${failures.length} filter(s): ${failures.join('; ')}` };
+  }
+  return { name, pass: true, summary: `OK all ${accepted.length} filter(s) accepted: ${accepted.join(', ')}` };
+}
+
 async function main(): Promise<number> {
   const baseUrl = process.env.NETBOX_BASE_URL;
   const username = process.env.NETBOX_USERNAME;
@@ -782,7 +992,13 @@ async function main(): Promise<number> {
 
   results.push(await runGetReaderAccessHistoryCheck(client, findFirstMatchingId(readers.data, /READERKEY/i)));
 
-  results.push(await runCheck(client, 'get_card_formats', NBAPI_COMMANDS.GET_CARD_FORMATS, {}));
+  const cardFormats = await runCheck(client, 'get_card_formats', NBAPI_COMMANDS.GET_CARD_FORMATS, {});
+  results.push(cardFormats);
+  // Reused by the R8 get_virtual_credential_request check and the R9
+  // SearchPersonData CARDFORMAT filter check further down. parseCardFormatName
+  // tolerates every response shape observed live (bare string, array of
+  // strings, object with NAME) -- see scripts/liveCheckWriteHelpers.ts.
+  const firstCardFormatName = parseCardFormatName(asRecord(asRecord(cardFormats.data).CARDFORMATS).CARDFORMAT) || undefined;
 
   const searchPersonData = await runCheck(client, 'search_person_data', NBAPI_COMMANDS.SEARCH_PERSON_DATA, {});
   results.push(searchPersonData);
@@ -908,6 +1124,84 @@ async function main(): Promise<number> {
   );
   results.push(await runCheck(client, 'get_floors', NBAPI_COMMANDS.GET_FLOORS, {}, { acceptEmptyCollectionFail: true }));
   results.push(await runCheck(client, 'ping_app', NBAPI_COMMANDS.PING_APP, {}));
+
+  // --- NBAPI v2 full-conformance spec R8: the 12 new read tools -----------
+  // Collection reads use acceptEmptyCollectionFail because this 6.2.0
+  // controller answers an unconfigured collection with CODE=FAIL/
+  // ERRMSG="NOT FOUND"; the singular reads chain off their own list and
+  // SKIP-pass when the list is empty (no Mercury/SIO hardware exists here).
+
+  results.push(
+    await runCheck(client, 'get_portal_states', NBAPI_COMMANDS.GET_PORTAL_STATES, {}, { acceptEmptyCollectionFail: true })
+  );
+  results.push(
+    await runCheck(client, 'get_portal_statuses', NBAPI_COMMANDS.GET_PORTAL_STATUSES, {}, { acceptEmptyCollectionFail: true })
+  );
+  results.push(
+    await runCheck(client, 'get_locations', NBAPI_COMMANDS.GET_LOCATIONS, {}, { acceptEmptyCollectionFail: true })
+  );
+  results.push(await runCheck(client, 'get_alarms', NBAPI_COMMANDS.GET_ALARMS, {}, { acceptEmptyCollectionFail: true }));
+
+  const mercuryPanels = await runCheck(client, 'get_mercury_panels', NBAPI_COMMANDS.GET_MERCURY_PANELS, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(mercuryPanels);
+  results.push(
+    await chainedSingleCheck(client, 'get_mercury_panel', NBAPI_COMMANDS.GET_MERCURY_PANEL, 'MERCURYKEY', mercuryPanels.data, {
+      acceptEmptyCollectionFail: true,
+    })
+  );
+
+  // GetSios has no unfiltered listing: it is keyed by MERCURYKEY, so it too
+  // chains off get_mercury_panels and SKIP-passes with no Mercury hardware.
+  const sios = await chainedSingleCheck(client, 'get_sios', NBAPI_COMMANDS.GET_SIOS, 'MERCURYKEY', mercuryPanels.data, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(sios);
+  results.push(
+    await chainedSingleCheck(client, 'get_sio', NBAPI_COMMANDS.GET_SIO, 'SIOKEY', sios.data, { acceptEmptyCollectionFail: true })
+  );
+
+  const networkNodes = await runCheck(client, 'get_network_nodes', NBAPI_COMMANDS.GET_NETWORK_NODES, {}, {
+    acceptEmptyCollectionFail: true,
+  });
+  results.push(networkNodes);
+  results.push(
+    await chainedSingleCheck(client, 'get_network_node', NBAPI_COMMANDS.GET_NETWORK_NODE, 'NODEKEY', networkNodes.data, {
+      acceptEmptyCollectionFail: true,
+    })
+  );
+
+  results.push(await runGetPictureCheck(client, personId));
+  results.push(await runGetVirtualCredentialRequestCheck(client, personId, firstCardFormatName));
+
+  // --- NBAPI v2 full-conformance spec R9: the unreleased read gaps --------
+
+  results.push(await runGetThreatLevelsCheck(client));
+  results.push(
+    await runCheck(
+      client,
+      'get_access_levels (PARTITIONKEY)',
+      NBAPI_COMMANDS.GET_ACCESS_LEVELS,
+      { PARTITIONKEY: '0' },
+      { acceptEmptyCollectionFail: true }
+    )
+  );
+  results.push(
+    await runCheck(
+      client,
+      'get_access_level_groups (PARTITIONKEY)',
+      NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS,
+      { PARTITIONKEY: '0' },
+      { acceptEmptyCollectionFail: true }
+    )
+  );
+  // CARDSTATUS is validated against the controller's configured statuses, so
+  // it has to come from a real card rather than a made-up string; GetPerson's
+  // response carries it on each of the person's access cards.
+  const liveCardStatus = findFirstMatchingId(searchPersonData.data, /^CARDSTATUS$/i);
+  results.push(await runSearchPersonDataNewFiltersCheck(client, firstCardFormatName, liveCardStatus));
+  results.push(await runGetHolidaysEmptyParamsCheck(client));
 
   results.push(
     await runGetUnlockWindowCheck(client, { holidayGroups: config.unlockHolidayGroups, namePrefix: config.unlockNamePrefix })
