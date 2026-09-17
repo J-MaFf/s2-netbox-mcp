@@ -49,6 +49,21 @@ they describe the server as it actually is.
     "Prerequisites to Run". `docs/reference/README.md` describes the four vendor PDFs.
 
 ### Verified facts from the vendor docs (`pdftotext -layout` over `docs/reference/*.pdf`)
+> **Correction, 2026-09-17 (post forge round 1):** the row-count arithmetic below (105 v2
+> headings, 80 v1 commands, "104 command rows" in R13/C13) undercounts. A full
+> `pdftotext -layout` heading extraction of the v2 Command Reference finds **111** headings,
+> not 105 — the original count missed `AckAlarm`, `AckEvent`, `AlarmClearActions`,
+> `AlarmSetOwner`, `EventClearActions`, `StreamEvents`. The v1 guide documents **82** commands,
+> not 80 (it does include `Login`/`Logout`, `GetPicture`, `StreamEvents`). The "−3 artefacts,
+> +Login/Logout" adjustment below double-subtracts (`GetAddPartition` is just a mis-typeset
+> `AddPartition`, already excluded from the 111; `Enabled`/`LoginResponse` are Intrusion-API
+> *definitions*, never Command Reference headings, so there was nothing to subtract) and
+> double-counts (`Login`/`Logout` are already in both the 111 and the 82). None of this changes
+> which 24 commands are unimplemented (that set was independently spot-checked and stands) —
+> only the diff report's total row count. R13/C13 below are amended accordingly: the diff report
+> must have **118** command rows (111 v2-documented ∪ 82 v1-documented ∪ 81 pre-existing
+> implemented, deduplicated, plus the 7 deprecated-but-undocumented-in-either-guide commands),
+> not 104.
 - The v2 guide (`NetBox_API_V2.pdf`, #API2-UG-8) documents **105** command headings. Set-diffed
   against the 81 implemented commands, and discarding three PDF artefacts (`Enabled`,
   `LoginResponse`, `GetAddPartition` — the latter is a mis-typeset heading for `AddPartition`),
@@ -63,7 +78,9 @@ they describe the server as it actually is.
 - The April-2024 v1 guide (`NetBox_API_V1.pdf`, #API-UG-22) documents 80 commands = the 81
   implemented minus `Login`/`Logout` plus the deprecated `LoginUserPassword`. Every one of the 24
   above is v2-only. **Neither guide documents any Add/Modify/Delete command for elevators or
-  floors** — this answers `STATUS.md` "Natural Next Steps" item 2 definitively.
+  floors** — this answers `STATUS.md` "Natural Next Steps" item 2 definitively. (See the
+  correction note above: the underlying v1/v2 counts used for the *diff report's row total*
+  were revised; the 24-command implementation set was not affected.)
 - v2's "Deprecated Commands" table (p.278): `EditPerson`, `EditThreatLevel`,
   `EditThreatLevelGroup`, `GetAccessDataLog`, `GetAccessCardDetails`, `LoginUserName`,
   `LoginUserPassword`. None are implemented; keep it that way.
@@ -214,8 +231,10 @@ All in the repo, one feature branch (`feat/nbapi-v2-full-conformance`), one GitH
   union of (v1 April-2024, v2 April-2025, implemented set), columns: Command · In v1-2024 · In
   v2-2025 · Implemented before this spec · Implemented after · MCP tool name(s) · Note. The three
   PDF artefacts are listed in a footnote as excluded, and the seven deprecated commands are rows
-  marked "deprecated, intentionally unimplemented". [verify: row count = 105 documented − 3
-  artefacts + `Login`/`Logout` = 104 command rows, spot-check 10 rows against the PDFs]
+  marked "deprecated, intentionally unimplemented". [verify: row count = 118 command rows (111
+  v2-documented ∪ 82 v1-documented ∪ 81 pre-existing implemented, deduplicated, plus the 7
+  deprecated commands undocumented in either guide's Command Reference) per the 2026-09-17
+  correction note in Context; spot-check 10 rows against the PDFs]
 - R14. The report has a section "Elevators and floors" stating that neither guide documents any
   Add/Modify/Delete command for elevators or floors, and a section "Protocol" stating the server
   already posts v2's XML to `/nbws/goforms/nbapi` and that the v1 end-of-support notice does not
@@ -309,7 +328,7 @@ All in the repo, one feature branch (`feat/nbapi-v2-full-conformance`), one GitH
   `CHANGELOG.md` carry the maintainer-pasted write-run summary and the #79 finding. (This
   criterion requires the maintainer's pasted output; the loop must pause for it rather than fail
   or fabricate.)
-- C13 (R13): PASS iff the diff table has 104 command rows with the specified columns and a
+- C13 (R13): PASS iff the diff table has 118 command rows with the specified columns and a
   10-row spot check against the PDFs finds no error.
 - C14 (R14): PASS iff the "Elevators and floors" and "Protocol" sections exist and their claims
   are true per the PDFs.
