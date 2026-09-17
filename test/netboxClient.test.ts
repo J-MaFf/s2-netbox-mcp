@@ -362,3 +362,40 @@ describe('NetboxClient per-command request path (R6)', () => {
     }
   });
 });
+
+describe('NetboxClient.lastServerDate (issue #102)', () => {
+  it('parses the HTTP Date header from the most recent response', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'), 200, { Date: 'Thu, 17 Sep 2026 09:09:50 GMT' });
+    mock.queueXml(SUCCESS_XML('GetAccessHistory'), 200, { Date: 'Thu, 17 Sep 2026 09:10:12 GMT' });
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    expect(client.lastServerDate).toBeUndefined(); // before any request
+    await client.call('GetAccessHistory', { MAXRECORDS: '1' });
+
+    // Reflects the *most recent* response (GetAccessHistory), not the Login response.
+    expect(client.lastServerDate).toEqual(new Date('2026-09-17T09:10:12.000Z'));
+  });
+
+  it('is undefined when the response has no Date header', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1')); // no headers passed
+    mock.queueXml(SUCCESS_XML('GetPortals'));
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    await client.call('GetPortals', {});
+
+    expect(client.lastServerDate).toBeUndefined();
+  });
+
+  it('is undefined when the Date header is present but unparseable', async () => {
+    const mock = createMockFetch();
+    mock.queueXml(LOGIN_SUCCESS_XML('SESS-1'));
+    mock.queueXml(SUCCESS_XML('GetPortals'), 200, { Date: 'not a date' });
+
+    const client = new NetboxClient(CONFIG, mock.fetchImpl);
+    await client.call('GetPortals', {});
+
+    expect(client.lastServerDate).toBeUndefined();
+  });
+});

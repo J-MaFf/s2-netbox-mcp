@@ -472,11 +472,18 @@ const SKEW_FAIL_SECONDS = 2 * 60;
 
 export type ClockSkewStatus = 'ok' | 'fail' | 'no-record';
 
+/** Where the controller time being compared against the host clock came
+ * from. `http-date` (the NBAPI response's HTTP `Date` header) is fresh on
+ * every request regardless of badge activity, and is preferred whenever
+ * available; `access-record` (the newest GetAccessHistory record's DTTM) is
+ * the fallback used only when no `Date` header could be read. */
+export type ClockSkewSource = 'http-date' | 'access-record';
+
 export interface ClockSkewResult {
   status: ClockSkewStatus;
   /** `HH:MM:SS`, host clock at the moment of the check. */
   hostClock: string;
-  /** `HH:MM:SS`, parsed from the newest access record's DTTM. Absent for `no-record`. */
+  /** `HH:MM:SS`, the controller time compared against the host clock. Absent for `no-record`. */
   controllerClock?: string;
   /** Absolute difference between the two clocks, in whole seconds. Absent for `no-record`. */
   skewSeconds?: number;
@@ -484,6 +491,9 @@ export interface ClockSkewResult {
    * project an estimated controller clock time forward from a later host time
    * (the HEADS-UP line in phase (c), R30 c). */
   offsetSeconds?: number;
+  /** Which source the controller time was derived from. Absent for `no-record`
+   * (there was nothing to derive it from). */
+  source?: ClockSkewSource;
 }
 
 function pad2(n: number): string {
@@ -519,22 +529,25 @@ export function parseControllerDttm(dttm: string): Date | undefined {
 }
 
 /**
- * Estimates controller/host clock skew from the newest access-history
- * record's `DTTM` (R30 b2). `newestDttm` is `undefined` when no record was
- * returned at all.
+ * Computes controller/host clock skew from an already-resolved controller
+ * `Date` (R30 b2), regardless of which source it came from. `controllerDate`
+ * is `undefined` when that source had nothing to offer.
  *
- * - No record, or a `DTTM` that doesn't parse -> `no-record` (WARN, continue)
- *   — only in this case is the estimate too weak to judge, since there is
- *   nothing to compare against.
+ * - No `controllerDate` -> `no-record` (WARN, continue) — only in this case
+ *   is the estimate too weak to judge, since there is nothing to compare
+ *   against.
  * - Skew beyond `SKEW_FAIL_SECONDS` (2 min) -> `fail` (skip phase (c)). There
- *   is no "stale record" exemption for a large delta: an old newest record
- *   is indistinguishable from a wrong clock, so any delta above the
- *   threshold fails closed no matter how old the record is.
+ *   is no "stale source" exemption for a large delta: it is indistinguishable
+ *   from a wrong clock, so any delta above the threshold fails closed no
+ *   matter how the controller time was derived.
  * - Otherwise -> `ok`.
  */
-export function computeClockSkew(hostNow: Date, newestDttm: string | undefined): ClockSkewResult {
+export function computeClockSkewFromControllerTime(
+  hostNow: Date,
+  controllerDate: Date | undefined,
+  source: ClockSkewSource
+): ClockSkewResult {
   const hostClock = formatClockHMS(hostNow);
-  const controllerDate = newestDttm === undefined ? undefined : parseControllerDttm(newestDttm);
   if (!controllerDate) {
     return { status: 'no-record', hostClock };
   }
@@ -542,9 +555,21 @@ export function computeClockSkew(hostNow: Date, newestDttm: string | undefined):
   const offsetSeconds = Math.round((controllerDate.getTime() - hostNow.getTime()) / 1000);
   const skewSeconds = Math.abs(offsetSeconds);
   if (skewSeconds > SKEW_FAIL_SECONDS) {
-    return { status: 'fail', hostClock, controllerClock, skewSeconds, offsetSeconds };
+    return { status: 'fail', hostClock, controllerClock, skewSeconds, offsetSeconds, source };
   }
-  return { status: 'ok', hostClock, controllerClock, skewSeconds, offsetSeconds };
+  return { status: 'ok', hostClock, controllerClock, skewSeconds, offsetSeconds, source };
+}
+
+/**
+ * Estimates controller/host clock skew from the newest access-history
+ * record's `DTTM` (R30 b2). `newestDttm` is `undefined` when no record was
+ * returned at all. This is the fallback source, used only when the NBAPI
+ * response's HTTP `Date` header (see {@link computeClockSkewFromControllerTime}
+ * with `source: 'http-date'`) is unavailable.
+ */
+export function computeClockSkew(hostNow: Date, newestDttm: string | undefined): ClockSkewResult {
+  const controllerDate = newestDttm === undefined ? undefined : parseControllerDttm(newestDttm);
+  return computeClockSkewFromControllerTime(hostNow, controllerDate, 'access-record');
 }
 
 /** Projects an estimated controller clock time forward from `offsetSeconds`

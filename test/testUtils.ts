@@ -50,14 +50,15 @@ export interface MockCall {
 export interface MockFetchController {
   fetchImpl: FetchLike;
   calls: MockCall[];
-  /** Queue a canned XML response (and optional HTTP status) for the next request. */
-  queueXml(xml: string, status?: number): void;
+  /** Queue a canned XML response (optional HTTP status, optional response
+   * headers e.g. `{ Date: 'Thu, 17 Sep 2026 09:09:50 GMT' }`) for the next request. */
+  queueXml(xml: string, status?: number, headers?: Record<string, string>): void;
 }
 
 /** A hand-rolled fetch stub — no live controller, no network library. */
 export function createMockFetch(): MockFetchController {
   const calls: MockCall[] = [];
-  const queue: Array<{ xml: string; status: number }> = [];
+  const queue: Array<{ xml: string; status: number; headers: Record<string, string> }> = [];
 
   const fetchImpl: FetchLike = async (url, init) => {
     calls.push({ url, body: init.body });
@@ -70,14 +71,20 @@ export function createMockFetch(): MockFetchController {
       status: next.status,
       statusText: next.status === 200 ? 'OK' : 'Error',
       text: async () => next.xml,
+      headers: {
+        get: (name: string) => {
+          const match = Object.keys(next.headers).find((k) => k.toLowerCase() === name.toLowerCase());
+          return match ? next.headers[match] : null;
+        },
+      },
     };
   };
 
   return {
     fetchImpl,
     calls,
-    queueXml(xml: string, status = 200) {
-      queue.push({ xml, status });
+    queueXml(xml: string, status = 200, headers = {}) {
+      queue.push({ xml, status, headers });
     },
   };
 }

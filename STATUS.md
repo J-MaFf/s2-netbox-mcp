@@ -363,6 +363,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#55](https://github.com/J-MaFf/s2-netbox-mcp/issues/55) | `get_card_access_details` `RESOLVENAMES` person-name enrichment (single top-level lookup) | [#56](https://github.com/J-MaFf/s2-netbox-mcp/pull/56) |
 | [#57](https://github.com/J-MaFf/s2-netbox-mcp/issues/57) | `get_portals` `RESOLVEDESCRIPTIONS` reader-description enrichment (nested reader objects) | [#58](https://github.com/J-MaFf/s2-netbox-mcp/pull/58) |
 | [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100) | NBAPI v2 full conformance: the 24 remaining v2 commands (allowlist 81 -> 105, tools 38/77/88 -> 50/97/112), live verification of the 12 new reads plus four unreleased read gaps (64/64 on 2026-09-17), maintainer-run write verification (41/42 on 2026-09-17; the #79 `ROLE`/`AUTHTYPE` question resolved), the three-way command diff report, and the README/STATUS/CHANGELOG refresh | [#101](https://github.com/J-MaFf/s2-netbox-mcp/pull/101) |
+| [#102](https://github.com/J-MaFf/s2-netbox-mcp/issues/102) | `live-check-write`'s clock-skew guard now reads the controller's own HTTP `Date` response header (fresh on every request) as the primary source, falling back to the newest access-record DTTM only if that header is unavailable — distinguishes real controller drift from a merely-quiet reader | [#103](https://github.com/J-MaFf/s2-netbox-mcp/pull/103) |
 
 ### Open Issues
 
@@ -388,9 +389,14 @@ enforced client-side via her `mcp_config.json`, not by the NetBox account itself
    doors' actual state, so those tools could report "the controller says these portals are in
    Extended Unlock right now" instead of "they should be". Deliberately not done in
    [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100); noted here as the obvious follow-on.
-5. **Keep NTP running on the controller** — the live-check-write run on 2026-09-17 caught it
-   00:12:43 off, failing the clock-skew guard and skipping the real-portal-unlock phase. Same
-   recurring issue as previously noted (it was ~4h35m off once before).
+5. **Fix NTP on the controller itself.** The live-check-write run on 2026-09-17 caught it 00:12:43
+   off (4h35m off once before that, on 2026-09-15) — a physical NetBox appliance drifting twice in
+   two days points at NTP not being configured/working there, not at a quiet reader. As of
+   [#102](https://github.com/J-MaFf/s2-netbox-mcp/issues/102) the clock-skew guard reads the
+   controller's own HTTP `Date` response header (fresh on every request, independent of badge
+   activity) rather than inferring the clock from the newest access record, so this reading is
+   trustworthy — it isn't a stale-record artifact. There is no NBAPI command to set the controller's
+   time, so this is a manual fix in the controller's own admin web UI, outside this repo.
 6. Readers with no `DESCRIPTION` on the controller can only be found by name via `find_portals`.
    Filling those in on NetBox makes it complete.
 

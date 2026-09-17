@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `NetboxClient` exposes `lastServerDate`, parsed from the HTTP `Date` header on the most recent
+  NBAPI response. `scripts/live-check-write.ts`'s controller clock-skew guard now uses it as the
+  primary source (fresh on every request, independent of badge activity), falling back to the
+  previous newest-access-record estimate only if the header is missing or unparseable. This lets
+  the guard tell "the reader's been quiet" apart from "the controller's clock is actually wrong" —
+  both used to look identical (a large delta) and both failed closed the same way
+  ([#102](https://github.com/J-MaFf/s2-netbox-mcp/issues/102)).
 - Added `docs/reference/`: `NetBox_API_V1.pdf` (doc #API-UG-22, April 2024),
   `NetBox_API_V2.pdf` (doc #API2-UG-8, April 2025), `Data_Operations.pdf`
   (doc #DOPS-UG-22, April 2025), and `NetBox_Hardening_Guide.pdf` (doc
