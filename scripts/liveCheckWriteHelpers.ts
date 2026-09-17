@@ -105,6 +105,11 @@ export const LIVE_CHECK_ACTION_NAMES = [
   'set_portals_state_lock',
   'set_portals_state_momentary',
   'set_threat_level',
+  // NBAPI v2 full-conformance spec R11 (d): the same SetThreatLevel command,
+  // but scoped to specific locations via the v2-only LOCATIONKEYS parameter
+  // (discovered at run time from GetLocations). Supervised only — never a
+  // default step — because it changes the active threat level for real.
+  'set_threat_level_locations',
   'trigger_event_activate',
   'trigger_event_deactivate',
 ] as const;
@@ -133,6 +138,10 @@ export interface LiveCheckActionSpec {
   /** True when this action refuses to run without `--value` (set_threat_level's
    * LEVELNAME, and trigger_event_activate/trigger_event_deactivate's EVENTNAME). */
   requiresValue: boolean;
+  /** True when this action needs LOCATIONKEYS discovered from GetLocations
+   * before it can be issued; the script SKIP-passes when the controller has
+   * no locations to scope to (R11 d). */
+  needsLocationKeys?: boolean;
   /** Builds the "OBSERVE: ..." line printed after the action runs. */
   observe: (ctx: LiveCheckActionContext) => string;
 }
@@ -224,6 +233,17 @@ export const LIVE_CHECK_ACTIONS: Readonly<Record<LiveCheckActionName, LiveCheckA
       `OBSERVE: the system-wide threat level should now show "${value}" on Monitor — set it back with ` +
       '--action set_threat_level --value Default when done',
   },
+  set_threat_level_locations: {
+    name: 'set_threat_level_locations',
+    kind: 'command',
+    command: NBAPI_COMMANDS.SET_THREAT_LEVEL,
+    targetsOutput: false,
+    requiresValue: true,
+    needsLocationKeys: true,
+    observe: ({ value }) =>
+      `OBSERVE: the threat level should now show "${value}" on the scoped location(s) only (Monitor : Threat Level) — ` +
+      'set it back with --action set_threat_level --value Default when done',
+  },
   // The only way TriggerEvent is reachable from this script (#12): the target
   // event must already exist in the NetBox UI (events cannot be created via
   // the NBAPI), and EVENTNAME (--value) identifies it. Routed through the
@@ -288,11 +308,14 @@ export function isPortalStateNotChangedError(errmsg: string | undefined): boolea
  * function and its own PORTALKEY list instead. */
 export function buildActionParams(
   spec: LiveCheckActionSpec,
-  target: { PORTALKEY: string; OUTPUTKEY?: string },
+  target: { PORTALKEY: string; OUTPUTKEY?: string; LOCATIONKEYS?: string },
   value: string | undefined
 ): Record<string, string> {
   if (spec.name === 'set_threat_level') {
     return { LEVELNAME: value ?? '' };
+  }
+  if (spec.name === 'set_threat_level_locations') {
+    return { LEVELNAME: value ?? '', LOCATIONKEYS: target.LOCATIONKEYS ?? '' };
   }
   if (spec.name === 'trigger_event_activate' || spec.name === 'trigger_event_deactivate') {
     return {
@@ -305,6 +328,39 @@ export function buildActionParams(
     return { OUTPUTKEY: target.OUTPUTKEY ?? '' };
   }
   return { PORTALKEY: target.PORTALKEY };
+}
+
+/**
+ * Formats the LOCATIONKEYS value for `--action set_threat_level_locations`
+ * (R11 d): SetThreatLevel's LOCATIONKEYS is documented as a comma-separated
+ * key list, so this de-duplicates, drops blanks and preserves discovery
+ * order. Returns `''` when the controller has no usable location keys, which
+ * the script treats as a SKIP-pass rather than sending an empty parameter.
+ */
+export function formatLocationKeys(locationKeys: readonly string[]): string {
+  const seen: string[] = [];
+  for (const raw of locationKeys) {
+    const key = raw.trim();
+    if (key !== '' && !seen.includes(key)) seen.push(key);
+  }
+  return seen.join(',');
+}
+
+/**
+ * The #79 finding line (R11 c / R12): AddPerson's own FAIL list insists ROLE
+ * and AUTHTYPE are mandatory, yet the live controller accepts a person with
+ * neither. The open question is whether the requirement only bites once
+ * USERNAME is set — i.e. only for a person who should also get a NetBox login
+ * account. This formats whichever answer the controller gave into the one
+ * sentence that lands verbatim in STATUS.md and CHANGELOG.md, so the finding
+ * cannot drift between the run output and the docs.
+ */
+export function formatUsernameRequirementFinding(outcome: { succeeded: boolean; errmsg?: string }): string {
+  return outcome.succeeded
+    ? 'AddPerson with USERNAME but without ROLE/AUTHTYPE SUCCEEDED on the live controller: USERNAME does not make ' +
+        'ROLE/AUTHTYPE mandatory, so modelling all three as optional is correct.'
+    : 'AddPerson with USERNAME but without ROLE/AUTHTYPE FAILED on the live controller with ERRMSG ' +
+        `"${outcome.errmsg ?? ''}": ROLE/AUTHTYPE become mandatory once USERNAME is set, so set them together.`;
 }
 
 export interface TestWindow {

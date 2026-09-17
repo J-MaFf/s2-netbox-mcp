@@ -147,8 +147,14 @@ describe('live-check-write helpers (R30)', () => {
       });
     });
 
-    it('only set_threat_level and the two trigger_event actions require --value', () => {
-      const requiresValueNames = new Set(['set_threat_level', 'trigger_event_activate', 'trigger_event_deactivate']);
+    it('only the two set_threat_level actions and the two trigger_event actions require --value', () => {
+      const requiresValueNames = new Set([
+        'set_threat_level',
+        // NBAPI v2 full-conformance spec R11 (d).
+        'set_threat_level_locations',
+        'trigger_event_activate',
+        'trigger_event_deactivate',
+      ]);
       for (const name of LIVE_CHECK_ACTION_NAMES) {
         expect(LIVE_CHECK_ACTIONS[name].requiresValue).toBe(requiresValueNames.has(name));
       }
@@ -370,7 +376,9 @@ describe('scripts/live-check-write.ts scope (R30 d) and wiring', () => {
 
   it('the person round-trip runs create -> read -> modify -> read -> delete in order, using only the returned PERSONID/CREDENTIALID', () => {
     const order = [
-      "step('add_person -> get_person'",
+      // Renamed by the NBAPI v2 full-conformance spec R11 (c), which made the
+      // "no USERNAME/ROLE/AUTHTYPE" aspect of this step explicit.
+      "step('add_person WITHOUT USERNAME/ROLE/AUTHTYPE -> get_person (regression guard, #79)'",
       "step('modify_person (MIDDLENAME/NOTES) -> get_person'",
       "step('add_credential -> get_person (WANTCREDENTIALID) shows the card'",
       "step('modify_credential (DISABLED=1) -> get_person shows DISABLED'",
