@@ -59,14 +59,16 @@ describe('registerThreatLevelTools (R18)', () => {
     );
   });
 
-  it('set_threat_level requires only LEVELNAME and calls SetThreatLevel', async () => {
+  it('set_threat_level requires LEVELNAME, takes an optional LOCATIONKEYS, and calls SetThreatLevel', async () => {
     const server = new FakeServer();
     const { client, calls } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
     const reg = byName(server, 'set_threat_level');
-    expect(Object.keys(reg.schema)).toEqual(['LEVELNAME']);
+    expect(Object.keys(reg.schema).sort()).toEqual(['LEVELNAME', 'LOCATIONKEYS'].sort());
     await reg.handler({ LEVELNAME: 'High' });
     expect(calls).toEqual([{ command: NBAPI_COMMANDS.SET_THREAT_LEVEL, params: { LEVELNAME: 'High' } }]);
+    await reg.handler({ LEVELNAME: 'High', LOCATIONKEYS: '3,7' });
+    expect(calls[1]).toEqual({ command: NBAPI_COMMANDS.SET_THREAT_LEVEL, params: { LEVELNAME: 'High', LOCATIONKEYS: '3,7' } });
   });
 
   it('add_threat_level exposes LEVELNAME/SEQNUM/COLOR with COLOR as a closed enum', async () => {

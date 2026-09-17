@@ -27,9 +27,15 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
 
   server.tool(
     'set_threat_level',
-    'WRITE: Sets the system-wide active threat level (wraps NBAPI SetThreatLevel).',
-    { LEVELNAME: z.string().describe('Required. Name of the threat level to activate.') },
-    async ({ LEVELNAME }) => runNbapiTool(client, NBAPI_COMMANDS.SET_THREAT_LEVEL, { LEVELNAME }, formatWriteSuccess)
+    'WRITE: Sets the active threat level (wraps NBAPI SetThreatLevel). Applies system-wide unless LOCATIONKEYS scopes it to specific locations/readers.',
+    {
+      LEVELNAME: z.string().describe('Required. Name of the threat level to activate.'),
+      LOCATIONKEYS: z
+        .string()
+        .optional()
+        .describe('Optional. Comma-separated location keys to scope this threat level change to, instead of the whole partition.'),
+    },
+    async (args) => runNbapiTool(client, NBAPI_COMMANDS.SET_THREAT_LEVEL, mergeParams(args), formatWriteSuccess)
   );
 
   server.tool(

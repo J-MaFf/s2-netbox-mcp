@@ -620,7 +620,7 @@ section above for the gating rules and the shared `SUCCESS`/`WRITE:`/
 | `add_credential`              | `AddCredential`            | `PERSONID`, `CARDFORMAT` (+ `ENCODEDNUM` or `HOTSTAMP`) | write |
 | `modify_credential`           | `ModifyCredential`         | `PERSONID`                                       | write       |
 | `remove_credential`           | `RemoveCredential`         | `PERSONID` (+ `CREDENTIALID` or `ENCODEDNUM`/`HOTSTAMP`) | destructive |
-| `set_threat_level`            | `SetThreatLevel`           | `LEVELNAME`                                      | write       |
+| `set_threat_level`            | `SetThreatLevel`           | `LEVELNAME` (optional `LOCATIONKEYS`)            | write       |
 | `add_threat_level`            | `AddThreatLevel`           | `LEVELNAME`                                      | write       |
 | `modify_threat_level`         | `ModifyThreatLevel`        | `LEVELNAME`, `SEQNUM`, `COLOR`                   | write       |
 | `remove_threat_level`         | `RemoveThreatLevel`        | `LEVELNAME`                                      | destructive |
