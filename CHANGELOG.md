@@ -152,6 +152,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `AddPortalGroup` without `UNLOCKTIMESPECGROUPKEY` fails with "Group must have a valid Timespec
   assigned."
   ([#86](https://github.com/J-MaFf/s2-netbox-mcp/issues/86)).
+- `modify_threat_level`'s `COLOR` is now a required field (previously optional), joining `SEQNUM`
+  (already required per #13). Doc p.246 lists `LEVELNAME`/`SEQNUM`/`COLOR` with none marked
+  "(optional)", and a live-controller probe confirmed `COLOR` is enforced the same way `SEQNUM`
+  already was: `ModifyThreatLevel` without `COLOR` fails
+  ([#87](https://github.com/J-MaFf/s2-netbox-mcp/issues/87)).
 
 ### Fixed
 - `get_reader_access_history` no longer drops the native `PORTALNAME` field that

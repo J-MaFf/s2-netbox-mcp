@@ -94,13 +94,19 @@ describe('registerThreatLevelTools (R18)', () => {
     ]);
   });
 
-  it('modify_threat_level exposes LEVELNAME/SEQNUM/COLOR, with SEQNUM required (unlike add_threat_level)', () => {
+  it('modify_threat_level exposes LEVELNAME/SEQNUM/COLOR, with SEQNUM and COLOR both required (unlike add_threat_level)', async () => {
     const server = new FakeServer();
-    const { client } = fakeClient();
+    const { client, calls } = fakeClient();
     registerThreatLevelTools(server as unknown as McpServer, client, WRITES_ON);
-    const schema = byName(server, 'modify_threat_level').schema as Record<string, { isOptional: () => boolean }>;
+    const reg = byName(server, 'modify_threat_level');
+    const schema = reg.schema as Record<string, { isOptional: () => boolean }>;
     expect(Object.keys(schema).sort()).toEqual(['LEVELNAME', 'SEQNUM', 'COLOR'].sort());
     expect(schema.SEQNUM.isOptional()).toBe(false);
+    expect(schema.COLOR.isOptional()).toBe(false);
+    await reg.handler({ LEVELNAME: 'High', SEQNUM: '7', COLOR: 'Red' });
+    expect(calls).toEqual([
+      { command: NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, params: { LEVELNAME: 'High', SEQNUM: '7', COLOR: 'Red' } },
+    ]);
   });
 
   it('modify_threat_level_group requires LEVELNAMES (not optional)', () => {
