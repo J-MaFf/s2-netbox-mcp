@@ -23,7 +23,8 @@ acceptance criteria passed).
 Published on [npm](https://www.npmjs.com/package/s2-netbox-mcp) and the [official MCP
 Registry](https://registry.modelcontextprotocol.io) as `io.github.J-MaFf/s2-netbox-mcp`; submitted
 to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Trusted Publishing
-(OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again.
+(OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again. The same workflow
+then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
 ## Current State — 2026-09-17
 
@@ -326,7 +327,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `test/fakeNetbox.ts` | Stateful in-memory controller double for the composite tools' tests (reproduces the live 6.2.0 quirks) |
 | `server.json` | Official MCP Registry metadata (`io.github.J-MaFf/s2-netbox-mcp`); version kept in sync with `package.json` |
 | `.github/workflows/ci.yml` | Typecheck/test/build on every push/PR against `main`; a required status check |
-| `.github/workflows/publish.yml` | Publishes to npm via OIDC Trusted Publishing on every `v*` tag push |
+| `.github/workflows/publish.yml` | Publishes to npm via OIDC Trusted Publishing on every `v*` tag push, then creates the matching GitHub Release from that tag's CHANGELOG entry |
 | `CONTRIBUTING.md` | Issue-first workflow, branch naming, PR conventions for outside contributors |
 | `SECURITY.md` | Private vulnerability reporting instructions; physical-safety blast radius by config level |
 
@@ -365,6 +366,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#100](https://github.com/J-MaFf/s2-netbox-mcp/issues/100) | NBAPI v2 full conformance: the 24 remaining v2 commands (allowlist 81 -> 105, tools 38/77/88 -> 50/97/112), live verification of the 12 new reads plus four unreleased read gaps (64/64 on 2026-09-17), maintainer-run write verification (41/42 on 2026-09-17; the #79 `ROLE`/`AUTHTYPE` question resolved), the three-way command diff report, and the README/STATUS/CHANGELOG refresh | [#101](https://github.com/J-MaFf/s2-netbox-mcp/pull/101) |
 | [#102](https://github.com/J-MaFf/s2-netbox-mcp/issues/102) | `live-check-write`'s clock-skew guard now reads the controller's own HTTP `Date` response header (fresh on every request) as the primary source, falling back to the newest access-record DTTM only if that header is unavailable — distinguishes real controller drift from a merely-quiet reader | [#103](https://github.com/J-MaFf/s2-netbox-mcp/pull/103) |
 | [#104](https://github.com/J-MaFf/s2-netbox-mcp/issues/104) | Cut v0.4.0 (minor: 24 new NBAPI v2 tools, live verification, command diff report, HTTP-Date clock-skew improvement — all additive, no removed/renamed tools) | [#105](https://github.com/J-MaFf/s2-netbox-mcp/pull/105) |
+| [#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106) | `publish.yml` now creates the GitHub Release (notes = the tag's CHANGELOG entry) after a successful npm publish; `v0.4.0` and `v0.2.2` Releases backfilled by hand | [#107](https://github.com/J-MaFf/s2-netbox-mcp/pull/107) |
 
 ### Open Issues
 
