@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `publish.yml` gains a `release` job that creates the matching GitHub Release on every `v*` tag
+  push, using that tag's own `CHANGELOG.md` section as the notes (title = the tag). It runs only
+  after the npm publish succeeds, so a failed publish never leaves a Release for a version that
+  isn't on the registry, and it fails loudly if the CHANGELOG has no entry for the tag rather than
+  publishing an empty Release. Until now the workflow published to npm but never touched GitHub
+  Releases, so the Releases page drifted behind npm: `v0.4.0` sat as a bare tag with `v0.3.0` still
+  marked Latest, and `v0.2.2` never had a Release at all. Both were backfilled by hand from their
+  CHANGELOG entries ([#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106)).
+
 ## [0.4.0] — 2026-09-17
 
 ### Added

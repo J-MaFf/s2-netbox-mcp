@@ -26,3 +26,32 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm publish
+
+  # Runs only after a successful npm publish, so a failed publish never leaves a
+  # GitHub Release behind for a version that isn't on the registry.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the GitHub Release
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create GitHub Release from the CHANGELOG entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Notes are the tag's own CHANGELOG.md section, minus its "## [x.y.z]" heading line.
+          awk -v v="${TAG#v}" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found
+          ' CHANGELOG.md > notes.md
+
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no entry for ${TAG#v} -- add one before tagging."
+            exit 1
+          fi
+
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
