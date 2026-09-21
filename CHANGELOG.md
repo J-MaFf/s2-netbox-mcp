@@ -15,6 +15,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   marked Latest, and `v0.2.2` never had a Release at all. Both were backfilled by hand from their
   CHANGELOG entries ([#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106)).
 
+### Changed
+- README's Requirements section now says Node.js includes npm and that, if Node.js isn't installed,
+  it can be installed on Windows with `winget install OpenJS.NodeJS.LTS` (open a new terminal
+  afterwards so `node`/`npm` are on `PATH`)
+  ([#108](https://github.com/J-MaFf/s2-netbox-mcp/issues/108)).
+
 ## [0.4.0] — 2026-09-17
 
 ### Added

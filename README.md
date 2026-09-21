@@ -69,7 +69,9 @@ single-portal filter) exists on the real NBAPI.
 
 ## Requirements
 
-- Node.js >= 18.17 (tested on Node 24)
+- Node.js >= 18.17 (tested on Node 24), which includes npm. If Node.js isn't installed, on
+  Windows you can install it with `winget install OpenJS.NodeJS.LTS`, then open a new
+  terminal so `node`/`npm` are on your `PATH`
 - An S2 NetBox controller reachable from wherever this server runs, with the
   NBAPI enabled and configured for **session-login authentication** (not MAC
   authentication — see the spec for why that's out of scope for v1)
