@@ -367,6 +367,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#102](https://github.com/J-MaFf/s2-netbox-mcp/issues/102) | `live-check-write`'s clock-skew guard now reads the controller's own HTTP `Date` response header (fresh on every request) as the primary source, falling back to the newest access-record DTTM only if that header is unavailable — distinguishes real controller drift from a merely-quiet reader | [#103](https://github.com/J-MaFf/s2-netbox-mcp/pull/103) |
 | [#104](https://github.com/J-MaFf/s2-netbox-mcp/issues/104) | Cut v0.4.0 (minor: 24 new NBAPI v2 tools, live verification, command diff report, HTTP-Date clock-skew improvement — all additive, no removed/renamed tools) | [#105](https://github.com/J-MaFf/s2-netbox-mcp/pull/105) |
 | [#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106) | `publish.yml` now creates the GitHub Release (notes = the tag's CHANGELOG entry) after a successful npm publish; `v0.4.0` and `v0.2.2` Releases backfilled by hand | [#107](https://github.com/J-MaFf/s2-netbox-mcp/pull/107) |
+| [#108](https://github.com/J-MaFf/s2-netbox-mcp/issues/108) | README Requirements: Node.js includes npm, and can be installed on Windows with `winget install OpenJS.NodeJS.LTS` | [#109](https://github.com/J-MaFf/s2-netbox-mcp/pull/109) |
 
 ### Open Issues
 
