@@ -1,5 +1,11 @@
 # Spec: Agent guidance — MCP `instructions` and a `get_guide` tool
 
+> **Completed 2026-09-22.** Built via the `forge` skill, converged in 1 round — all 14
+> acceptance criteria (C1-C14) plus C-final passed cleanly under the blind adversarial
+> evaluator's independent verification (own read of every file, own `npm run
+> typecheck`/`npm test`/`npm run build` run, 784/784 tests). Shipped in
+> [PR #111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111) (`Fixes #110`).
+
 ## Goal
 
 Ship this server's own operating knowledge — the S2 NetBox access model, its

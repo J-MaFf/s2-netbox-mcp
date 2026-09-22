@@ -47,7 +47,7 @@ request/response tool, and both vendor guides have been diffed against it end to
 | `scripts/live-check.ts` checks | 45 | **64** |
 
 > Current tool-surface totals (**51/98/113**) fold in the always-registered `get_guide` tool added by
-> `specs/agent-guidance.md` (issue [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110)) on top
+> `specs/archive/agent-guidance.md` (issue [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110)) on top
 > of the 50/97/112 this NBAPI v2 conformance work itself shipped; the unit-test/live-check row counts
 > above are this PR's own numbers and predate that later addition.
 

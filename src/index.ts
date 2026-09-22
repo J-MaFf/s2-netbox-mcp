@@ -32,7 +32,7 @@ import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
  * only the read-only tool surface is registered — 51 tools (the 50-tool
  * read-only surface from specs/archive/nbapi-v2-full-conformance.md plus the
- * always-registered `get_guide` added by specs/agent-guidance.md). With
+ * always-registered `get_guide` added by specs/archive/agent-guidance.md). With
  * NETBOX_ENABLE_WRITES truthy the non-destructive write tools (including the
  * five composites `set_portals_state`, `schedule_unlock_window`,
  * `cancel_unlock_window`, `schedule_daily_unlock_window`,
