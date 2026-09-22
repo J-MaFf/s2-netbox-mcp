@@ -40,11 +40,16 @@ request/response tool, and both vendor guides have been diffed against it end to
 | Measure | Before | After |
 |---|---|---|
 | `NBAPI_COMMANDS` allowlist (`src/commands.ts`) | 81 | **105** |
-| Tools with both gates off (read-only) | 38 | **50** |
-| Tools with `NETBOX_ENABLE_WRITES` | 77 | **97** |
-| Tools with both gates on | 88 | **112** |
+| Tools with both gates off (read-only) | 38 | **51** |
+| Tools with `NETBOX_ENABLE_WRITES` | 77 | **98** |
+| Tools with both gates on | 88 | **113** |
 | Unit tests (`npx vitest run`) | 662 in 33 files | **745 in 38 files** |
 | `scripts/live-check.ts` checks | 45 | **64** |
+
+> Current tool-surface totals (**51/98/113**) fold in the always-registered `get_guide` tool added by
+> `specs/agent-guidance.md` (issue [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110)) on top
+> of the 50/97/112 this NBAPI v2 conformance work itself shipped; the unit-test/live-check row counts
+> above are this PR's own numbers and predate that later addition.
 
 The 24 new commands, all v2-only: `GetPortalStates`, `GetPortalStatuses`, `GetLocations`,
 `GetAlarms`, `GetPicture`, `GetVirtualCredentialRequest`, `AddVirtualCredentialRequest`,

@@ -6,7 +6,9 @@ import { loadConfigFromEnv, NetboxConfigError } from './config.js';
 import { NetboxClient } from './netboxClient.js';
 import { NBAPI_COMMANDS } from './commands.js';
 import { runNbapiTool, type ToolGateFlags } from './toolHelpers.js';
+import { buildInstructions } from './instructions.js';
 import { registerShutdownHandlers } from './shutdown.js';
+import { registerGuideTool } from './tools/guide.js';
 import { registerPersonTools } from './tools/person.js';
 import { registerAccessLevelTools } from './tools/accessLevel.js';
 import { registerPortalTools } from './tools/portal.js';
@@ -28,15 +30,16 @@ import { registerDailyUnlockWindowTools } from './tools/dailyUnlockWindow.js';
  * transport and handles graceful shutdown (Logout on SIGINT/SIGTERM).
  *
  * Registration is gated per R1/R2: with NETBOX_ENABLE_WRITES unset/falsy,
- * only the read-only tool surface is registered — 50 tools, byte-for-byte the
- * same read-only posture as before plus the 12 NBAPI v2 read tools added by
- * specs/archive/nbapi-v2-full-conformance.md. With NETBOX_ENABLE_WRITES truthy the
- * non-destructive write tools (including the five composites
- * `set_portals_state`, `schedule_unlock_window`, `cancel_unlock_window`,
- * `schedule_daily_unlock_window`, `cancel_daily_unlock_window`) are also
- * registered, for 97 tools, and with NETBOX_ENABLE_DESTRUCTIVE as well the
- * 15 destructive tools bring the total to 112. `test/registration.test.ts`
- * asserts all three counts against this exact registration sequence.
+ * only the read-only tool surface is registered — 51 tools (the 50-tool
+ * read-only surface from specs/archive/nbapi-v2-full-conformance.md plus the
+ * always-registered `get_guide` added by specs/agent-guidance.md). With
+ * NETBOX_ENABLE_WRITES truthy the non-destructive write tools (including the
+ * five composites `set_portals_state`, `schedule_unlock_window`,
+ * `cancel_unlock_window`, `schedule_daily_unlock_window`,
+ * `cancel_daily_unlock_window`) are also registered, for 98 tools, and with
+ * NETBOX_ENABLE_DESTRUCTIVE as well the 15 destructive tools bring the total
+ * to 113. `test/registration.test.ts` asserts all three counts against this
+ * exact registration sequence.
  */
 
 let config;
@@ -52,12 +55,13 @@ try {
 }
 
 const client = new NetboxClient(config);
-const server = new McpServer({ name: 's2-netbox-mcp', version: '0.3.0' });
 
 const gate: ToolGateFlags = {
   writesEnabled: config.enableWrites,
   destructiveEnabled: config.enableDestructive,
 };
+
+const server = new McpServer({ name: 's2-netbox-mcp', version: '0.3.0' }, { instructions: buildInstructions(gate) });
 
 // check_connection wraps GetAPIVersion. It doesn't fit any one of the
 // tool-category modules, so it is registered directly here alongside the
@@ -68,6 +72,11 @@ server.tool(
   {},
   async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
 );
+
+// get_guide, like check_connection, is always available regardless of gate
+// (it makes no controller call at all) -- registered directly after
+// check_connection and before every gated category module (R9).
+registerGuideTool(server);
 
 registerPersonTools(server, client, gate);
 registerAccessLevelTools(server, client, gate);
