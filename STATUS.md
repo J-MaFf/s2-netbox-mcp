@@ -406,7 +406,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106) | `publish.yml` now creates the GitHub Release (notes = the tag's CHANGELOG entry) after a successful npm publish; `v0.4.0` and `v0.2.2` Releases backfilled by hand | [#107](https://github.com/J-MaFf/s2-netbox-mcp/pull/107) |
 | [#108](https://github.com/J-MaFf/s2-netbox-mcp/issues/108) | README Requirements: Node.js includes npm, and can be installed on Windows with `winget install OpenJS.NodeJS.LTS` | [#109](https://github.com/J-MaFf/s2-netbox-mcp/pull/109) |
 | [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110) | Agent guidance: MCP `instructions` field + always-on `get_guide` tool serving six generic reference topics; tool surface 50/97/112 -> 51/98/113; built via the `forge` skill (1 round, all 14 criteria + C-final passed) | [#111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111) |
-| [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | PR-PENDING |
+| [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | [#113](https://github.com/J-MaFf/s2-netbox-mcp/pull/113) |
 
 ### Open Issues
 
