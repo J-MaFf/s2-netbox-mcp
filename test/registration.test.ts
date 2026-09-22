@@ -15,6 +15,7 @@ import { registerAlarmTools } from '../src/tools/alarm.js';
 import { registerMiscTools } from '../src/tools/misc.js';
 import { registerUnlockWindowTools } from '../src/tools/unlockWindow.js';
 import { registerDailyUnlockWindowTools } from '../src/tools/dailyUnlockWindow.js';
+import { registerGuideTool } from '../src/tools/guide.js';
 import { runNbapiTool, type ToolGateFlags } from '../src/toolHelpers.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
 import { FakeServer, fakeClient } from './testUtils.js';
@@ -34,6 +35,7 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
     {},
     async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
   );
+  registerGuideTool(server as unknown as McpServer);
   registerPersonTools(server as unknown as McpServer, client, gate);
   registerAccessLevelTools(server as unknown as McpServer, client, gate);
   registerPortalTools(server as unknown as McpServer, client, gate);
@@ -53,6 +55,8 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
 
 const READ_TOOLS = [
   'check_connection',
+  // agent-guidance spec R9: always registered, directly after check_connection.
+  'get_guide',
   'get_person',
   'search_person_data',
   'get_card_access_details',
@@ -194,11 +198,11 @@ const DESTRUCTIVE_TOOLS = [
 ];
 
 describe('R1/C1: registration matrix', () => {
-  it('registers exactly the 50 read tools (the 38 pre-existing + the 12 NBAPI v2 read tools) when NETBOX_ENABLE_WRITES is off', () => {
+  it('registers exactly the 51 read tools (the 38 pre-existing + the 12 NBAPI v2 read tools + get_guide) when NETBOX_ENABLE_WRITES is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: false, destructiveEnabled: false });
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
-    expect(server.registrations).toHaveLength(50);
+    expect(server.registrations).toHaveLength(51);
   });
 
   it('with writes off, no tool that can issue a write command is registered', () => {
@@ -216,23 +220,23 @@ describe('R1/C1: registration matrix', () => {
     expect(server.registrations.map((r) => r.name).sort()).toEqual([...READ_TOOLS].sort());
   });
 
-  it('registers the 50 read tools + 47 non-destructive write tools (42 pass-through + 5 composite) when writes are on and destructive is off', () => {
+  it('registers the 51 read tools + 47 non-destructive write tools (42 pass-through + 5 composite) when writes are on and destructive is off', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: false });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS].sort());
-    expect(names).toHaveLength(97);
+    expect(names).toHaveLength(98);
     for (const destructive of DESTRUCTIVE_TOOLS) {
       expect(names).not.toContain(destructive);
     }
   });
 
-  it('registers all 112 tools (50 read + 47 write + 15 destructive) when both flags are on', () => {
+  it('registers all 113 tools (51 read + 47 write + 15 destructive) when both flags are on', () => {
     const server = new FakeServer();
     registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
     const names = server.registrations.map((r) => r.name).sort();
     expect(names).toEqual([...READ_TOOLS, ...NON_DESTRUCTIVE_WRITE_TOOLS, ...DESTRUCTIVE_TOOLS].sort());
-    expect(names).toHaveLength(112);
+    expect(names).toHaveLength(113);
   });
 });
 

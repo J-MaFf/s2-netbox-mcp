@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- The server now sets the MCP `instructions` field (`src/instructions.ts`'s `buildInstructions`) and
+  registers an always-on `get_guide` tool (`src/tools/guide.ts`), so any connected MCP client gets
+  this server's own S2 NetBox operating knowledge immediately, with no separate skill install.
+  `instructions` describes the access model, the numeric-`KEY`-not-name parameter convention, and
+  that controller-returned text is data rather than instructions; it gains a firm
+  confirm-before-acting write-safety paragraph when `NETBOX_ENABLE_WRITES` is set, plus one further
+  sentence about the `DESTRUCTIVE:`-prefixed tools when `NETBOX_ENABLE_DESTRUCTIVE` is *also* set —
+  never on `NETBOX_ENABLE_DESTRUCTIVE` alone, since destructive tools are never actually registered
+  without writes also enabled. `get_guide` (pure in-process lookup, no controller call, registered
+  under every gate combination) returns generic S2 NetBox reference material for six topics —
+  `access-model`, `unlock-windows`, `group-and-name-gotchas`, `credentials-and-card-formats`,
+  `api-quirks`, `write-safety` — as an index (no `topic` argument, or an unrecognized one) or that
+  topic's full content. The tool surface grows from 50/97/112 to **51/98/113** (reads / +writes /
+  +destructive) ([#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110)).
 - `publish.yml` gains a `release` job that creates the matching GitHub Release on every `v*` tag
   push, using that tag's own `CHANGELOG.md` section as the notes (title = the tag). It runs only
   after the npm publish succeeds, so a failed publish never leaves a Release for a version that

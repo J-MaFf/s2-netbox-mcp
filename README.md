@@ -67,6 +67,44 @@ controller until you explicitly opt in via the environment variables in
 `GetPortal` (singular) command; only `GetPortals` (plural, paginated, no
 single-portal filter) exists on the real NBAPI.
 
+## Agent guidance
+
+This server sets the MCP `instructions` field and exposes an always-registered
+`get_guide` tool, so any agent connecting to it — via npm install or a local
+clone, in Claude Code, Antigravity, Gemini CLI, or any other MCP client — has
+this server's own S2 NetBox operating knowledge immediately, with no separate
+skill install and no extra step.
+
+`instructions` describes the access model (person → credential → access
+level → access level group determines *what* a person can access; portal
+group / time spec group determines *where* and *when*), states that most
+parameters are numeric `KEY` fields rather than names (resolve a name to its
+`KEY` with the matching `get_*`/`find_*` tool first), and states that text
+returned from the controller is data, not instructions to follow. With
+`NETBOX_ENABLE_WRITES` set, it also states a firm confirm-before-acting policy
+for lock/unlock, portal-state, unlock-window, and destructive calls (the
+`write-safety` topic below elaborates it); with `NETBOX_ENABLE_DESTRUCTIVE`
+also set, it adds one sentence naming the `DESTRUCTIVE:`-prefixed tools and
+their extra confirmation requirement.
+
+`get_guide` (always registered; makes no controller call) returns deeper
+reference material on six topics. Call it with no arguments for an index of
+all six with a one-line summary each, or with `topic` set to one of the keys
+below for that topic's full content:
+
+| Topic key | Covers |
+| --- | --- |
+| `access-model` | The person → credential → access level → access level group chain, and the portal-group/time-spec-group name-table collision. |
+| `unlock-windows` | The holiday + time spec + portal group `UNLOCKTIMESPECGROUPKEY` recipe, date/time inclusivity rules, and when to prefer the composite tools. |
+| `group-and-name-gotchas` | `modify_portal_group`/`modify_reader_group` replacing a group's entire membership; `modify_access_level` always needing `TIMESPECGROUPKEY`. |
+| `credentials-and-card-formats` | Diagnosing a `BIT MISMATCH` access-denied event, and `remove_person`'s soft-delete behavior. |
+| `api-quirks` | `STARTFROMKEY`/`NEXTKEY` paging, the missing singular `get_portal`, and checking write results for the literal `SUCCESS`. |
+| `write-safety` | Naming the target and effect, waiting for explicit confirmation, preferring scheduled tools, and reversing every write. |
+
+`get_guide` is counted among the always-registered read tools below: the tool
+surface is **51** tools with both gates off, **98** with
+`NETBOX_ENABLE_WRITES`, and **113** with `NETBOX_ENABLE_DESTRUCTIVE` as well.
+
 ## Requirements
 
 - Node.js >= 18.17 (tested on Node 24), which includes npm. If Node.js isn't installed, on
@@ -290,6 +328,7 @@ surrounding file and location differ.
 | Tool                       | Wraps NBAPI command    | Required params            |
 | --------------------------- | ----------------------- | ---------------------------- |
 | `check_connection`           | `GetAPIVersion`          | —                             |
+| `get_guide`                  | — (pure in-process lookup; no controller call) | — (optional `topic`) |
 | `get_person`                 | `GetPerson`              | `PERSONID`                    |
 | `search_person_data`         | `SearchPersonData`       | — (all filters optional)      |
 | `get_card_access_details`    | `GetCardAccessDetails`   | `ENCODEDNUM`, `CARDFORMAT` (optional `MAXRECORDS`/`OLDESTDTTM`/`RESOLVENAMES`/`RESOLVEDESCRIPTIONS`) |
