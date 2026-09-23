@@ -26,7 +26,37 @@ to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Tr
 (OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again. The same workflow
 then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
-## Current State — 2026-09-17
+## Current State — 2026-09-22
+
+### Agent guidance: MCP instructions + get_guide tool (`v0.5.0`)
+
+Issue [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110), PR
+[#111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111), spec
+`specs/archive/agent-guidance.md`. The server now ships its own operating knowledge over the MCP
+connection itself, so any connecting agent has it immediately with no separate skill install:
+`new McpServer(...)`'s `instructions` field (`src/instructions.ts`'s `buildInstructions`) always
+covers the S2 NetBox access model, the numeric-`KEY`-not-name parameter convention, and that
+controller-returned text is data rather than instructions -- gaining a firm confirm-before-acting
+write-safety paragraph when `NETBOX_ENABLE_WRITES` is set, plus one further sentence about the
+`DESTRUCTIVE:`-prefixed tools only when `NETBOX_ENABLE_DESTRUCTIVE` is *also* set (destructive
+tools are never actually registered on that flag alone). A new always-on `get_guide` tool
+(`src/tools/guide.ts`, pure in-process lookup, no controller call) serves six generic reference
+topics -- `access-model`, `unlock-windows`, `group-and-name-gotchas`,
+`credentials-and-card-formats`, `api-quirks`, `write-safety` -- as an index or full topic content,
+with no site-specific deployment details. Tool surface: 50/97/112 -> **51/98/113** (see the
+tool-count table under "Previous State -- 2026-09-17" below, which already folds this addition in).
+
+Built via the `forge` skill (spec produced via `superpowers:brainstorming`'s architectural path): a
+fresh generator implemented the full spec, a blind adversarial evaluator independently re-ran
+`npm run typecheck`/`npm test`/`npm run build` (784/784 tests) and confirmed all 14 acceptance
+criteria (C1-C14) plus C-final pass -- converged in 1 round, no re-generation needed.
+
+Deliberately deferred (per the spec's "Out of scope"): MCP resources alongside the tool, a Claude
+Code plugin/`SKILL.md` bundling the same content (Claude Code already surfaces `instructions` and
+discovers `get_guide` with no plugin needed -- a plugin would only add a named, on-demand-loaded
+Skill and one-step install), and any deployment-specific configuration.
+
+## Previous State — 2026-09-17
 
 ### Full NBAPI v2 command conformance (`v0.4.0`)
 
@@ -326,6 +356,8 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `src/errors.ts` | APIERROR code descriptions, `NbapiApiError`/`NbapiFailError` |
 | `src/toolHelpers.ts` | `runNbapiTool`, `ToolGateFlags`, `formatWriteSuccess`, `clientGuardError`/`destructiveFlagRequired`, `wrapList` |
 | `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `hardware`, `alarm`, `misc`, `unlockWindow`, `dailyUnlockWindow` |
+| `src/instructions.ts` | `buildInstructions(gate)`: builds the MCP `instructions` string -- access model, `KEY`-not-name convention, controller-text-is-data rule, and the write/destructive confirm-before-acting policy, gated correctly on `writesEnabled`/`destructiveEnabled` |
+| `src/guide/*.ts`, `src/tools/guide.ts` | `GUIDE_TOPICS` (six generic reference topics) and the always-on `get_guide` tool that serves them -- pure in-process lookup, no controller call |
 | `scripts/live-check.ts` | Opt-in live read-only smoke test (`npm run test:live`) — 64 checks covering every always-registered read tool |
 | `scripts/live-check-write.ts`, `scripts/liveCheckWriteHelpers.ts` | Opt-in live write smoke test (`npm run test:live:write`) and its unit-tested pure helpers |
 | `scripts/live-check-write-daily.ts` | Opt-in live write smoke test for the daily window (`npm run test:live:write:daily`) |
@@ -373,6 +405,8 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#104](https://github.com/J-MaFf/s2-netbox-mcp/issues/104) | Cut v0.4.0 (minor: 24 new NBAPI v2 tools, live verification, command diff report, HTTP-Date clock-skew improvement — all additive, no removed/renamed tools) | [#105](https://github.com/J-MaFf/s2-netbox-mcp/pull/105) |
 | [#106](https://github.com/J-MaFf/s2-netbox-mcp/issues/106) | `publish.yml` now creates the GitHub Release (notes = the tag's CHANGELOG entry) after a successful npm publish; `v0.4.0` and `v0.2.2` Releases backfilled by hand | [#107](https://github.com/J-MaFf/s2-netbox-mcp/pull/107) |
 | [#108](https://github.com/J-MaFf/s2-netbox-mcp/issues/108) | README Requirements: Node.js includes npm, and can be installed on Windows with `winget install OpenJS.NodeJS.LTS` | [#109](https://github.com/J-MaFf/s2-netbox-mcp/pull/109) |
+| [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110) | Agent guidance: MCP `instructions` field + always-on `get_guide` tool serving six generic reference topics; tool surface 50/97/112 -> 51/98/113; built via the `forge` skill (1 round, all 14 criteria + C-final passed) | [#111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111) |
+| [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | [#113](https://github.com/J-MaFf/s2-netbox-mcp/pull/113) |
 
 ### Open Issues
 

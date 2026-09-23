@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-22
+
 ### Added
 - The server now sets the MCP `instructions` field (`src/instructions.ts`'s `buildInstructions`) and
   registers an always-on `get_guide` tool (`src/tools/guide.ts`), so any connected MCP client gets
