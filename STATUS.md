@@ -26,7 +26,20 @@ to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Tr
 (OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again. The same workflow
 then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
-## Current State — 2026-09-22
+## Current State — 2026-10-14
+
+### Security patch release (`v0.5.1`)
+
+Issue [#117](https://github.com/J-MaFf/s2-netbox-mcp/issues/117). Patch release with no tool-surface
+changes (still 51/98/113): it ships the fix for the four open Dependabot alerts
+([#118](https://github.com/J-MaFf/s2-netbox-mcp/issues/118) /
+[#119](https://github.com/J-MaFf/s2-netbox-mcp/pull/119) -- `@modelcontextprotocol/sdk` 1.32.1 with a
+`^1.31.0` floor, `proxy-addr` 2.0.8, `fast-uri` 3.1.8, `source-map-js` 1.2.2), Dependabot's
+`ip-address` 10.7.3 bump ([#114](https://github.com/J-MaFf/s2-netbox-mcp/pull/114)), and the
+claude-sandbox merge-gate caller workflow ([#115](https://github.com/J-MaFf/s2-netbox-mcp/pull/115)).
+`npm audit` reports 0 vulnerabilities.
+
+## Previous State — 2026-09-22
 
 ### Agent guidance: MCP instructions + get_guide tool (`v0.5.0`)
 
@@ -407,6 +420,8 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#108](https://github.com/J-MaFf/s2-netbox-mcp/issues/108) | README Requirements: Node.js includes npm, and can be installed on Windows with `winget install OpenJS.NodeJS.LTS` | [#109](https://github.com/J-MaFf/s2-netbox-mcp/pull/109) |
 | [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110) | Agent guidance: MCP `instructions` field + always-on `get_guide` tool serving six generic reference topics; tool surface 50/97/112 -> 51/98/113; built via the `forge` skill (1 round, all 14 criteria + C-final passed) | [#111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111) |
 | [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | [#113](https://github.com/J-MaFf/s2-netbox-mcp/pull/113) |
+| [#118](https://github.com/J-MaFf/s2-netbox-mcp/issues/118) | Resolved four open Dependabot alerts (MCP SDK, proxy-addr, fast-uri, source-map-js); SDK floor raised to `^1.31.0` | [#119](https://github.com/J-MaFf/s2-netbox-mcp/pull/119) |
+| [#117](https://github.com/J-MaFf/s2-netbox-mcp/issues/117) | Cut v0.5.1 (patch: security dependency updates + merge-gate workflow, no tool-surface changes) | this PR |
 
 ### Open Issues
 
