@@ -9,6 +9,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - merge-gate caller (`.github/workflows/merge-gate.yml`): the required check that keeps the claude-sandbox App from merging its own PRs; logic in the reusable J-MaFf/.github merge-gate.yml.
 
+### Security
+- Resolved four open Dependabot alerts. `@modelcontextprotocol/sdk` 1.30.0 -> 1.32.1 (high: the SDK's
+  OAuth client could send credentials to an authorization server chosen by the MCP server), and the
+  `package.json` floor raised from `^1.12.0` to `^1.31.0` so installs can't resolve a vulnerable SDK;
+  transitive `proxy-addr` -> 2.0.8 (critical: IP spoofing via an IPv4-mapped IPv6 trust subnet),
+  `fast-uri` -> 3.1.8 (medium: inconsistent host case normalization), and dev-only `source-map-js`
+  -> 1.2.2 (high: event-loop DoS). Transitive `ip-address` was also bumped 10.7.0 -> 10.7.3 by
+  Dependabot ([#114](https://github.com/J-MaFf/s2-netbox-mcp/pull/114))
+  ([#118](https://github.com/J-MaFf/s2-netbox-mcp/issues/118)).
+
 ## [0.5.0] — 2026-09-22
 
 ### Added
