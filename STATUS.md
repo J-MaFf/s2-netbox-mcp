@@ -421,7 +421,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#110](https://github.com/J-MaFf/s2-netbox-mcp/issues/110) | Agent guidance: MCP `instructions` field + always-on `get_guide` tool serving six generic reference topics; tool surface 50/97/112 -> 51/98/113; built via the `forge` skill (1 round, all 14 criteria + C-final passed) | [#111](https://github.com/J-MaFf/s2-netbox-mcp/pull/111) |
 | [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | [#113](https://github.com/J-MaFf/s2-netbox-mcp/pull/113) |
 | [#118](https://github.com/J-MaFf/s2-netbox-mcp/issues/118) | Resolved four open Dependabot alerts (MCP SDK, proxy-addr, fast-uri, source-map-js); SDK floor raised to `^1.31.0` | [#119](https://github.com/J-MaFf/s2-netbox-mcp/pull/119) |
-| [#117](https://github.com/J-MaFf/s2-netbox-mcp/issues/117) | Cut v0.5.1 (patch: security dependency updates + merge-gate workflow, no tool-surface changes) | this PR |
+| [#117](https://github.com/J-MaFf/s2-netbox-mcp/issues/117) | Cut v0.5.1 (patch: security dependency updates + merge-gate workflow, no tool-surface changes) | [#120](https://github.com/J-MaFf/s2-netbox-mcp/pull/120) |
 
 ### Open Issues
 
