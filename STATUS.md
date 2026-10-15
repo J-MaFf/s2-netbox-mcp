@@ -28,25 +28,27 @@ then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
 ## Current State — 2026-10-15
 
-### Unreleased: MCP tool annotations
+### Tool annotations + workflow skill release (`v0.6.0`)
 
-Issue [#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) (PR open, awaiting review). Every tool
-registration now passes MCP annotations matching its gate tier (51 read-only / 47 write / 15 destructive),
-so Claude Desktop groups the connector's tools instead of listing all of them under "Other tools". No
-tool-surface change (still 51/98/113); `test/registration.test.ts` asserts each tool's annotations.
+Issue [#132](https://github.com/J-MaFf/s2-netbox-mcp/issues/132). Minor release, all additive (no removed or renamed tools; still 51/98/113):
 
-### Workflow skill (`s2-netbox-workflows`, unreleased)
-
-Issues [#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122) and
-[#126](https://github.com/J-MaFf/s2-netbox-mcp/issues/126). Adds an optional Agent Skill in
-`plugins/s2-netbox-workflows/skills/s2-netbox-workflows/` with four multi-step workflows on top of
-the existing tools: onboard, offboard, event unlock, and a read-only badge-denied diagnosis. It links
-to `get_guide` topics instead of repeating them. It ships as a skill-only Claude Code plugin in its
-own folder, `plugins/s2-netbox-workflows/` (plugin 0.1.1). The root `.claude-plugin/marketplace.json`
-lists it, and there's no bundled MCP server. It can also be installed by copying the folder. #126 moved
-the plugin out of the repo root, which used to make installs pull the whole repo plus `node_modules`
-(about 110 MB). No server code or tool-surface changes (still 51/98/113), and the skill isn't part
-of the npm package.
+- **MCP tool annotations** ([#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) / [#125](https://github.com/J-MaFf/s2-netbox-mcp/pull/125)). Every tool registration passes annotations matching
+  its gate tier: 51 read-only (`readOnlyHint: true`), 47 write (`destructiveHint: false`), 15
+  destructive (`destructiveHint: true`). Claude Desktop's connector permissions page now groups the
+  tools instead of listing all of them under "Other tools". `test/registration.test.ts` asserts each
+  tool's annotations.
+- **Server version in the MCP handshake** ([#129](https://github.com/J-MaFf/s2-netbox-mcp/issues/129) / [#131](https://github.com/J-MaFf/s2-netbox-mcp/pull/131)). The server reported a hardcoded
+  `0.3.0` in its `initialize` response; it now reads the version from `package.json`
+  (`src/version.ts`), with a test keeping the two in sync.
+- **`s2-netbox-workflows` skill** ([#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122) / [#123](https://github.com/J-MaFf/s2-netbox-mcp/pull/123), [#126](https://github.com/J-MaFf/s2-netbox-mcp/issues/126) / [#127](https://github.com/J-MaFf/s2-netbox-mcp/pull/127)). An optional Agent
+  Skill in `plugins/s2-netbox-workflows/skills/s2-netbox-workflows/` with four multi-step workflows on
+  top of the existing tools: onboard, offboard, event unlock, and a read-only badge-denied diagnosis. It
+  links to `get_guide` topics instead of repeating them. It ships as a skill-only Claude Code plugin in
+  its own folder, `plugins/s2-netbox-workflows/` (plugin 0.1.1), listed by the root
+  `.claude-plugin/marketplace.json`, with no bundled MCP server; it can also be installed by copying the
+  folder. #126 moved the plugin out of the repo root, which used to make installs pull the whole repo plus
+  `node_modules` (about 110 MB). The skill isn't part of the npm package.
+- **README install section** ([#128](https://github.com/J-MaFf/s2-netbox-mcp/issues/128) / [#130](https://github.com/J-MaFf/s2-netbox-mcp/pull/130)). Install steps now come right after the intro.
 
 ## Previous State — 2026-10-14
 
@@ -445,10 +447,16 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | [#112](https://github.com/J-MaFf/s2-netbox-mcp/issues/112) | Cut v0.5.0 (minor: MCP `instructions` field + `get_guide` tool -- all additive, no removed/renamed tools) | [#113](https://github.com/J-MaFf/s2-netbox-mcp/pull/113) |
 | [#118](https://github.com/J-MaFf/s2-netbox-mcp/issues/118) | Resolved four open Dependabot alerts (MCP SDK, proxy-addr, fast-uri, source-map-js); SDK floor raised to `^1.31.0` | [#119](https://github.com/J-MaFf/s2-netbox-mcp/pull/119) |
 | [#117](https://github.com/J-MaFf/s2-netbox-mcp/issues/117) | Cut v0.5.1 (patch: security dependency updates + merge-gate workflow, no tool-surface changes) | [#120](https://github.com/J-MaFf/s2-netbox-mcp/pull/120) |
+| [#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122) | `s2-netbox-workflows` Agent Skill (onboard, offboard, event unlock, badge-denied diagnosis) shipped as a skill-only Claude Code plugin | [#123](https://github.com/J-MaFf/s2-netbox-mcp/pull/123) |
+| [#126](https://github.com/J-MaFf/s2-netbox-mcp/issues/126) | Moved the workflow-skill plugin into `plugins/s2-netbox-workflows/` so installs no longer pull the whole repo + `node_modules` (~110 MB); plugin 0.1.1 | [#127](https://github.com/J-MaFf/s2-netbox-mcp/pull/127) |
+| [#128](https://github.com/J-MaFf/s2-netbox-mcp/issues/128) | README: one **Install** section right after the intro (server, MCP client registration, workflow skill) | [#130](https://github.com/J-MaFf/s2-netbox-mcp/pull/130) |
+| [#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) | MCP tool annotations (`readOnlyHint`/`destructiveHint`) on every tool, matching its gate tier, so clients group tools by read/write/destructive | [#125](https://github.com/J-MaFf/s2-netbox-mcp/pull/125) |
+| [#129](https://github.com/J-MaFf/s2-netbox-mcp/issues/129) | Server reported a hardcoded `0.3.0` in the MCP handshake; now reads the version from `package.json` | [#131](https://github.com/J-MaFf/s2-netbox-mcp/pull/131) |
+| [#132](https://github.com/J-MaFf/s2-netbox-mcp/issues/132) | Cut v0.6.0 (minor: tool annotations, workflow skill plugin, handshake version fix -- all additive, no removed/renamed tools) | [#133](https://github.com/J-MaFf/s2-netbox-mcp/pull/133) |
 
 ### Open Issues
 
-[#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) — MCP tool annotations (PR in review). One tracked in `bd` only (not a shippable code unit): setting up the Antigravity
+None on GitHub. One tracked in `bd` only (not a shippable code unit): setting up the Antigravity
 desktop app + `s2-netbox-mcp` for a second user (Angela) — her NetBox operator account already has
 the same `full system setup` role as the maintainer's, so the write/destructive gating has to be
 enforced client-side via her `mcp_config.json`, not by the NetBox account itself.
