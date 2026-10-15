@@ -14,6 +14,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as a skill-only Claude Code plugin (`plugins/s2-netbox-workflows/`, listed by the root
   `.claude-plugin/marketplace.json`) that doesn't bundle the MCP server, and can also be installed by
   copying the folder ([#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122)).
+- MCP tool annotations on every tool: read-only tools carry `readOnlyHint: true`, `NETBOX_ENABLE_WRITES` tools
+  `readOnlyHint: false, destructiveHint: false`, and `NETBOX_ENABLE_DESTRUCTIVE` tools `destructiveHint: true`.
+  Clients that group tools by these hints (Claude Desktop's connector permissions page) now show separate
+  read-only, write and destructive groups instead of listing everything under "Other tools"
+  ([#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124)).
 
 ### Fixed
 - Installing the `s2-netbox-workflows` plugin no longer copies the whole repository and runs an npm
@@ -24,6 +29,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The server reported version 0.3.0 to MCP clients in its `initialize` response, whatever the
   installed version. It now reads the version from `package.json`, so it always matches the package
   ([#129](https://github.com/J-MaFf/s2-netbox-mcp/issues/129)).
+
+### Changed
+- Reordered the README so the install steps come right after the intro, in one **Install** section:
+  requirements, install the server, register it with an MCP client, and install the optional
+  workflow skill. Controller prerequisites and the environment-variable reference follow. The
+  read-only command list, agent guidance, and workflow descriptions moved below them. No content was
+  removed, and existing anchors still work
+  ([#128](https://github.com/J-MaFf/s2-netbox-mcp/issues/128)).
 
 ## [0.5.1] — 2026-10-14
 

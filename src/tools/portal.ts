@@ -9,6 +9,8 @@ import {
   formatWriteSuccess,
   notFoundResult,
   toolErrorResult,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -78,6 +80,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
             'return readers exactly as GetPortals provides them.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
       if (RESOLVEDESCRIPTIONS === false) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_PORTALS, mergeParams({ STARTFROMKEY }));
@@ -112,6 +115,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
     {
       READERKEY: z.string().describe('Required. The unique READERKEY of the reader to retrieve.'),
     },
+    READ_ONLY_TOOL,
     async ({ READERKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READER, { READERKEY })
   );
 
@@ -125,6 +129,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
         .optional()
         .describe('Optional. Pagination cursor to continue listing from a previous call.'),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READERS, mergeParams({ STARTFROMKEY }))
   );
 
@@ -137,6 +142,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
         .optional()
         .describe('Optional. Pagination cursor to continue listing from a previous call.'),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_OUTPUTS, mergeParams({ STARTFROMKEY }))
   );
 
@@ -158,6 +164,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
           'Optional. "TRUE" returns portal states across all partitions; omitted, the controller returns states for the default or currently switched partition.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ PORTALSTATES }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_STATES, mergeParams({ PORTALSTATES }))
   );
 
@@ -174,6 +181,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       PARTITIONKEY: z.string().optional().describe('Optional. Report status for portals in this partition only.'),
       LOCATIONKEY: z.string().optional().describe('Optional. Report status for portals at this location only (see get_locations).'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_STATUSES, mergeParams(args))
   );
 
@@ -191,6 +199,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
           "Optional. Pagination cursor to continue listing from a previous call. (Not in the guide's Calling Parameters list, but its documented FAIL messages include \"Invalid STARTFROMKEY\".)"
         ),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_LOCATIONS, mergeParams(args))
   );
 
@@ -208,6 +217,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
         .min(1)
         .describe('Required. Search terms, e.g. "maintenance office", "electrical closet", or "01OF05".'),
     },
+    READ_ONLY_TOOL,
     async ({ query }): Promise<ToolTextResult> => {
       try {
         return { content: [{ type: 'text', text: formatAsJson(await findPortals(client, query)) }] };
@@ -222,6 +232,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'lock_portal',
       'WRITE: Locks a portal (door), ending any Extended Unlock (wraps NBAPI LockPortal).',
       { PORTALKEY: z.string().describe('Required. The PORTALKEY of the portal to lock.') },
+      WRITE_TOOL,
       async ({ PORTALKEY }) => runNbapiTool(client, NBAPI_COMMANDS.LOCK_PORTAL, { PORTALKEY }, formatWriteSuccess)
     );
 
@@ -229,6 +240,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'unlock_portal',
       'WRITE: Puts a portal (door) into Extended Unlock until lock_portal is called (wraps NBAPI UnlockPortal).',
       { PORTALKEY: z.string().describe('Required. The PORTALKEY of the portal to unlock.') },
+      WRITE_TOOL,
       async ({ PORTALKEY }) => runNbapiTool(client, NBAPI_COMMANDS.UNLOCK_PORTAL, { PORTALKEY }, formatWriteSuccess)
     );
 
@@ -236,6 +248,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'momentary_unlock_portal',
       'WRITE: Momentarily unlocks a portal (door) for its configured unlock duration (wraps NBAPI MomentaryUnlockPortal).',
       { PORTALKEY: z.string().describe('Required. The PORTALKEY of the portal to momentarily unlock.') },
+      WRITE_TOOL,
       async ({ PORTALKEY }) =>
         runNbapiTool(client, NBAPI_COMMANDS.MOMENTARY_UNLOCK_PORTAL, { PORTALKEY }, formatWriteSuccess)
     );
@@ -244,6 +257,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'dog_on_next_exit_portal',
       'WRITE: Arms "dog on next exit" on a portal, so the door unlocks on the next valid exit request (wraps NBAPI DogOnNextExitPortal). Not supported on every device type.',
       { PORTALKEY: z.string().describe('Required. The PORTALKEY of the portal.') },
+      WRITE_TOOL,
       async ({ PORTALKEY }) =>
         runNbapiTool(client, NBAPI_COMMANDS.DOG_ON_NEXT_EXIT_PORTAL, { PORTALKEY }, formatWriteSuccess)
     );
@@ -252,6 +266,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'activate_output',
       'WRITE: Activates an auxiliary output (wraps NBAPI ActivateOutput).',
       { OUTPUTKEY: z.string().describe('Required. The OUTPUTKEY of the output to activate.') },
+      WRITE_TOOL,
       async ({ OUTPUTKEY }) => runNbapiTool(client, NBAPI_COMMANDS.ACTIVATE_OUTPUT, { OUTPUTKEY }, formatWriteSuccess)
     );
 
@@ -259,6 +274,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
       'deactivate_output',
       'WRITE: Deactivates an auxiliary output (wraps NBAPI DeactivateOutput).',
       { OUTPUTKEY: z.string().describe('Required. The OUTPUTKEY of the output to deactivate.') },
+      WRITE_TOOL,
       async ({ OUTPUTKEY }) =>
         runNbapiTool(client, NBAPI_COMMANDS.DEACTIVATE_OUTPUT, { OUTPUTKEY }, formatWriteSuccess)
     );
@@ -281,6 +297,7 @@ export function registerPortalTools(server: McpServer, client: NetboxClient, gat
           .optional()
           .describe('Optional. PORTALKEY values to act on; omitted = every portal returned by GetPortals.'),
       },
+      WRITE_TOOL,
       async ({ action, portalKeys }): Promise<ToolTextResult> => {
         try {
           const result = await setPortalsState(client, action, portalKeys);

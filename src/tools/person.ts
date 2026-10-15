@@ -12,6 +12,9 @@ import {
   notFoundResult,
   toolErrorResult,
   wrapList,
+  DESTRUCTIVE_TOOL,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -187,6 +190,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
       ACCESSLEVELDETAILS: z.string().optional().describe('Optional. Include full access level details in the response.'),
       WANTCREDENTIALID: z.string().optional().describe('Optional. Include CREDENTIALID values on returned access cards.'),
     },
+    READ_ONLY_TOOL,
     async ({ PERSONID, ALLPARTITIONS, ACCESSLEVELDETAILS, WANTCREDENTIALID }) =>
       runNbapiTool(
         client,
@@ -229,6 +233,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
       ACCESSLEVELDETAILS: z.string().optional().describe('Optional. Include full access level details in the response.'),
       RAWCARDNUMBER: z.string().optional().describe('Optional. Match on a raw (unformatted) card number.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.SEARCH_PERSON_DATA, mergeParams(args))
   );
 
@@ -266,6 +271,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
             'via one GetReaders full-table fetch per call (not per record). Set to false to skip it.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ ENCODEDNUM, CARDFORMAT, MAXRECORDS, OLDESTDTTM, RESOLVENAMES, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
       const resolveDescriptions = RESOLVEDESCRIPTIONS !== false;
       if (!RESOLVENAMES && !resolveDescriptions) {
@@ -318,6 +324,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
     'get_card_formats',
     'Returns the card formats configured on the NetBox system (wraps NBAPI GetCardFormats). No parameters required.',
     {},
+    READ_ONLY_TOOL,
     async () => runNbapiTool(client, NBAPI_COMMANDS.GET_CARD_FORMATS, {})
   );
 
@@ -339,6 +346,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
     {
       PERSONID: z.string().describe('Required. The PERSONID of the person whose picture should be retrieved.'),
     },
+    READ_ONLY_TOOL,
     async ({ PERSONID }) => runNbapiTool(client, NBAPI_COMMANDS.GET_PICTURE, { PERSONID })
   );
 
@@ -351,6 +359,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
       PERSONID: z.string().describe('Required. The PERSONID the credential is assigned to.'),
       CARDFORMAT: z.string().describe('Required. Name of the card format used to decode the credential (see get_card_formats).'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args))
   );
 
@@ -364,6 +373,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         PERSONID: z.string().describe('Required. The PERSONID to add the mobile credential to.'),
         CARDFORMAT: z.string().describe('Required. Name of the card format used to decode the credential (see get_card_formats).'),
       },
+      WRITE_TOOL,
       async (args) =>
         runNbapiTool(client, NBAPI_COMMANDS.ADD_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args), formatWriteSuccess)
     );
@@ -377,6 +387,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
           PERSONID: z.string().describe('Required. The PERSONID whose mobile credential should be removed.'),
           CARDFORMAT: z.string().describe('Required. Name of the card format of the credential to remove (see get_card_formats).'),
         },
+        DESTRUCTIVE_TOOL,
         async (args) =>
           runNbapiTool(client, NBAPI_COMMANDS.REMOVE_VIRTUAL_CREDENTIAL_REQUEST, mergeParams(args), formatWriteSuccess)
       );
@@ -392,6 +403,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         ACCESSLEVELS: accessLevelsField,
         VEHICLES: vehiclesAddField,
       },
+      WRITE_TOOL,
       async ({ ACCESSLEVELS, VEHICLES, ...rest }) => {
         if (accessLevelsSyntaxMixed(ACCESSLEVELS)) {
           return clientGuardError(
@@ -425,6 +437,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         DELETED: z.enum(['TRUE', 'FALSE']).optional().describe('Optional. Marks the person record deleted/undeleted.'),
         ALLPARTITIONS: z.enum(['TRUE']).optional().describe('Optional. Applies the modification across all partitions.'),
       },
+      WRITE_TOOL,
       async ({ ACCESSLEVELS, VEHICLES, PERSONPURGE, DELETED, ...rest }) => {
         if (accessLevelsSyntaxMixed(ACCESSLEVELS)) {
           return clientGuardError(
@@ -462,6 +475,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         CARDSTATUS: z.string().optional().describe('Optional. Initial card status.'),
         CARDEXPDATE: z.string().optional().describe('Optional. Card expiration date/time.'),
       },
+      WRITE_TOOL,
       async ({ ENCODEDNUM, HOTSTAMP, ...rest }) => {
         if (!ENCODEDNUM && !HOTSTAMP) {
           return clientGuardError('add_credential requires at least one of ENCODEDNUM or HOTSTAMP.');
@@ -488,6 +502,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         CARDSTATUS: z.string().optional().describe('Optional. New card status. Mutually exclusive with DISABLED.'),
         CARDEXPDATE: z.string().optional().describe('Optional. New card expiration date/time.'),
       },
+      WRITE_TOOL,
       async ({ DISABLED, CARDSTATUS, ...rest }) => {
         if (DISABLED !== undefined && CARDSTATUS !== undefined) {
           return clientGuardError('modify_credential accepts DISABLED or CARDSTATUS, not both, in the same call.');
@@ -512,6 +527,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
           HOTSTAMP: z.string().optional().describe('Optional. The hot-stamp number identifying the credential.'),
           CREDENTIALID: z.string().optional().describe('Optional. Alternative credential identifier.'),
         },
+        DESTRUCTIVE_TOOL,
         async ({ CREDENTIALID, ENCODEDNUM, HOTSTAMP, ...rest }) => {
           if (!CREDENTIALID && !ENCODEDNUM && !HOTSTAMP) {
             return clientGuardError('remove_credential requires CREDENTIALID, or at least one of ENCODEDNUM/HOTSTAMP.');
@@ -531,6 +547,7 @@ export function registerPersonTools(server: McpServer, client: NetboxClient, gat
         {
           PERSONID: z.string().describe('Required. The PERSONID of the person record to remove.'),
         },
+        DESTRUCTIVE_TOOL,
         async ({ PERSONID }) =>
           runNbapiTool(client, NBAPI_COMMANDS.REMOVE_PERSON, { PERSONID }, formatWriteSuccess)
       );

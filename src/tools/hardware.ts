@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, type ToolGateFlags } from '../toolHelpers.js';
+import { runNbapiTool, mergeParams, formatWriteSuccess, DESTRUCTIVE_TOOL, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags } from '../toolHelpers.js';
 
 /**
  * Hardware tools — Mercury panels, network nodes, and SIOs (serial I/O
@@ -124,6 +124,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       MERCURYKEY: z.string().optional().describe('Optional. Restrict the listing to this Mercury panel key.'),
       NAME: z.string().optional().describe('Optional. Restrict the listing to Mercury panels with this name.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_MERCURY_PANELS, mergeParams(args))
   );
 
@@ -133,6 +134,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
     {
       MERCURYKEY: z.string().describe('Required. The key of the Mercury panel to retrieve. Use get_mercury_panels to discover keys.'),
     },
+    READ_ONLY_TOOL,
     async ({ MERCURYKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_MERCURY_PANEL, { MERCURYKEY })
   );
 
@@ -146,6 +148,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       UNIQUEIDENTIFIER: z.string().optional().describe('Optional. Restrict the listing to the node with this 16-hex-digit unique identifier.'),
       NAME: z.string().optional().describe('Optional. Restrict the listing to network nodes with this name.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_NETWORK_NODES, mergeParams(args))
   );
 
@@ -156,6 +159,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       NODEKEY: z.string().describe('Required. The key of the network node to retrieve. Use get_network_nodes to discover keys.'),
       PARTITIONKEY: z.string().optional().describe('Optional. Key of the partition the node belongs to.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_NETWORK_NODE, mergeParams(args))
   );
 
@@ -166,6 +170,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
     {
       MERCURYKEY: z.string().describe('Required. The Mercury panel key whose SIOs should be listed. Use get_mercury_panels to discover keys.'),
     },
+    READ_ONLY_TOOL,
     async ({ MERCURYKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_SIOS, { MERCURYKEY })
   );
 
@@ -177,6 +182,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
     {
       SIOKEY: z.string().describe('Required. The key of the SIO to retrieve. Use get_sios to discover keys.'),
     },
+    READ_ONLY_TOOL,
     async ({ SIOKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_SIO, { SIOKEY })
   );
 
@@ -199,6 +205,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
         .describe('Optional. Panel time zone, e.g. "America/New_York" (the controller default). Valid values come from Configuration : Time : Network Controller.'),
       SIOCHANNELSETTINGS: sioChannelSettingsSchema,
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_MERCURY_PANEL, mergeParams(args), formatWriteSuccess)
   );
 
@@ -221,6 +228,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       TIMEZONE: z.string().optional().describe('Optional. Panel time zone, e.g. "America/New_York".'),
       SIOCHANNELSETTINGS: sioChannelSettingsSchema,
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_MERCURY_PANEL, mergeParams(args), formatWriteSuccess)
   );
 
@@ -244,6 +252,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       NETWORKCONTROLLERIPADDRESS: z.string().optional().describe('Optional. NetBox network controller IP address. Not applicable when AUTODISCOVERENABLED is "TRUE".'),
       SECONDARYCONTROLLERIPADDRESS: z.string().optional().describe('Optional. Secondary NetBox controller IP address.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_NETWORK_NODE, mergeParams(args), formatWriteSuccess)
   );
 
@@ -269,6 +278,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       NETWORKCONTROLLERIPADDRESS: z.string().optional().describe('Optional. NetBox network controller IP address. Not applicable when AUTODISCOVERENABLED is "TRUE".'),
       SECONDARYCONTROLLERIPADDRESS: z.string().optional().describe('Optional. Secondary NetBox controller IP address.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_NETWORK_NODE, mergeParams(args), formatWriteSuccess)
   );
 
@@ -288,6 +298,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       USERNAME: z.string().optional().describe('Optional. Applies to MODEL "Dormakaba WQXM-PG"; a 3-character username.'),
       PASSWORD: z.string().optional().describe('Optional. Applies to MODEL "Dormakaba WQXM-PG".'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_SIO, mergeParams(args), formatWriteSuccess)
   );
 
@@ -306,6 +317,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       USERNAME: z.string().optional().describe('Optional. Username for the SIO.'),
       PASSWORD: z.string().optional().describe('Optional. Password for the SIO.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_SIO, mergeParams(args), formatWriteSuccess)
   );
 
@@ -318,6 +330,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
     'DESTRUCTIVE: Deletes a Mercury panel and everything attached to it (wraps NBAPI DeleteMercuryPanel). ' +
       `Requires NETBOX_ENABLE_DESTRUCTIVE. ${NOT_LIVE_VERIFIED}`,
     { MERCURYKEY: z.string().describe('Required. The key of the Mercury panel to delete.') },
+    DESTRUCTIVE_TOOL,
     async ({ MERCURYKEY }) => runNbapiTool(client, NBAPI_COMMANDS.DELETE_MERCURY_PANEL, { MERCURYKEY }, formatWriteSuccess)
   );
 
@@ -326,6 +339,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
     'DESTRUCTIVE: Deletes a network node (wraps NBAPI DeleteNetworkNode). Requires NETBOX_ENABLE_DESTRUCTIVE. ' +
       `${NOT_LIVE_VERIFIED}`,
     { NODEKEY: z.string().describe('Required. The key of the network node to delete.') },
+    DESTRUCTIVE_TOOL,
     async ({ NODEKEY }) => runNbapiTool(client, NBAPI_COMMANDS.DELETE_NETWORK_NODE, { NODEKEY }, formatWriteSuccess)
   );
 
@@ -335,6 +349,7 @@ export function registerHardwareTools(server: McpServer, client: NetboxClient, g
       "Note: the v2 guide's worked example for DeleteSio sends NODEKEY, but its Calling Parameters list — which the " +
       `guide makes authoritative — specifies SIOKEY, so SIOKEY is what this tool sends. ${NOT_LIVE_VERIFIED}`,
     { SIOKEY: z.string().describe('Required. The key of the SIO to delete.') },
+    DESTRUCTIVE_TOOL,
     async ({ SIOKEY }) => runNbapiTool(client, NBAPI_COMMANDS.DELETE_SIO, { SIOKEY }, formatWriteSuccess)
   );
 }

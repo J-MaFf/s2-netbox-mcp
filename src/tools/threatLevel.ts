@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, type ToolGateFlags } from '../toolHelpers.js';
+import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, DESTRUCTIVE_TOOL, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags } from '../toolHelpers.js';
 
 const COLOR_ENUM = z.enum(['White', 'Green', 'Blue', 'Yellow', 'Orange', 'Red']);
 
@@ -20,6 +20,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
     'get_threat_levels',
     'Lists threat levels configured on the NetBox system, optionally filtered (wraps NBAPI GetThreatLevels).',
     { ALLPARTITIONS: z.string().optional().describe('Optional. Per NBAPI GetThreatLevels filter.') },
+    READ_ONLY_TOOL,
     async ({ ALLPARTITIONS }) => runNbapiTool(client, NBAPI_COMMANDS.GET_THREAT_LEVELS, mergeParams({ ALLPARTITIONS }))
   );
 
@@ -35,6 +36,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
         .optional()
         .describe('Optional. Comma-separated location keys to scope this threat level change to, instead of the whole partition.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.SET_THREAT_LEVEL, mergeParams(args), formatWriteSuccess)
   );
 
@@ -47,6 +49,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       SEQNUM: z.string().optional().describe('Optional. Sequence/order number for the threat level.'),
       COLOR: COLOR_ENUM.optional().describe('Optional. Display color for the threat level.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_THREAT_LEVEL, mergeParams(args), formatWriteSuccess)
   );
 
@@ -60,6 +63,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       SEQNUM: z.string().describe('Required. Sequence/order number for the threat level. A live controller rejected the call without it.'),
       COLOR: COLOR_ENUM.describe('Required. Display color for the threat level. A live controller rejected the call without it.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_THREAT_LEVEL, mergeParams(args), formatWriteSuccess)
   );
 
@@ -70,6 +74,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       LEVELGROUPNAME: z.string().describe('Required. Name of the new threat level group.'),
       LEVELNAMES: z.array(z.string()).optional().describe('Optional. Threat level names to include in this group.'),
     },
+    WRITE_TOOL,
     async ({ LEVELGROUPNAME, LEVELNAMES }) =>
       runNbapiTool(
         client,
@@ -86,6 +91,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       LEVELGROUPNAME: z.string().describe('Required. Name of the threat level group to modify.'),
       LEVELNAMES: z.array(z.string()).describe('Required. Complete replacement list of member threat level names.'),
     },
+    WRITE_TOOL,
     async ({ LEVELGROUPNAME, LEVELNAMES }) =>
       runNbapiTool(
         client,
@@ -100,6 +106,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       'remove_threat_level',
       'DESTRUCTIVE: Removes a threat level (wraps NBAPI RemoveThreatLevel). Requires NETBOX_ENABLE_DESTRUCTIVE.',
       { LEVELNAME: z.string().describe('Required. Name of the threat level to remove.') },
+      DESTRUCTIVE_TOOL,
       async ({ LEVELNAME }) => runNbapiTool(client, NBAPI_COMMANDS.REMOVE_THREAT_LEVEL, { LEVELNAME }, formatWriteSuccess)
     );
 
@@ -107,6 +114,7 @@ export function registerThreatLevelTools(server: McpServer, client: NetboxClient
       'remove_threat_level_group',
       'DESTRUCTIVE: Removes a threat level group (wraps NBAPI RemoveThreatLevelGroup). Requires NETBOX_ENABLE_DESTRUCTIVE.',
       { LEVELGROUPNAME: z.string().describe('Required. Name of the threat level group to remove.') },
+      DESTRUCTIVE_TOOL,
       async ({ LEVELGROUPNAME }) =>
         runNbapiTool(client, NBAPI_COMMANDS.REMOVE_THREAT_LEVEL_GROUP, { LEVELGROUPNAME }, formatWriteSuccess)
     );

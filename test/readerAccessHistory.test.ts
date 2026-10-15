@@ -446,7 +446,7 @@ describe('get_reader_access_history tool registration (R8/R9)', () => {
   function registerGetReaderAccessHistory(client: NetboxClient): { schema: Record<string, unknown>; description: string; handler: Handler } {
     let registered: { schema: Record<string, unknown>; description: string; handler: Handler } | undefined;
     const server = {
-      tool: (name: string, description: string, schema: Record<string, unknown>, handler: Handler) => {
+      tool: (name: string, description: string, schema: Record<string, unknown>, _annotations: unknown, handler: Handler) => {
         if (name === 'get_reader_access_history') registered = { schema, description, handler };
       },
     };

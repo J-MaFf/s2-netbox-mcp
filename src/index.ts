@@ -5,7 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfigFromEnv, NetboxConfigError } from './config.js';
 import { NetboxClient } from './netboxClient.js';
 import { NBAPI_COMMANDS } from './commands.js';
-import { runNbapiTool, type ToolGateFlags } from './toolHelpers.js';
+import { runNbapiTool, READ_ONLY_TOOL, type ToolGateFlags } from './toolHelpers.js';
 import { buildInstructions } from './instructions.js';
 import { registerShutdownHandlers } from './shutdown.js';
 import { SERVER_VERSION } from './version.js';
@@ -71,6 +71,7 @@ server.tool(
   'check_connection',
   'Confirms the server can authenticate to the configured S2 NetBox controller and returns the NBAPI version string (wraps GetAPIVersion). No parameters required.',
   {},
+  READ_ONLY_TOOL,
   async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
 );
 
