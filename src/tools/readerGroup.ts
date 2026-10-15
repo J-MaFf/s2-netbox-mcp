@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, type ToolGateFlags } from '../toolHelpers.js';
+import { runNbapiTool, mergeParams, formatWriteSuccess, wrapList, DESTRUCTIVE_TOOL, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags } from '../toolHelpers.js';
 
 /**
  * Reader group tools: the R8 read tools (GetReaderGroup(s)) plus the R14
@@ -14,6 +14,7 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
     'get_reader_group',
     'Returns the details of a single reader group for a given READERGROUPKEY (wraps NBAPI GetReaderGroup).',
     { READERGROUPKEY: z.string().describe('Required. The unique READERGROUPKEY of the reader group to retrieve.') },
+    READ_ONLY_TOOL,
     async ({ READERGROUPKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READER_GROUP, { READERGROUPKEY })
   );
 
@@ -21,6 +22,7 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
     'get_reader_groups',
     'Lists reader groups configured on the NetBox system (wraps NBAPI GetReaderGroups).',
     { STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.') },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_READER_GROUPS, mergeParams({ STARTFROMKEY }))
   );
 
@@ -33,6 +35,7 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
         DESCRIPTION: z.string().optional().describe('Optional. Description of the reader group.'),
         READERKEYS: z.array(z.string()).describe('Required. READERKEY values of the readers in this group.'),
       },
+      WRITE_TOOL,
       async ({ READERKEYS, ...rest }) =>
         runNbapiTool(
           client,
@@ -51,6 +54,7 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
         DESCRIPTION: z.string().optional().describe('Optional. New description for the reader group.'),
         READERKEYS: z.array(z.string()).describe('Required. Complete replacement list of member READERKEY values.'),
       },
+      WRITE_TOOL,
       async ({ READERGROUPKEY, NAME, DESCRIPTION, READERKEYS }) =>
         runNbapiTool(
           client,
@@ -65,6 +69,7 @@ export function registerReaderGroupTools(server: McpServer, client: NetboxClient
         'delete_reader_group',
         'DESTRUCTIVE: Deletes a reader group (wraps NBAPI DeleteReaderGroup). Requires NETBOX_ENABLE_DESTRUCTIVE. Fails if the group is still referenced by an access level.',
         { READERGROUPKEY: z.string().describe('Required. The READERGROUPKEY of the reader group to delete.') },
+        DESTRUCTIVE_TOOL,
         async ({ READERGROUPKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_READER_GROUP, { READERGROUPKEY }, formatWriteSuccess)
       );

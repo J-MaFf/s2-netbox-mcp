@@ -16,7 +16,7 @@ import { registerMiscTools } from '../src/tools/misc.js';
 import { registerUnlockWindowTools } from '../src/tools/unlockWindow.js';
 import { registerDailyUnlockWindowTools } from '../src/tools/dailyUnlockWindow.js';
 import { registerGuideTool } from '../src/tools/guide.js';
-import { runNbapiTool, type ToolGateFlags } from '../src/toolHelpers.js';
+import { runNbapiTool, READ_ONLY_TOOL, type ToolGateFlags } from '../src/toolHelpers.js';
 import { NBAPI_COMMANDS } from '../src/commands.js';
 import { FakeServer, fakeClient } from './testUtils.js';
 
@@ -33,6 +33,7 @@ function registerWholeServer(server: FakeServer, gate: ToolGateFlags): void {
     'check_connection',
     'Confirms the server can authenticate to the configured S2 NetBox controller and returns the NBAPI version string (wraps GetAPIVersion). No parameters required.',
     {},
+    READ_ONLY_TOOL,
     async () => runNbapiTool(client, NBAPI_COMMANDS.GET_API_VERSION, {})
   );
   registerGuideTool(server as unknown as McpServer);
@@ -349,6 +350,31 @@ describe('R3/C3: every write tool description is prefixed and every write succes
       it(`${reg.name}: read tool description does not use the WRITE:/DESTRUCTIVE: prefixes`, () => {
         expect(reg.description.startsWith('WRITE:')).toBe(false);
         expect(reg.description.startsWith('DESTRUCTIVE:')).toBe(false);
+      });
+    }
+  }
+});
+
+describe('MCP tool annotations match each tool’s gate tier (issue #124)', () => {
+  // Literal hint values, not the src constants, so a change to a constant
+  // fails here. destructiveHint must be explicitly false on write tools: the
+  // MCP spec defaults it to true whenever readOnlyHint is false.
+  const server = new FakeServer();
+  registerWholeServer(server, { writesEnabled: true, destructiveEnabled: true });
+
+  for (const reg of server.registrations) {
+    if (DESTRUCTIVE_TOOLS.includes(reg.name)) {
+      it(`${reg.name}: annotated destructive`, () => {
+        expect(reg.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+      });
+    } else if (NON_DESTRUCTIVE_WRITE_TOOLS.includes(reg.name)) {
+      it(`${reg.name}: annotated non-destructive write`, () => {
+        expect(reg.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
+      });
+    } else {
+      it(`${reg.name}: annotated read-only`, () => {
+        expect(READ_TOOLS).toContain(reg.name);
+        expect(reg.annotations).toEqual({ readOnlyHint: true });
       });
     }
   }

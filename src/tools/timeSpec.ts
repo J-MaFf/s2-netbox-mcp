@@ -10,6 +10,9 @@ import {
   notFoundResult,
   toolErrorResult,
   wrapList,
+  DESTRUCTIVE_TOOL,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -59,6 +62,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
     'get_time_spec',
     'Returns the details of a single time spec for a given TIMESPECKEY (wraps NBAPI GetTimeSpec).',
     { TIMESPECKEY: z.string().describe('Required. The unique TIMESPECKEY of the time spec to retrieve.') },
+    READ_ONLY_TOOL,
     async ({ TIMESPECKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPEC, { TIMESPECKEY })
   );
 
@@ -66,6 +70,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
     'get_time_specs',
     'Lists time specs configured on the NetBox system (wraps NBAPI GetTimeSpecs).',
     { STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.') },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPECS, mergeParams({ STARTFROMKEY }))
   );
 
@@ -73,6 +78,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
     'get_time_spec_group',
     'Returns the details of a single time spec group for a given TIMESPECGROUPKEY (wraps NBAPI GetTimeSpecGroup).',
     { TIMESPECGROUPKEY: z.string().describe('Required. The unique TIMESPECGROUPKEY of the time spec group to retrieve.') },
+    READ_ONLY_TOOL,
     async ({ TIMESPECGROUPKEY }) => runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPEC_GROUP, { TIMESPECGROUPKEY })
   );
 
@@ -99,6 +105,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
             'GetTimeSpecGroups provides it (bare string or array of strings).'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY, RESOLVEMEMBERNAMES }): Promise<ToolTextResult> => {
       if (RESOLVEMEMBERNAMES === false) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_TIME_SPEC_GROUPS, mergeParams({ STARTFROMKEY }));
@@ -131,6 +138,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
       'add_time_spec',
       'WRITE: Creates a new time spec (wraps NBAPI AddTimeSpec).',
       { NAME: z.string().describe('Required. Name of the new time spec.'), ...timeSpecWriteFields },
+      WRITE_TOOL,
       async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_TIME_SPEC, mergeParams(args), formatWriteSuccess)
     );
 
@@ -142,6 +150,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
         NAME: z.string().optional().describe('Optional. New name for the time spec.'),
         ...timeSpecWriteFields,
       },
+      WRITE_TOOL,
       async (args) => runNbapiTool(client, NBAPI_COMMANDS.MODIFY_TIME_SPEC, mergeParams(args), formatWriteSuccess)
     );
 
@@ -153,6 +162,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
         DESCRIPTION: z.string().optional().describe('Optional. Description of the time spec group.'),
         TIMESPECKEYS: z.array(z.string()).optional().describe('Optional. Initial member TIMESPECKEY values for the new group.'),
       },
+      WRITE_TOOL,
       async ({ TIMESPECKEYS, ...rest }) =>
         runNbapiTool(
           client,
@@ -171,6 +181,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
         DESCRIPTION: z.string().optional().describe('Optional. New description for the time spec group.'),
         TIMESPECKEYS: z.array(z.string()).optional().describe('Optional. Complete replacement list of member TIMESPECKEY values.'),
       },
+      WRITE_TOOL,
       async ({ TIMESPECGROUPKEY, NAME, DESCRIPTION, TIMESPECKEYS }) =>
         runNbapiTool(
           client,
@@ -185,6 +196,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
         'delete_time_spec',
         'DESTRUCTIVE: Deletes a time spec (wraps NBAPI DeleteTimeSpec). Requires NETBOX_ENABLE_DESTRUCTIVE. The built-in Always/Never time specs cannot be deleted.',
         { TIMESPECKEY: z.string().describe('Required. The TIMESPECKEY of the time spec to delete.') },
+        DESTRUCTIVE_TOOL,
         async ({ TIMESPECKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_TIME_SPEC, { TIMESPECKEY }, formatWriteSuccess)
       );
@@ -193,6 +205,7 @@ export function registerTimeSpecTools(server: McpServer, client: NetboxClient, g
         'delete_time_spec_group',
         'DESTRUCTIVE: Deletes a time spec group (wraps NBAPI DeleteTimeSpecGroup). Requires NETBOX_ENABLE_DESTRUCTIVE.',
         { TIMESPECGROUPKEY: z.string().describe('Required. The TIMESPECGROUPKEY of the time spec group to delete.') },
+        DESTRUCTIVE_TOOL,
         async ({ TIMESPECGROUPKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_TIME_SPEC_GROUP, { TIMESPECGROUPKEY }, formatWriteSuccess)
       );

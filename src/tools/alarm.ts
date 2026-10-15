@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
 import { NBAPI_COMMANDS } from '../commands.js';
-import { runNbapiTool, mergeParams, formatWriteSuccess, type ToolGateFlags } from '../toolHelpers.js';
+import { runNbapiTool, mergeParams, formatWriteSuccess, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags } from '../toolHelpers.js';
 
 /**
  * Alarm and duty-log tools: `get_alarms` (GetAlarms, read) and `add_duty_log`
@@ -43,6 +43,7 @@ export function registerAlarmTools(server: McpServer, client: NetboxClient, gate
       ACTIVITYID: z.string().optional().describe('Optional. Return alarms for this activity ID.'),
       OWNERID: z.string().optional().describe('Optional. Return alarms owned by this operator/person ID.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_ALARMS, mergeParams(args))
   );
 
@@ -58,6 +59,7 @@ export function registerAlarmTools(server: McpServer, client: NetboxClient, gate
       ACTIVITYID: z.string().optional().describe('Optional. ID number of the activity the duty log entry relates to.'),
       PARTITIONKEY: z.string().optional().describe('Optional. Key of the partition. Only necessary if ACTIVITYID is not supplied.'),
     },
+    WRITE_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.ADD_DUTY_LOG, mergeParams(args), formatWriteSuccess)
   );
 }

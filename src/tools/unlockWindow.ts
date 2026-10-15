@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
-import { formatAsJson, formatWriteSuccess, toolErrorResult, type ToolGateFlags, type ToolTextResult } from '../toolHelpers.js';
+import { formatAsJson, formatWriteSuccess, toolErrorResult, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags, type ToolTextResult } from '../toolHelpers.js';
 import {
   UnlockWindowError,
   cancelUnlockWindow,
@@ -49,6 +49,7 @@ export function registerUnlockWindowTools(
       'GetTimeSpecGroups), the managed time specs and holidays, the window derived from them, and whether it is active ' +
       'right now on the host clock. Read-only: issues only Get commands. No parameters required.',
     {},
+    READ_ONLY_TOOL,
     async (): Promise<ToolTextResult> => {
       try {
         return { content: [{ type: 'text', text: formatAsJson(await getUnlockWindow(client, settings)) }] };
@@ -85,6 +86,7 @@ export function registerUnlockWindowTools(
         .describe('Optional (default false). Set true to proceed even though other time specs would be suppressed on the window\'s dates.'),
       dryRun: z.boolean().optional().describe('Optional (default false). Return the plan and the side-effect report without writing anything.'),
     },
+    WRITE_TOOL,
     async ({ start, end, portalKeys, acknowledgeSideEffects, dryRun }): Promise<ToolTextResult> => {
       try {
         const result = await scheduleUnlockWindow(client, { start, end, portalKeys, acknowledgeSideEffects, dryRun }, settings);
@@ -109,6 +111,7 @@ export function registerUnlockWindowTools(
       '(portal group, time spec group, holiday, or time spec) exists. Only objects named exactly with the managed prefix ' +
       'are ever touched. No parameters required.',
     {},
+    WRITE_TOOL,
     async (): Promise<ToolTextResult> => {
       try {
         return { content: [{ type: 'text', text: formatWriteSuccess(await cancelUnlockWindow(client, settings)) }] };
