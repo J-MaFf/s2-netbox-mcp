@@ -1,6 +1,6 @@
 {
   "name": "s2-netbox-workflows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Step-by-step S2 NetBox workflows (onboard, offboard, event unlock, badge-denied diagnosis) for agents using the s2-netbox-mcp server. Skill only; does not install or launch the MCP server.",
   "author": {
     "name": "Joey Maffiola",
@@ -9,6 +9,5 @@
   "homepage": "https://github.com/J-MaFf/s2-netbox-mcp#workflow-skill",
   "repository": "https://github.com/J-MaFf/s2-netbox-mcp",
   "license": "MIT",
-  "keywords": ["s2-netbox", "lenels2", "access-control", "mcp", "physical-security"],
-  "skills": "./skills/"
+  "keywords": ["s2-netbox", "lenels2", "access-control", "mcp", "physical-security"]
 }
