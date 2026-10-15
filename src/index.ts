@@ -8,6 +8,7 @@ import { NBAPI_COMMANDS } from './commands.js';
 import { runNbapiTool, READ_ONLY_TOOL, type ToolGateFlags } from './toolHelpers.js';
 import { buildInstructions } from './instructions.js';
 import { registerShutdownHandlers } from './shutdown.js';
+import { SERVER_VERSION } from './version.js';
 import { registerGuideTool } from './tools/guide.js';
 import { registerPersonTools } from './tools/person.js';
 import { registerAccessLevelTools } from './tools/accessLevel.js';
@@ -61,7 +62,7 @@ const gate: ToolGateFlags = {
   destructiveEnabled: config.enableDestructive,
 };
 
-const server = new McpServer({ name: 's2-netbox-mcp', version: '0.3.0' }, { instructions: buildInstructions(gate) });
+const server = new McpServer({ name: 's2-netbox-mcp', version: SERVER_VERSION }, { instructions: buildInstructions(gate) });
 
 // check_connection wraps GetAPIVersion. It doesn't fit any one of the
 // tool-category modules, so it is registered directly here alongside the
