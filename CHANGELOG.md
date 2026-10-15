@@ -27,6 +27,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it rather than the repo root. The plugin version is bumped to 0.1.1 so existing installs update
   ([#126](https://github.com/J-MaFf/s2-netbox-mcp/issues/126)).
 
+### Changed
+- Reordered the README so the install steps come right after the intro, in one **Install** section:
+  requirements, install the server, register it with an MCP client, and install the optional
+  workflow skill. Controller prerequisites and the environment-variable reference follow. The
+  read-only command list, agent guidance, and workflow descriptions moved below them. No content was
+  removed, and existing anchors still work
+  ([#128](https://github.com/J-MaFf/s2-netbox-mcp/issues/128)).
+
 ## [0.5.1] — 2026-10-14
 
 ### Added
