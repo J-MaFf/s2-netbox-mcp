@@ -1,0 +1,17 @@
+{
+  "name": "s2-netbox-mcp",
+  "owner": {
+    "name": "Joey Maffiola",
+    "url": "https://github.com/J-MaFf"
+  },
+  "metadata": {
+    "description": "Claude Code plugins that accompany the s2-netbox-mcp server."
+  },
+  "plugins": [
+    {
+      "name": "s2-netbox-workflows",
+      "source": "./",
+      "description": "Step-by-step S2 NetBox workflows (onboard, offboard, event unlock, badge-denied diagnosis) for agents using the s2-netbox-mcp server. Skill only; does not install or launch the MCP server."
+    }
+  ]
+}

@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `s2-netbox-workflows` Agent Skill (`skills/s2-netbox-workflows/`) with step-by-step workflows
+  built on the existing tools: onboard a new hire, offboard (disable cards and remove access levels
+  first, delete only on explicit request), unlock doors for an event via the scheduled composite
+  tools, and a read-only diagnosis of why a badge was denied. It links to `get_guide` topics
+  instead of repeating them and follows the server's write-safety rules. It ships as a skill-only
+  Claude Code plugin (`.claude-plugin/`) that doesn't bundle the MCP server, and can also be
+  installed by copying the folder ([#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122)).
+
 ## [0.5.1] — 2026-10-14
 
 ### Added
