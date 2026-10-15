@@ -27,7 +27,217 @@ partitions/UDF lists — as MCP tools usable from any MCP-compatible client
 > MCP client/model you point at it. See `SECURITY.md` before deploying
 > anything beyond read-only against a production controller.
 
-**Read-only by default.** With no write-related environment variables set,
+## Install
+
+Three steps, plus an optional fourth: check the requirements, install the
+server, register it with your MCP client, and optionally add the
+[workflow skill](#workflow-skill). Before the first real call, also check the
+[controller prerequisites](#controller-prerequisites).
+
+### Requirements
+
+- Node.js >= 18.17 (tested on Node 24), which includes npm. If Node.js isn't installed, on
+  Windows you can install it with winget, then open a new terminal so `node`/`npm` are on
+  your `PATH`:
+
+  ```powershell
+  winget install OpenJS.NodeJS.LTS
+  ```
+
+- An S2 NetBox controller reachable from wherever this server runs, with the
+  NBAPI enabled and configured for **session-login authentication** (not MAC
+  authentication — see the spec for why that's out of scope for v1)
+- A NetBox operator account with API access and read permission on the
+  resources you want to query
+
+### Install the MCP server
+
+Two ways to get the server:
+
+**Option A — npm (no clone needed):**
+
+```bash
+npm install -g s2-netbox-mcp
+```
+
+This installs the `s2-netbox-mcp` binary; point your MCP client's `command` at
+`s2-netbox-mcp` directly (no `node dist/index.js` needed).
+
+**Option B — clone and build:**
+
+```bash
+npm install
+npm run build
+```
+
+Either way, copy `.env.example` to `.env` and fill in real values (or provide the same
+variables directly in your shell / in the Claude Code MCP server config's
+`env` block — see below). **Never commit `.env`** — it's already gitignored.
+
+```bash
+cp .env.example .env
+# edit .env
+```
+
+Start the server directly to sanity-check it boots (it just waits on stdio
+for an MCP client — Ctrl+C to stop; this also sends `Logout` if a session was
+opened):
+
+```bash
+npm start
+```
+
+### Registering with an MCP client
+
+This server works with any MCP client that speaks the standard `mcpServers`
+stdio config shape — Claude Code, Antigravity, and Gemini CLI have all been
+verified against it directly. Which JSON to use depends on which install
+option you picked above:
+
+**If you installed via npm (Option A above):**
+
+```json
+{
+  "mcpServers": {
+    "s2-netbox-mcp": {
+      "command": "s2-netbox-mcp",
+      "env": {
+        "NETBOX_BASE_URL": "https://netbox.example.internal",
+        "NETBOX_USERNAME": "svc-account",
+        "NETBOX_PASSWORD": "REPLACE_ME",
+        "NETBOX_ALLOW_INSECURE_TLS": "false"
+      }
+    }
+  }
+}
+```
+
+**If you cloned and built locally (Option B above):**
+
+```json
+{
+  "mcpServers": {
+    "s2-netbox-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/s2-netbox-mcp/dist/index.js"],
+      "env": {
+        "NETBOX_BASE_URL": "https://netbox.example.internal",
+        "NETBOX_USERNAME": "svc-account",
+        "NETBOX_PASSWORD": "REPLACE_ME",
+        "NETBOX_ALLOW_INSECURE_TLS": "false"
+      }
+    }
+  }
+}
+```
+
+Replace the `args` path with the actual absolute path to `dist/index.js` on
+your machine, and replace the `env` values with your real controller details
+(or omit `env` entirely and rely on a `.env` file next to the project if you
+prefer — either works, since `src/index.ts` loads `.env` via `dotenv` before
+reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
+
+Where to put that JSON depends on the client:
+
+| Client | Config file | Notes |
+| --- | --- | --- |
+| Claude Code | `.mcp.json` in your project, or `claude_desktop_config.json` | Or add non-interactively via `claude mcp add-json s2-netbox-mcp '<json>'` |
+| Antigravity | `~/.gemini/config/mcp_config.json` (Windows: `%USERPROFILE%\.gemini\config\mcp_config.json`) | Global — applies to every Antigravity session |
+| Gemini CLI | `~/.gemini/settings.json`, under its own `mcpServers` key | Or add non-interactively via `gemini mcp add s2-netbox-mcp <command> [args] -e KEY=value` |
+
+All three use the identical `mcpServers` object shape shown above — only the
+surrounding file and location differ.
+
+### Install the workflow skill (optional)
+
+The [`s2-netbox-workflows`](#workflow-skill) Agent Skill adds step-by-step
+onboard, offboard, event-unlock, and badge-denied workflows on top of this
+server's tools. It needs the server registered above.
+
+**Install in Claude Code (plugin):**
+
+```text
+/plugin marketplace add J-MaFf/s2-netbox-mcp
+/plugin install s2-netbox-workflows@s2-netbox-mcp
+```
+
+The plugin, in [`plugins/s2-netbox-workflows/`](plugins/s2-netbox-workflows/),
+ships only the skill. It doesn't bundle or launch the MCP server, so it won't
+start a second server next to the one you already registered. To pick up a
+newer version, run `claude plugin marketplace update s2-netbox-mcp`, then
+`claude plugin update s2-netbox-workflows@s2-netbox-mcp`, then restart
+Claude Code.
+
+**Install manually (Claude Code or any agent that reads Agent Skills):** copy
+or symlink `plugins/s2-netbox-workflows/skills/s2-netbox-workflows/` into your
+agent's skills directory. For Claude Code that's `~/.claude/skills/` for every project, or
+`.claude/skills/` in a single project. The skill loads on its own when a
+request matches it, for example "onboard Jane Doe with card 12345", "unlock
+the lobby Friday 8 to 5", or "why was badge 4471 denied at the dock door?".
+
+## Controller prerequisites
+
+Before this server can talk to your controller, on the NetBox web UI go to
+**Configuration → Site Settings → Network Controller → Data Integration** and
+confirm all three of these are checked:
+
+- **Enable V2**
+- **Use Authentication**
+- **Use login username/password for authentication (requires setup privilege)**
+
+The NBAPI user account also needs a role with **NBAPI read access** (see the
+NBAPI doc's "Setting Up User Roles for the API" section) — a login that
+succeeds but can't read the resources this server queries will surface as
+`FAIL` or `APIERROR` responses per tool call. If you set
+`NETBOX_ENABLE_WRITES`, that role needs **Read-Write** API privilege instead
+(Configuration → Site Settings → User Roles → API Privilege) — Read-Only
+suffices only for the read tools.
+
+### Troubleshooting
+
+- **"Login succeeds but every other command returns `APIERROR 5`."** This is
+  the live-observed symptom of the *Use login username/password for
+  authentication (requires setup privilege)* checkbox being unticked, which
+  puts the controller in MAC-authentication mode instead of session-login
+  mode (MAC auth is out of scope for this server — see the spec). `Login`
+  still returns `SUCCESS` with a session ID, but every subsequent command —
+  including `Logout` — fails with `APIERROR 5`. Fix: tick that checkbox on
+  the *Data Integration* tab. This server's client detects this exact
+  pattern (a successful re-login followed by another `APIERROR 5`) and
+  surfaces a tool error naming the checkbox directly.
+- **"HTTP 410 Gone."** The configured `NETBOX_API_PATH` is not served by this
+  controller. NetBox 6.x serves the NBAPI at `/nbws/goforms/nbapi` (the
+  default this server uses); the 2020 doc's `/goforms/nbapi` path is
+  deregistered on 6.x and returns 410 for every request. If you're on a
+  pre-6.x controller, set `NETBOX_API_PATH=/goforms/nbapi` explicitly; if
+  you're on 6.x and still see this, double-check `NETBOX_API_PATH` isn't set
+  to something else by mistake.
+
+## Environment variables
+
+| Variable                      | Required | Default | Description                                                                                       |
+| ------------------------------ | -------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `NETBOX_API_PATH` itself. |
+| `NETBOX_USERNAME`               | Yes      | —       | NBAPI session-login username.                                                                       |
+| `NETBOX_PASSWORD`               | Yes      | —       | NBAPI session-login password. Never logged, never written to any tracked file.                      |
+| `NETBOX_ALLOW_INSECURE_TLS`     | No       | `false` | Set to `true`/`1`/`yes` to accept a self-signed/on-prem TLS certificate. **Explicit opt-in only** — any other value (including unset) keeps normal certificate verification. |
+| `NETBOX_API_PATH`               | No       | `/nbws/goforms/nbapi` | The NBAPI path appended to `NETBOX_BASE_URL`. The default is the verified path on NetBox 6.x controllers. Only set this to override the default — e.g. to the legacy, pre-6.x path `/goforms/nbapi`, which returns **HTTP 410 Gone** on 6.x controllers (see Controller prerequisites below). A value without a leading `/` has one added automatically. |
+| `NETBOX_ENABLE_WRITES`          | No       | `false` | Set to `true`/`1`/`yes` to register the write tools (see **Write access** below). Unset (or any other value) leaves the server strictly read-only. |
+| `NETBOX_ENABLE_DESTRUCTIVE`     | No       | `false` | Set to `true`/`1`/`yes`, **together with** `NETBOX_ENABLE_WRITES`, to additionally register the 11 destructive tools (see **Write access** below). |
+| `NETBOX_EVENT_API_PATH`         | No       | tracks `NETBOX_API_PATH` | Request path used only for `trigger_event`. Unset/empty tracks whatever `NETBOX_API_PATH` resolves to; a non-empty override is used verbatim (leading `/` added if missing) — e.g. the doc's pre-6.x Event API path `/appd/nbapi`, if your controller serves it separately. |
+| `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | The holiday groups reserved for the managed unlock window, in `first,middle,last` segment order — see **Scheduled unlock windows** below. Must be 1-3 distinct integers in `1..8`, comma-separated; reserve groups nothing else on the controller uses. |
+| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Name prefix of every object the managed unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the per-segment holidays/time specs (`<prefix> first/middle/last`). 1-40 characters so the longest name (`<prefix> time specs`) fits the 64-character NAME limit. |
+| `NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP` | No | `5` | The single holiday group reserved for the managed **daily recurring** unlock window — see **Scheduled daily unlock windows** below. Must be a single integer in `1..8`, and must not be a member of `NETBOX_UNLOCK_HOLIDAY_GROUPS` (the two features' reserved groups can never collide). |
+| `NETBOX_DAILY_UNLOCK_NAME_PREFIX` | No | `MCP Daily Unlock Window` | Name prefix of every object the managed daily unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the one holiday/time spec (`<prefix> schedule`). 1-40 characters so the longest name fits the 64-character NAME limit. |
+| `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | The `PORTALKEY` of the one door you designate safe to physically unlock during `npm run test:live:write`/`npm run test:live:write:daily`. Read only by those scripts, never by the server itself. |
+
+If any of the three required variables is missing, the server prints a single
+actionable line to stderr and exits with a non-zero status — it never prints
+a stack trace on startup misconfiguration.
+
+## Read-only by default
+
+With no write-related environment variables set,
 this server registers only query/read NBAPI commands:
 
 - `Login`
@@ -66,6 +276,48 @@ controller until you explicitly opt in via the environment variables in
 `get_reader_access_history`, which issue only read commands. Note there is no
 `GetPortal` (singular) command; only `GetPortals` (plural, paginated, no
 single-portal filter) exists on the real NBAPI.
+
+## Write access
+
+Write/control tools exist in this server but are **not registered** unless
+you explicitly opt in:
+
+- **`NETBOX_ENABLE_WRITES=true`** registers the write tools listed in the
+  "Write tools" table below — the 45 pass-through tools (creating, modifying,
+  locking/unlocking, activating, and triggering) plus the three composite
+  write tools `set_portals_state`, `schedule_unlock_window`, and
+  `cancel_unlock_window`. Left unset (the default), the server's tool
+  surface is exactly the read tools below — byte-for-byte the same read-only
+  posture as before this variable existed.
+- The two unlock-window composites delete **only** the holidays and time
+  specs they themselves own (named `<prefix> first|middle|last` — see
+  **Scheduled unlock windows**), and do so without `NETBOX_ENABLE_DESTRUCTIVE`
+  because those objects are server-owned; they never delete anything else.
+- **`NETBOX_ENABLE_DESTRUCTIVE=true`**, set **in addition to**
+  `NETBOX_ENABLE_WRITES`, registers the 11 **destructive** tools (each
+  description is `DESTRUCTIVE:`-prefixed): `delete_access_level`,
+  `delete_access_level_group`, `delete_holiday`, `delete_portal_group`,
+  `delete_reader_group`, `delete_time_spec`, `delete_time_spec_group`,
+  `remove_credential`, `remove_person`, `remove_threat_level`,
+  `remove_threat_level_group`. Two ordinarily non-destructive write tools
+  also independently refuse one specific destructive-shaped call when this
+  flag is off, regardless of whether the tool itself is registered:
+  `modify_person` refuses a call with `DELETED="TRUE"` or
+  `PERSONPURGE="TRUE"`, and `modify_udf_list_items` refuses a call where any
+  list item has `DELETE="1"` — both name `NETBOX_ENABLE_DESTRUCTIVE` in the
+  error and send nothing to the controller.
+- Every write tool's description starts with `WRITE:` (or `DESTRUCTIVE:` for
+  the 11 above), and every successful write's result text contains the
+  literal `SUCCESS` followed by the controller's response data as pretty
+  JSON (which may be `{}` when the command returns no data), so you can
+  always tell a write actually happened.
+- Client-side guards (e.g. "give either `READERKEY` or `READERGROUPKEY`, not
+  both") reject malformed calls with a tool error **before** any NBAPI
+  command is issued — no partial or guessed request ever reaches the
+  controller.
+
+Set these the same way as the other variables — in `.env` (see
+`.env.example`) or your MCP server config's `env` block.
 
 ## Agent guidance
 
@@ -126,242 +378,7 @@ door codes or keys. It needs this MCP server to be registered separately (see
 [Registering with an MCP client](#registering-with-an-mcp-client)), and its
 write steps need the write gates in [Write access](#write-access).
 
-**Install in Claude Code (plugin):**
-
-```text
-/plugin marketplace add J-MaFf/s2-netbox-mcp
-/plugin install s2-netbox-workflows@s2-netbox-mcp
-```
-
-The plugin, in [`plugins/s2-netbox-workflows/`](plugins/s2-netbox-workflows/),
-ships only the skill. It doesn't bundle or launch the MCP server, so it won't
-start a second server next to the one you already registered. To pick up a
-newer version, run `claude plugin marketplace update s2-netbox-mcp`, then
-`claude plugin update s2-netbox-workflows@s2-netbox-mcp`, then restart
-Claude Code.
-
-**Install manually (Claude Code or any agent that reads Agent Skills):** copy
-or symlink `plugins/s2-netbox-workflows/skills/s2-netbox-workflows/` into your
-agent's skills directory. For Claude Code that's `~/.claude/skills/` for every project, or
-`.claude/skills/` in a single project. The skill loads on its own when a
-request matches it, for example "onboard Jane Doe with card 12345", "unlock
-the lobby Friday 8 to 5", or "why was badge 4471 denied at the dock door?".
-
-## Requirements
-
-- Node.js >= 18.17 (tested on Node 24), which includes npm. If Node.js isn't installed, on
-  Windows you can install it with winget, then open a new terminal so `node`/`npm` are on
-  your `PATH`:
-
-  ```powershell
-  winget install OpenJS.NodeJS.LTS
-  ```
-
-- An S2 NetBox controller reachable from wherever this server runs, with the
-  NBAPI enabled and configured for **session-login authentication** (not MAC
-  authentication — see the spec for why that's out of scope for v1)
-- A NetBox operator account with API access and read permission on the
-  resources you want to query
-
-## Setup
-
-Two ways to get the server:
-
-**Option A — npm (no clone needed):**
-
-```bash
-npm install -g s2-netbox-mcp
-```
-
-This installs the `s2-netbox-mcp` binary; point your MCP client's `command` at
-`s2-netbox-mcp` directly (no `node dist/index.js` needed).
-
-**Option B — clone and build:**
-
-```bash
-npm install
-npm run build
-```
-
-Either way, copy `.env.example` to `.env` and fill in real values (or provide the same
-variables directly in your shell / in the Claude Code MCP server config's
-`env` block — see below). **Never commit `.env`** — it's already gitignored.
-
-```bash
-cp .env.example .env
-# edit .env
-```
-
-Start the server directly to sanity-check it boots (it just waits on stdio
-for an MCP client — Ctrl+C to stop; this also sends `Logout` if a session was
-opened):
-
-```bash
-npm start
-```
-
-## Environment variables
-
-| Variable                      | Required | Default | Description                                                                                       |
-| ------------------------------ | -------- | ------- | --------------------------------------------------------------------------------------------------- |
-| `NETBOX_BASE_URL`              | Yes      | —       | Base URL of the NetBox controller's web interface, e.g. `https://netbox.example.internal`. No trailing slash or path — the client appends `NETBOX_API_PATH` itself. |
-| `NETBOX_USERNAME`               | Yes      | —       | NBAPI session-login username.                                                                       |
-| `NETBOX_PASSWORD`               | Yes      | —       | NBAPI session-login password. Never logged, never written to any tracked file.                      |
-| `NETBOX_ALLOW_INSECURE_TLS`     | No       | `false` | Set to `true`/`1`/`yes` to accept a self-signed/on-prem TLS certificate. **Explicit opt-in only** — any other value (including unset) keeps normal certificate verification. |
-| `NETBOX_API_PATH`               | No       | `/nbws/goforms/nbapi` | The NBAPI path appended to `NETBOX_BASE_URL`. The default is the verified path on NetBox 6.x controllers. Only set this to override the default — e.g. to the legacy, pre-6.x path `/goforms/nbapi`, which returns **HTTP 410 Gone** on 6.x controllers (see Controller prerequisites below). A value without a leading `/` has one added automatically. |
-| `NETBOX_ENABLE_WRITES`          | No       | `false` | Set to `true`/`1`/`yes` to register the write tools (see **Write access** below). Unset (or any other value) leaves the server strictly read-only. |
-| `NETBOX_ENABLE_DESTRUCTIVE`     | No       | `false` | Set to `true`/`1`/`yes`, **together with** `NETBOX_ENABLE_WRITES`, to additionally register the 11 destructive tools (see **Write access** below). |
-| `NETBOX_EVENT_API_PATH`         | No       | tracks `NETBOX_API_PATH` | Request path used only for `trigger_event`. Unset/empty tracks whatever `NETBOX_API_PATH` resolves to; a non-empty override is used verbatim (leading `/` added if missing) — e.g. the doc's pre-6.x Event API path `/appd/nbapi`, if your controller serves it separately. |
-| `NETBOX_UNLOCK_HOLIDAY_GROUPS`  | No       | `8,7,6` | The holiday groups reserved for the managed unlock window, in `first,middle,last` segment order — see **Scheduled unlock windows** below. Must be 1-3 distinct integers in `1..8`, comma-separated; reserve groups nothing else on the controller uses. |
-| `NETBOX_UNLOCK_NAME_PREFIX`     | No       | `MCP Unlock Window` | Name prefix of every object the managed unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the per-segment holidays/time specs (`<prefix> first/middle/last`). 1-40 characters so the longest name (`<prefix> time specs`) fits the 64-character NAME limit. |
-| `NETBOX_DAILY_UNLOCK_HOLIDAY_GROUP` | No | `5` | The single holiday group reserved for the managed **daily recurring** unlock window — see **Scheduled daily unlock windows** below. Must be a single integer in `1..8`, and must not be a member of `NETBOX_UNLOCK_HOLIDAY_GROUPS` (the two features' reserved groups can never collide). |
-| `NETBOX_DAILY_UNLOCK_NAME_PREFIX` | No | `MCP Daily Unlock Window` | Name prefix of every object the managed daily unlock window creates: the portal group (`<prefix>`), the time spec group (`<prefix> time specs`), and the one holiday/time spec (`<prefix> schedule`). 1-40 characters so the longest name fits the 64-character NAME limit. |
-| `NETBOX_LIVE_TEST_PORTALKEY`    | No       | — | The `PORTALKEY` of the one door you designate safe to physically unlock during `npm run test:live:write`/`npm run test:live:write:daily`. Read only by those scripts, never by the server itself. |
-
-If any of the three required variables is missing, the server prints a single
-actionable line to stderr and exits with a non-zero status — it never prints
-a stack trace on startup misconfiguration.
-
-## Write access
-
-Write/control tools exist in this server but are **not registered** unless
-you explicitly opt in:
-
-- **`NETBOX_ENABLE_WRITES=true`** registers the write tools listed in the
-  "Write tools" table below — the 45 pass-through tools (creating, modifying,
-  locking/unlocking, activating, and triggering) plus the three composite
-  write tools `set_portals_state`, `schedule_unlock_window`, and
-  `cancel_unlock_window`. Left unset (the default), the server's tool
-  surface is exactly the read tools below — byte-for-byte the same read-only
-  posture as before this variable existed.
-- The two unlock-window composites delete **only** the holidays and time
-  specs they themselves own (named `<prefix> first|middle|last` — see
-  **Scheduled unlock windows**), and do so without `NETBOX_ENABLE_DESTRUCTIVE`
-  because those objects are server-owned; they never delete anything else.
-- **`NETBOX_ENABLE_DESTRUCTIVE=true`**, set **in addition to**
-  `NETBOX_ENABLE_WRITES`, registers the 11 **destructive** tools (each
-  description is `DESTRUCTIVE:`-prefixed): `delete_access_level`,
-  `delete_access_level_group`, `delete_holiday`, `delete_portal_group`,
-  `delete_reader_group`, `delete_time_spec`, `delete_time_spec_group`,
-  `remove_credential`, `remove_person`, `remove_threat_level`,
-  `remove_threat_level_group`. Two ordinarily non-destructive write tools
-  also independently refuse one specific destructive-shaped call when this
-  flag is off, regardless of whether the tool itself is registered:
-  `modify_person` refuses a call with `DELETED="TRUE"` or
-  `PERSONPURGE="TRUE"`, and `modify_udf_list_items` refuses a call where any
-  list item has `DELETE="1"` — both name `NETBOX_ENABLE_DESTRUCTIVE` in the
-  error and send nothing to the controller.
-- Every write tool's description starts with `WRITE:` (or `DESTRUCTIVE:` for
-  the 11 above), and every successful write's result text contains the
-  literal `SUCCESS` followed by the controller's response data as pretty
-  JSON (which may be `{}` when the command returns no data), so you can
-  always tell a write actually happened.
-- Client-side guards (e.g. "give either `READERKEY` or `READERGROUPKEY`, not
-  both") reject malformed calls with a tool error **before** any NBAPI
-  command is issued — no partial or guessed request ever reaches the
-  controller.
-
-Set these the same way as the other variables — in `.env` (see
-`.env.example`) or your MCP server config's `env` block.
-
-## Controller prerequisites
-
-Before this server can talk to your controller, on the NetBox web UI go to
-**Configuration → Site Settings → Network Controller → Data Integration** and
-confirm all three of these are checked:
-
-- **Enable V2**
-- **Use Authentication**
-- **Use login username/password for authentication (requires setup privilege)**
-
-The NBAPI user account also needs a role with **NBAPI read access** (see the
-NBAPI doc's "Setting Up User Roles for the API" section) — a login that
-succeeds but can't read the resources this server queries will surface as
-`FAIL` or `APIERROR` responses per tool call. If you set
-`NETBOX_ENABLE_WRITES`, that role needs **Read-Write** API privilege instead
-(Configuration → Site Settings → User Roles → API Privilege) — Read-Only
-suffices only for the read tools.
-
-### Troubleshooting
-
-- **"Login succeeds but every other command returns `APIERROR 5`."** This is
-  the live-observed symptom of the *Use login username/password for
-  authentication (requires setup privilege)* checkbox being unticked, which
-  puts the controller in MAC-authentication mode instead of session-login
-  mode (MAC auth is out of scope for this server — see the spec). `Login`
-  still returns `SUCCESS` with a session ID, but every subsequent command —
-  including `Logout` — fails with `APIERROR 5`. Fix: tick that checkbox on
-  the *Data Integration* tab. This server's client detects this exact
-  pattern (a successful re-login followed by another `APIERROR 5`) and
-  surfaces a tool error naming the checkbox directly.
-- **"HTTP 410 Gone."** The configured `NETBOX_API_PATH` is not served by this
-  controller. NetBox 6.x serves the NBAPI at `/nbws/goforms/nbapi` (the
-  default this server uses); the 2020 doc's `/goforms/nbapi` path is
-  deregistered on 6.x and returns 410 for every request. If you're on a
-  pre-6.x controller, set `NETBOX_API_PATH=/goforms/nbapi` explicitly; if
-  you're on 6.x and still see this, double-check `NETBOX_API_PATH` isn't set
-  to something else by mistake.
-
-## Registering with an MCP client
-
-This server works with any MCP client that speaks the standard `mcpServers`
-stdio config shape — Claude Code, Antigravity, and Gemini CLI have all been
-verified against it directly. Which JSON to use depends on which **Setup**
-option you picked above:
-
-**If you installed via npm (Setup Option A):**
-
-```json
-{
-  "mcpServers": {
-    "s2-netbox-mcp": {
-      "command": "s2-netbox-mcp",
-      "env": {
-        "NETBOX_BASE_URL": "https://netbox.example.internal",
-        "NETBOX_USERNAME": "svc-account",
-        "NETBOX_PASSWORD": "REPLACE_ME",
-        "NETBOX_ALLOW_INSECURE_TLS": "false"
-      }
-    }
-  }
-}
-```
-
-**If you cloned and built locally (Setup Option B):**
-
-```json
-{
-  "mcpServers": {
-    "s2-netbox-mcp": {
-      "command": "node",
-      "args": ["/absolute/path/to/s2-netbox-mcp/dist/index.js"],
-      "env": {
-        "NETBOX_BASE_URL": "https://netbox.example.internal",
-        "NETBOX_USERNAME": "svc-account",
-        "NETBOX_PASSWORD": "REPLACE_ME",
-        "NETBOX_ALLOW_INSECURE_TLS": "false"
-      }
-    }
-  }
-}
-```
-
-Replace the `args` path with the actual absolute path to `dist/index.js` on
-your machine, and replace the `env` values with your real controller details
-(or omit `env` entirely and rely on a `.env` file next to the project if you
-prefer — either works, since `src/index.ts` loads `.env` via `dotenv` before
-reading `process.env`). Run `npm run build` first so `dist/index.js` exists.
-
-Where to put that JSON depends on the client:
-
-| Client | Config file | Notes |
-| --- | --- | --- |
-| Claude Code | `.mcp.json` in your project, or `claude_desktop_config.json` | Or add non-interactively via `claude mcp add-json s2-netbox-mcp '<json>'` |
-| Antigravity | `~/.gemini/config/mcp_config.json` (Windows: `%USERPROFILE%\.gemini\config\mcp_config.json`) | Global — applies to every Antigravity session |
-| Gemini CLI | `~/.gemini/settings.json`, under its own `mcpServers` key | Or add non-interactively via `gemini mcp add s2-netbox-mcp <command> [args] -e KEY=value` |
-
-All three use the identical `mcpServers` object shape shown above — only the
-surrounding file and location differ.
+To install it, see [Install the workflow skill](#install-the-workflow-skill-optional).
 
 ## Tools exposed
 
