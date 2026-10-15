@@ -109,15 +109,15 @@ surface is **51** tools with both gates off, **98** with
 
 `instructions` and `get_guide` explain how individual tools behave. The
 optional **`s2-netbox-workflows`** Agent Skill in
-[`skills/s2-netbox-workflows/`](skills/s2-netbox-workflows/SKILL.md) adds
+[`plugins/s2-netbox-workflows/skills/s2-netbox-workflows/`](plugins/s2-netbox-workflows/skills/s2-netbox-workflows/SKILL.md) adds
 step-by-step recipes for jobs that take several tool calls:
 
 | Workflow | What it does | Writes? |
 | --- | --- | --- |
-| [Onboard](skills/s2-netbox-workflows/references/onboard.md) | Checks for a duplicate person, creates the person with access levels (block syntax), issues a card, then verifies. | Yes |
-| [Offboard](skills/s2-netbox-workflows/references/offboard.md) | Disables every card and removes access levels, so it can be reversed. Then checks access history. Deletes cards or the person only on explicit request. | Yes |
-| [Event unlock](skills/s2-netbox-workflows/references/event-unlock.md) | Finds the doors with `find_portals`, checks any existing managed window, does a dry run, then calls `schedule_unlock_window` / `schedule_daily_unlock_window`. Undo is the matching cancel tool. | Yes |
-| [Badge denied](skills/s2-netbox-workflows/references/badge-denied.md) | Finds the denial record, then uses its reason to check the card format, card status, access level, reader group, schedule or door state. | No |
+| [Onboard](plugins/s2-netbox-workflows/skills/s2-netbox-workflows/references/onboard.md) | Checks for a duplicate person, creates the person with access levels (block syntax), issues a card, then verifies. | Yes |
+| [Offboard](plugins/s2-netbox-workflows/skills/s2-netbox-workflows/references/offboard.md) | Disables every card and removes access levels, so it can be reversed. Then checks access history. Deletes cards or the person only on explicit request. | Yes |
+| [Event unlock](plugins/s2-netbox-workflows/skills/s2-netbox-workflows/references/event-unlock.md) | Finds the doors with `find_portals`, checks any existing managed window, does a dry run, then calls `schedule_unlock_window` / `schedule_daily_unlock_window`. Undo is the matching cancel tool. | Yes |
+| [Badge denied](plugins/s2-netbox-workflows/skills/s2-netbox-workflows/references/badge-denied.md) | Finds the denial record, then uses its reason to check the card format, card status, access level, reader group, schedule or door state. | No |
 
 The skill links to `get_guide` topics rather than repeating them, and follows
 the same write-safety rules: name the target and effect, wait for an explicit
@@ -133,12 +133,16 @@ write steps need the write gates in [Write access](#write-access).
 /plugin install s2-netbox-workflows@s2-netbox-mcp
 ```
 
-The plugin ships only the skill. It doesn't bundle or launch the MCP server,
-so it won't start a second server next to the one you already registered.
+The plugin, in [`plugins/s2-netbox-workflows/`](plugins/s2-netbox-workflows/),
+ships only the skill. It doesn't bundle or launch the MCP server, so it won't
+start a second server next to the one you already registered. To pick up a
+newer version, run `claude plugin marketplace update s2-netbox-mcp`, then
+`claude plugin update s2-netbox-workflows@s2-netbox-mcp`, then restart
+Claude Code.
 
 **Install manually (Claude Code or any agent that reads Agent Skills):** copy
-or symlink `skills/s2-netbox-workflows/` into your agent's skills directory.
-For Claude Code that's `~/.claude/skills/` for every project, or
+or symlink `plugins/s2-netbox-workflows/skills/s2-netbox-workflows/` into your
+agent's skills directory. For Claude Code that's `~/.claude/skills/` for every project, or
 `.claude/skills/` in a single project. The skill loads on its own when a
 request matches it, for example "onboard Jane Doe with card 12345", "unlock
 the lobby Friday 8 to 5", or "why was badge 4471 denied at the dock door?".
