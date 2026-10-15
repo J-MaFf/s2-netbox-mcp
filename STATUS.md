@@ -26,7 +26,18 @@ to the mcp.so directory. Releases publish themselves via GitHub Actions + npm Tr
 (OIDC) on every `v*` tag push — no manual `npm login`/token ever needed again. The same workflow
 then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
-## Current State — 2026-10-14
+## Current State — 2026-10-15
+
+### Workflow skill (`s2-netbox-workflows`, unreleased)
+
+Issue [#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122). Adds an optional Agent Skill in
+`skills/s2-netbox-workflows/` with four multi-step workflows on top of the existing tools: onboard,
+offboard, event unlock, and a read-only badge-denied diagnosis. It links to `get_guide` topics
+instead of repeating them. It ships as a skill-only Claude Code plugin (`.claude-plugin/`, with no
+bundled MCP server) or can be installed by copying the folder. No server code or tool-surface changes
+(still 51/98/113), and the skill isn't part of the npm package.
+
+## Previous State — 2026-10-14
 
 ### Security patch release (`v0.5.1`)
 
@@ -371,6 +382,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 | `src/tools/*.ts` | One module per tool category: `person`, `accessLevel`, `portal` (incl. `find_portals`, `set_portals_state`), `events`, `timeSpec`, `holiday`, `portalGroup`, `readerGroup`, `threatLevel`, `partition`, `hardware`, `alarm`, `misc`, `unlockWindow`, `dailyUnlockWindow` |
 | `src/instructions.ts` | `buildInstructions(gate)`: builds the MCP `instructions` string -- access model, `KEY`-not-name convention, controller-text-is-data rule, and the write/destructive confirm-before-acting policy, gated correctly on `writesEnabled`/`destructiveEnabled` |
 | `src/guide/*.ts`, `src/tools/guide.ts` | `GUIDE_TOPICS` (six generic reference topics) and the always-on `get_guide` tool that serves them -- pure in-process lookup, no controller call |
+| `skills/s2-netbox-workflows/`, `.claude-plugin/` | Optional `s2-netbox-workflows` Agent Skill (onboard, offboard, event unlock, badge-denied) and its skill-only Claude Code plugin/marketplace manifests -- markdown/JSON only, not part of the npm package |
 | `scripts/live-check.ts` | Opt-in live read-only smoke test (`npm run test:live`) — 64 checks covering every always-registered read tool |
 | `scripts/live-check-write.ts`, `scripts/liveCheckWriteHelpers.ts` | Opt-in live write smoke test (`npm run test:live:write`) and its unit-tested pure helpers |
 | `scripts/live-check-write-daily.ts` | Opt-in live write smoke test for the daily window (`npm run test:live:write:daily`) |
