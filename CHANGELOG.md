@@ -21,6 +21,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   plugin now has its own folder, `plugins/s2-netbox-workflows/`, so the marketplace entry points at
   it rather than the repo root. The plugin version is bumped to 0.1.1 so existing installs update
   ([#126](https://github.com/J-MaFf/s2-netbox-mcp/issues/126)).
+- The server reported version 0.3.0 to MCP clients in its `initialize` response, whatever the
+  installed version. It now reads the version from `package.json`, so it always matches the package
+  ([#129](https://github.com/J-MaFf/s2-netbox-mcp/issues/129)).
 
 ## [0.5.1] — 2026-10-14
 
