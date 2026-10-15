@@ -1,3 +1,4 @@
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { FetchLike, NetboxClient } from '../src/netboxClient.js';
 
 // ---------------------------------------------------------------------------
@@ -10,14 +11,21 @@ export interface ToolRegistration {
   name: string;
   description: string;
   schema: Record<string, unknown>;
+  annotations: ToolAnnotations;
   handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
 }
 
 /** A minimal stand-in for McpServer that just records every server.tool(...) call. */
 export class FakeServer {
   registrations: ToolRegistration[] = [];
-  tool(name: string, description: string, schema: Record<string, unknown>, handler: ToolRegistration['handler']): void {
-    this.registrations.push({ name, description, schema, handler });
+  tool(
+    name: string,
+    description: string,
+    schema: Record<string, unknown>,
+    annotations: ToolAnnotations,
+    handler: ToolRegistration['handler']
+  ): void {
+    this.registrations.push({ name, description, schema, annotations, handler });
   }
 }
 

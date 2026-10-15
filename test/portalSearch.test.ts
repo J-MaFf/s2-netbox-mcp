@@ -160,7 +160,7 @@ describe('find_portals tool', () => {
   function registerFindPortals(client: NetboxClient): { schema: Record<string, unknown>; handler: Handler } {
     let registered: { schema: Record<string, unknown>; handler: Handler } | undefined;
     const server = {
-      tool: (name: string, _description: string, schema: Record<string, unknown>, handler: Handler) => {
+      tool: (name: string, _description: string, schema: Record<string, unknown>, _annotations: unknown, handler: Handler) => {
         if (name === 'find_portals') registered = { schema, handler };
       },
     };

@@ -10,6 +10,9 @@ import {
   notFoundResult,
   toolErrorResult,
   wrapList,
+  DESTRUCTIVE_TOOL,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -99,6 +102,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
             'GetPortalGroup provides it.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ PORTALGROUPKEY, RESOLVEGROUPNAMES }): Promise<ToolTextResult> => {
       if (RESOLVEGROUPNAMES === false) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_GROUP, { PORTALGROUPKEY });
@@ -151,6 +155,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
             'exactly as GetPortalGroups provides them.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY, RESOLVEGROUPNAMES }): Promise<ToolTextResult> => {
       if (RESOLVEGROUPNAMES === false) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_PORTAL_GROUPS, mergeParams({ STARTFROMKEY }));
@@ -204,6 +209,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this portal group is scoped to.'),
         PORTALKEYS: z.array(z.string()).describe('Required. PORTALKEY values of the portals in this group.'),
       },
+      WRITE_TOOL,
       async ({ PORTALKEYS, ...rest }) =>
         runNbapiTool(
           client,
@@ -224,6 +230,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
         UNLOCKTIMESPECGROUPKEY: z.string().optional().describe('Optional. Time spec group controlling when member portals unlock.'),
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this portal group is scoped to.'),
       },
+      WRITE_TOOL,
       async ({ PORTALGROUPKEY, PORTALKEYS, NAME, DESCRIPTION, UNLOCKTIMESPECGROUPKEY, THREATLEVELGROUPKEY }) =>
         runNbapiTool(
           client,
@@ -245,6 +252,7 @@ export function registerPortalGroupTools(server: McpServer, client: NetboxClient
         'delete_portal_group',
         'DESTRUCTIVE: Deletes a portal group (wraps NBAPI DeletePortalGroup). Requires NETBOX_ENABLE_DESTRUCTIVE.',
         { PORTALGROUPKEY: z.string().describe('Required. The PORTALGROUPKEY of the portal group to delete.') },
+        DESTRUCTIVE_TOOL,
         async ({ PORTALGROUPKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_PORTAL_GROUP, { PORTALGROUPKEY }, formatWriteSuccess)
       );

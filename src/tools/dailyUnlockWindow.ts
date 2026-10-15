@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NetboxClient } from '../netboxClient.js';
-import { formatAsJson, formatWriteSuccess, toolErrorResult, type ToolGateFlags, type ToolTextResult } from '../toolHelpers.js';
+import { formatAsJson, formatWriteSuccess, toolErrorResult, READ_ONLY_TOOL, WRITE_TOOL, type ToolGateFlags, type ToolTextResult } from '../toolHelpers.js';
 import {
   DailyUnlockWindowError,
   cancelDailyUnlockWindow,
@@ -54,6 +54,7 @@ export function registerDailyUnlockWindowTools(
       'paginated GetTimeSpecGroups), the one managed time spec and holiday, the window derived from them, and whether it is ' +
       'active right now on the host clock. Read-only: issues only Get commands. No parameters required.',
     {},
+    READ_ONLY_TOOL,
     async (): Promise<ToolTextResult> => {
       try {
         return { content: [{ type: 'text', text: formatAsJson(await getDailyUnlockWindow(client, settings)) }] };
@@ -98,6 +99,7 @@ export function registerDailyUnlockWindowTools(
         .describe('Optional (default false). Set true to proceed even though other time specs would be suppressed on the window\'s dates.'),
       dryRun: z.boolean().optional().describe('Optional (default false). Return the plan and the side-effect report without writing anything.'),
     },
+    WRITE_TOOL,
     async ({ startDate, endDate, dailyStartTime, dailyEndTime, portalKeys, acknowledgeSideEffects, dryRun }): Promise<ToolTextResult> => {
       try {
         const result = await scheduleDailyUnlockWindow(
@@ -125,6 +127,7 @@ export function registerDailyUnlockWindowTools(
       'cancel" result only when no managed object of any kind (portal group, time spec group, holiday, or time spec) exists. Only ' +
       'objects named exactly with the managed prefix are ever touched. No parameters required.',
     {},
+    WRITE_TOOL,
     async (): Promise<ToolTextResult> => {
       try {
         return { content: [{ type: 'text', text: formatWriteSuccess(await cancelDailyUnlockWindow(client, settings)) }] };

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolTextResult } from '../toolHelpers.js';
+import { READ_ONLY_TOOL, type ToolTextResult } from '../toolHelpers.js';
 import { GUIDE_TOPICS } from '../guide/index.js';
 
 const TOPIC_KEYS = Object.keys(GUIDE_TOPICS);
@@ -36,6 +36,7 @@ export function registerGuideTool(server: McpServer): void {
           'Optional. One of: access-model, unlock-windows, group-and-name-gotchas, credentials-and-card-formats, api-quirks, write-safety. Omitted or unrecognized returns the index instead.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ topic }): Promise<ToolTextResult> => {
       const known = topic !== undefined ? GUIDE_TOPICS[topic] : undefined;
       const text = known ? known.content : INDEX_TEXT;

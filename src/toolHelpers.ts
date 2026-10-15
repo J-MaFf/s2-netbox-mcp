@@ -1,3 +1,4 @@
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { NetboxClient } from './netboxClient.js';
 import type { NbapiCommandName } from './commands.js';
 import type { NbapiParams, NbapiParamValue } from './xml.js';
@@ -22,6 +23,22 @@ export interface ToolGateFlags {
   writesEnabled: boolean;
   destructiveEnabled: boolean;
 }
+
+/**
+ * MCP tool annotations, one per gate tier, passed on every `server.tool(...)`
+ * registration so clients can group and permission tools by what they do
+ * (Claude Desktop sorts a connector's tools into read-only, write and
+ * destructive groups from these hints; without them every tool lands under
+ * "Other tools"). The tier a tool is annotated with matches the gate it is
+ * registered under: always-registered tools are read-only, NETBOX_ENABLE_WRITES
+ * tools (`WRITE:` description prefix) are non-destructive writes, and
+ * NETBOX_ENABLE_DESTRUCTIVE tools (`DESTRUCTIVE:` prefix) are destructive.
+ * `destructiveHint` must be set explicitly on write tools: the MCP spec
+ * defaults it to `true` whenever `readOnlyHint` is `false`.
+ */
+export const READ_ONLY_TOOL: ToolAnnotations = { readOnlyHint: true };
+export const WRITE_TOOL: ToolAnnotations = { readOnlyHint: false, destructiveHint: false };
+export const DESTRUCTIVE_TOOL: ToolAnnotations = { readOnlyHint: false, destructiveHint: true };
 
 /** Default success formatter: a thin pass-through of the NBAPI response data as JSON. */
 export function formatAsJson(data: unknown): string {

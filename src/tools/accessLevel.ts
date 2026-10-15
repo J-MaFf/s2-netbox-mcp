@@ -11,6 +11,9 @@ import {
   toolErrorResult,
   clientGuardError,
   wrapList,
+  DESTRUCTIVE_TOOL,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -82,6 +85,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
             'exactly as GetAccessLevel provides it.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ ACCESSLEVELKEY, RESOLVEGROUPNAMES }): Promise<ToolTextResult> => {
       if (RESOLVEGROUPNAMES === false) {
         return runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL, { ACCESSLEVELKEY });
@@ -114,6 +118,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
       STARTFROMNAME: z.string().optional().describe('Optional. Pagination cursor (name) to continue listing from a previous call.'),
       WANTKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevels.'),
     },
+    READ_ONLY_TOOL,
     async ({ PARTITIONKEY, STARTFROMKEY, STARTFROMNAME, WANTKEY }) =>
       runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVELS, mergeParams({ PARTITIONKEY, STARTFROMKEY, STARTFROMNAME, WANTKEY }))
   );
@@ -124,6 +129,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
     {
       ACCESSLEVELGROUPKEY: z.string().describe('Required. The unique ACCESSLEVELGROUPKEY of the access level group to retrieve.'),
     },
+    READ_ONLY_TOOL,
     async ({ ACCESSLEVELGROUPKEY }) =>
       runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUP, { ACCESSLEVELGROUPKEY })
   );
@@ -135,6 +141,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
       STARTFROMKEY: z.string().optional().describe('Optional. Pagination cursor to continue listing from a previous call.'),
       PARTITIONKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevelGroups — only "0" is documented as allowed.'),
     },
+    READ_ONLY_TOOL,
     async ({ STARTFROMKEY, PARTITIONKEY }) =>
       runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL_GROUPS, mergeParams({ STARTFROMKEY, PARTITIONKEY }))
   );
@@ -146,6 +153,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
       PARTITIONKEY: z.string().optional().describe('Optional. Per NBAPI GetAccessLevelNames — only "0" is documented as allowed.'),
       STARTFROMNAME: z.string().optional().describe('Optional. Pagination cursor (name) to continue listing from a previous call.'),
     },
+    READ_ONLY_TOOL,
     async ({ PARTITIONKEY, STARTFROMNAME }) =>
       runNbapiTool(client, NBAPI_COMMANDS.GET_ACCESS_LEVEL_NAMES, mergeParams({ PARTITIONKEY, STARTFROMNAME }))
   );
@@ -162,6 +170,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         READERGROUPKEY: z.string().optional().describe('Optional. A reader group this access level applies to. Mutually exclusive with READERKEY.'),
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this access level is scoped to.'),
       },
+      WRITE_TOOL,
       async ({ READERKEY, READERGROUPKEY, ...rest }) => {
         if (READERKEY && READERGROUPKEY) {
           return clientGuardError('add_access_level accepts READERKEY or READERGROUPKEY, not both, in the same call.');
@@ -189,6 +198,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
           .describe('Required. The controller rejects ModifyAccessLevel without it ("Time spec group id is a required parameter"), even though the NBAPI doc\'s own example omits it.'),
         THREATLEVELGROUPKEY: z.string().optional().describe('Optional. Threat level group this access level is scoped to.'),
       },
+      WRITE_TOOL,
       async ({ READERKEY, READERGROUPKEY, ...rest }) => {
         if (READERKEY && READERGROUPKEY) {
           return clientGuardError('modify_access_level accepts READERKEY or READERGROUPKEY, not both, in the same call.');
@@ -212,6 +222,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         SYSTEMGROUP: z.string().optional().describe('Optional. Set to "1" to create a system (cross-partition) group.'),
         ACCESSLEVELS: accessLevelsGroupField,
       },
+      WRITE_TOOL,
       async ({ ACCESSLEVELS, ...rest }) =>
         runNbapiTool(
           client,
@@ -230,6 +241,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         DESCRIPTION: z.string().optional().describe('Optional. New description for the access level group.'),
         ACCESSLEVELS: accessLevelsGroupField,
       },
+      WRITE_TOOL,
       async ({ ACCESSLEVELS, ...rest }) =>
         runNbapiTool(
           client,
@@ -246,6 +258,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         {
           ACCESSLEVELKEY: z.string().describe('Required. The ACCESSLEVELKEY of the access level to delete.'),
         },
+        DESTRUCTIVE_TOOL,
         async ({ ACCESSLEVELKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_ACCESS_LEVEL, { ACCESSLEVELKEY }, formatWriteSuccess)
       );
@@ -256,6 +269,7 @@ export function registerAccessLevelTools(server: McpServer, client: NetboxClient
         {
           ACCESSLEVELGROUPKEY: z.string().describe('Required. The ACCESSLEVELGROUPKEY of the access level group to delete.'),
         },
+        DESTRUCTIVE_TOOL,
         async ({ ACCESSLEVELGROUPKEY }) =>
           runNbapiTool(client, NBAPI_COMMANDS.DELETE_ACCESS_LEVEL_GROUP, { ACCESSLEVELGROUPKEY }, formatWriteSuccess)
       );

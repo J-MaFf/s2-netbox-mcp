@@ -28,6 +28,13 @@ then creates the matching GitHub Release from that tag's CHANGELOG entry.
 
 ## Current State — 2026-10-15
 
+### Unreleased: MCP tool annotations
+
+Issue [#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) (PR open, awaiting review). Every tool
+registration now passes MCP annotations matching its gate tier (51 read-only / 47 write / 15 destructive),
+so Claude Desktop groups the connector's tools instead of listing all of them under "Other tools". No
+tool-surface change (still 51/98/113); `test/registration.test.ts` asserts each tool's annotations.
+
 ### Workflow skill (`s2-netbox-workflows`, unreleased)
 
 Issues [#122](https://github.com/J-MaFf/s2-netbox-mcp/issues/122) and
@@ -441,7 +448,7 @@ time and has no live sync from GitHub, so any README-only change needs a new ver
 
 ### Open Issues
 
-None on GitHub. One tracked in `bd` only (not a shippable code unit): setting up the Antigravity
+[#124](https://github.com/J-MaFf/s2-netbox-mcp/issues/124) — MCP tool annotations (PR in review). One tracked in `bd` only (not a shippable code unit): setting up the Antigravity
 desktop app + `s2-netbox-mcp` for a second user (Angela) — her NetBox operator account already has
 the same `full system setup` role as the maintainer's, so the write/destructive gating has to be
 enforced client-side via her `mcp_config.json`, not by the NetBox account itself.

@@ -10,6 +10,8 @@ import {
   clientGuardError,
   toolErrorResult,
   notFoundResult,
+  READ_ONLY_TOOL,
+  WRITE_TOOL,
   type ToolTextResult,
   type ToolGateFlags,
 } from '../toolHelpers.js';
@@ -101,6 +103,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
       ENDDTTM: z.string().optional().describe('Optional. End of the date/time range to query (NBAPI-documented format).'),
       NEXTKEY: z.string().optional().describe('Optional. Pagination continuation cursor from a previous call.'),
     },
+    READ_ONLY_TOOL,
     async (args) => runNbapiTool(client, NBAPI_COMMANDS.GET_EVENT_HISTORY, mergeParams(args))
   );
 
@@ -121,6 +124,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
             'per event). Set to false to skip it and get the plain ListEvents response.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ RESOLVEPARTITIONNAMES }): Promise<ToolTextResult> => {
       const resolvePartitionNames = RESOLVEPARTITIONNAMES !== false;
       if (!resolvePartitionNames) {
@@ -183,6 +187,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
             'GetReaders full-table fetch per call (not per record). Set to false to skip it.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ RESOLVENAMES, RESOLVEDESCRIPTIONS, ...otherParams }): Promise<ToolTextResult> => {
       const resolveDescriptions = RESOLVEDESCRIPTIONS !== false;
       if (!RESOLVENAMES && !resolveDescriptions) {
@@ -239,6 +244,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
             'fetch. Set to false to omit the field entirely.'
         ),
     },
+    READ_ONLY_TOOL,
     async ({ READERKEY, SCANWINDOW, MAXMATCHES, RESOLVEDESCRIPTIONS }): Promise<ToolTextResult> => {
       try {
         const result = await getReaderAccessHistory(client, { READERKEY, SCANWINDOW, MAXMATCHES, RESOLVEDESCRIPTIONS });
@@ -260,6 +266,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
         EVENTACTION: z.enum(['ACTIVATE', 'DEACTIVATE']).describe('Required. Whether to activate or deactivate the event.'),
         PARTITIONID: z.string().optional().describe('Optional. Partition the event belongs to (defaults to Master).'),
       },
+      WRITE_TOOL,
       async (args) => runNbapiTool(client, NBAPI_COMMANDS.TRIGGER_EVENT, mergeParams(args), formatWriteSuccess)
     );
 
@@ -281,6 +288,7 @@ export function registerEventsTools(server: McpServer, client: NetboxClient, gat
         ENCODEDNUM: z.string().optional().describe('Optional. Encoded card number involved in the activity.'),
         ACTIVITYTEXT: z.string().optional().describe('Optional. Free-text description of the activity (max 255 characters).'),
       },
+      WRITE_TOOL,
       async ({ PORTALKEY, ELEVATORKEY, ...rest }) => {
         if (PORTALKEY && ELEVATORKEY) {
           return clientGuardError('insert_activity accepts PORTALKEY or ELEVATORKEY, not both, in the same call.');
