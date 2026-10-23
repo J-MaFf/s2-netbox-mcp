@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `.gitignore` ignores `/.beads.gate.lock`, the bd 1.3+ gate lock written at the repo root, so the repo no longer shows as dirty ([#135](https://github.com/J-MaFf/s2-netbox-mcp/issues/135)).
+
 ## [0.6.0] — 2026-10-15
 
 ### Added
