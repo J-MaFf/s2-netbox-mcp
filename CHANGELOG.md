@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Documented using a 1Password `op://` secret reference for `NETBOX_PASSWORD` in `.env` and MCP client config, and running the live checks under `op run` (`.env.example`, README, CONTRIBUTING) ([#140](https://github.com/J-MaFf/s2-netbox-mcp/issues/140)).
+
 ### Fixed
 
 - `.gitignore` ignores `/.beads.gate.lock`, the bd 1.3+ gate lock written at the repo root, so the repo no longer shows as dirty ([#135](https://github.com/J-MaFf/s2-netbox-mcp/issues/135)).

@@ -19,6 +19,8 @@ npm run build
 Copy `.env.example` to `.env` and fill in a NetBox controller's session-login credentials if
 you want to run the live checks (`npm run test:live`, etc.) — the unit test suite
 (`npm test`) doesn't need a real controller, since it runs against a mocked HTTP client.
+`NETBOX_PASSWORD` can be a 1Password `op://…` reference instead of plaintext; run the live
+checks under `op run` then (see the README's "Keeping the password out of plaintext").
 
 ```bash
 npm run typecheck   # tsc --noEmit

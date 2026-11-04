@@ -79,6 +79,21 @@ cp .env.example .env
 # edit .env
 ```
 
+**Keeping the password out of plaintext (1Password).** `NETBOX_PASSWORD` may be a
+1Password secret reference such as `op://<vault>/<item>/password`, both in `.env` and in an
+MCP client's `env` block. Launch the server (or any script that talks to the controller)
+under [`op run`](https://developer.1password.com/docs/cli/reference/commands/run), which
+resolves the reference into a real environment variable before node starts. For an MCP
+client, make `op run` the command and the node invocation its arguments:
+
+```bash
+op run --account <account> --no-masking -- node /path/to/s2-netbox-mcp/dist/index.js
+```
+
+`dotenv` never overrides a variable that is already set, so the resolved value wins over
+the literal `op://…` text in `.env`. Without `op run`, that literal text is sent as the
+password and login fails with NBAPI error 5 (authentication failure).
+
 Start the server directly to sanity-check it boots (it just waits on stdio
 for an MCP client — Ctrl+C to stop; this also sends `Logout` if a session was
 opened):
@@ -1065,6 +1080,11 @@ prints one line saying live testing was skipped and exits 0. It never prints
 the value of `NETBOX_PASSWORD`, under any circumstance, and it never issues
 a write/control command regardless of `NETBOX_ENABLE_WRITES`. `npm test`
 never runs this script and never requires `.env` to exist.
+
+If `.env` holds an `op://` reference for `NETBOX_PASSWORD` (see **Keeping the password out
+of plaintext** above), run it under `op run`, e.g.
+`op run --account <account> --no-masking -- npm run test:live`. The same applies to
+`test:live:write` and `test:live:write:daily`.
 
 ### Live write smoke test (optional, opt-in twice)
 
