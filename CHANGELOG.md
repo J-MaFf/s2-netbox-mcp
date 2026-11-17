@@ -5,6 +5,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added `bd prime` PreCompact hook in `.claude/settings.json` so sessions reload beads context ([#142](https://github.com/J-MaFf/s2-netbox-mcp/issues/142))
+
 ### Changed
 
 - Documented using a 1Password `op://` secret reference for `NETBOX_PASSWORD` in `.env` and MCP client config, and running the live checks under `op run` (`.env.example`, README, CONTRIBUTING) ([#140](https://github.com/J-MaFf/s2-netbox-mcp/issues/140)).
